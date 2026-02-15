@@ -21,6 +21,7 @@
   "private": true,
   "scripts": {
     "android": "bun expo start --android --port 8082",
+    "compile": "tsc",
     "ios": "bun expo start --ios --port 8082",
     "format": "biome format --write .",
     "lint": "biome check .",
