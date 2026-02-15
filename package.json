@@ -1,0 +1,8 @@
+{
+  "name": "shade",
+  "private": true,
+  "scripts": {
+    "rules": "rulesync generate"
+  },
+  "version": "1.0.0"
+}
