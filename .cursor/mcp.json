@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "terreno": {
+      "type": "http",
+      "url": "https://mcp.terreno.flourish.health/mcp"
+    }
+  }
+}

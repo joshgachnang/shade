@@ -1,0 +1,64 @@
+# Shade
+
+A full-stack application built with the Terreno framework.
+
+## Project Structure
+
+- **frontend/** - Expo/React Native frontend using @terreno/ui and @terreno/rtk
+- **backend/** - Express/Mongoose backend using @terreno/api
+
+## Development
+
+Uses [Bun](https://bun.sh/) as the package manager.
+
+```bash
+# Backend
+cd backend && bun run dev    # Start backend on port 4020
+
+# Frontend
+cd frontend && bun run web   # Start web frontend
+cd frontend && bun run sdk   # Regenerate SDK after backend changes
+```
+
+## Code Style
+
+### TypeScript/JavaScript
+- Use ES module syntax and TypeScript for all code
+- Prefer interfaces over types; avoid enums, use maps
+- Prefer const arrow functions over `function` keyword
+- Use descriptive variable names with auxiliary verbs (e.g., `isLoading`)
+- Favor named exports
+- Use the RORO pattern (Receive an Object, Return an Object)
+
+### Dates and Time
+- Always use Luxon instead of Date or dayjs
+
+### Error Handling
+- Check error conditions at start of functions and return early
+- Limit nested if statements
+- Use multiline syntax with curly braces for all conditionals
+
+### React Best Practices
+- Use functional components with `React.FC` type
+- Add explanatory comment above each `useEffect`
+- Wrap callbacks in `useCallback`
+- Use Redux Toolkit for state management
+
+### Backend Conventions
+- Use `modelRouter` for CRUD endpoints
+- Use `APIError` for error responses
+- Use `logger.info/warn/error/debug` for logging
+- Use `Model.findExactlyOne` or `Model.findOneOrNone` (not `Model.findOne`)
+
+### Frontend Conventions
+- Use generated SDK hooks from `@/store/openApiSdk`
+- Use @terreno/ui components (Box, Page, Button, TextField, etc.)
+- Never modify `openApiSdk.ts` manually - regenerate with `bun run sdk`
+
+## AI Assistance
+
+This project is configured to use the Terreno MCP server for AI-assisted development.
+Use the MCP tools and prompts for:
+- Generating new models and routes
+- Creating screens and forms
+- Following Terreno patterns and best practices
