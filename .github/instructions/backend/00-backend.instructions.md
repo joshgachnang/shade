@@ -23,6 +23,11 @@ bun run lint     # Lint code
 - All model types live in `src/types/models/`
 - In routes: `req.user` is `UserDocument | undefined`
 
+## Known Exceptions
+
+- `type` aliases are acceptable for Mongoose model types that use `&` intersections or generics (e.g., `DefaultModel<T>`, `UserDocument`)
+- `Date` types in model interfaces are required by Mongoose schema typing
+
 ## Adding a New Model
 
 1. Create model in `src/models/yourModel.ts`

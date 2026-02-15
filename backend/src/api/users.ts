@@ -3,10 +3,13 @@ import type { Router } from "express";
 import { User } from "../models";
 import type { UserDocument } from "../types";
 
-export const addUserRoutes = (
-  router: Router,
-  options?: Partial<ModelRouterOptions<UserDocument>>,
-): void => {
+export const addUserRoutes = ({
+  router,
+  options,
+}: {
+  router: Router;
+  options?: Partial<ModelRouterOptions<UserDocument>>;
+}): void => {
   router.use(
     "/users",
     modelRouter(User, {

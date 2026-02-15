@@ -18,6 +18,13 @@ bun run lint     # Lint code
 - Use Luxon for date operations
 - Use Redux Toolkit for state management
 
+## Known Exceptions
+
+- Expo Router route files (`app/**`) require `export default` -- add a comment explaining why
+- `openapi-config.ts` requires `export default` for `@rtk-query/codegen-openapi`
+- `openApiSdk.ts` is auto-generated -- do not enforce style rules on it
+- `type` aliases are acceptable when using `ReturnType`, `typeof`, or other utility types that cannot be expressed as `interface`
+
 ## Adding a New Screen
 
 1. Regenerate SDK if backend changed: `bun run sdk`
