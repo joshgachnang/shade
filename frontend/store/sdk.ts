@@ -49,12 +49,15 @@ export const {useEmailLoginMutation, useEmailSignUpMutation, useGetMeQuery, useP
   terrenoApi;
 export * from "./openApiSdk";
 
-type OpenApiEndpoints = Record<string, unknown>;
+interface OpenApiEndpoints extends Record<string, unknown> {}
 
-export const getSdkHook = (
-  modelName: string,
-  type: "list" | "read" | "create" | "update" | "remove"
-): Record<string, unknown> => {
+export const getSdkHook = ({
+  modelName,
+  type,
+}: {
+  modelName: string;
+  type: "list" | "read" | "create" | "update" | "remove";
+}): Record<string, unknown> => {
   const modelPath = startCase(modelName).replace(/\s/g, "");
   const endpoints = openapi.endpoints as OpenApiEndpoints;
   switch (type) {

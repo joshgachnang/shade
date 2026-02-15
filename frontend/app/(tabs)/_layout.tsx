@@ -1,6 +1,7 @@
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import {Tabs} from "expo-router";
 import type React from "react";
+import {useCallback} from "react";
 import {colors} from "@/constants/theme";
 
 const TabBarIcon: React.FC<{
@@ -11,6 +12,16 @@ const TabBarIcon: React.FC<{
 };
 
 const TabLayout: React.FC = () => {
+  const renderHomeIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="home" />,
+    []
+  );
+
+  const renderProfileIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="user" />,
+    []
+  );
+
   return (
     <Tabs
       screenOptions={{
@@ -20,7 +31,7 @@ const TabLayout: React.FC = () => {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({color}) => <TabBarIcon color={color} name="home" />,
+          tabBarIcon: renderHomeIcon,
           title: "Home",
         }}
       />
@@ -28,7 +39,7 @@ const TabLayout: React.FC = () => {
         name="profile"
         options={{
           headerShown: false,
-          tabBarIcon: ({color}) => <TabBarIcon color={color} name="user" />,
+          tabBarIcon: renderProfileIcon,
           title: "Profile",
         }}
       />
@@ -36,4 +47,5 @@ const TabLayout: React.FC = () => {
   );
 };
 
+// Expo Router requires default export for route files
 export default TabLayout;

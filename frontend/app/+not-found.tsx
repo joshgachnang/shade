@@ -18,4 +18,5 @@ const NotFoundScreen: React.FC = () => {
   );
 };
 
+// Expo Router requires default export for route files
 export default NotFoundScreen;

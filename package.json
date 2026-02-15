@@ -1,0 +1,11 @@
+{
+	"name": "shade",
+	"private": true,
+	"scripts": {
+		"rules": "rulesync generate",
+		"lint": "cd backend && bun run lint && cd ../frontend && bun run lint",
+		"lint:fix": "cd backend && bun run lint:fix && cd ../frontend && bun run lint:fix",
+		"lint:unsafefix": "cd backend && bun run lint:unsafefix && cd ../frontend && bun run lint:unsafefix"
+	},
+	"version": "1.0.0"
+}

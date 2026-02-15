@@ -4,10 +4,10 @@ import {type TypedUseSelectorHook, useSelector} from "react-redux";
 
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 
-export type AppState = {
+export interface AppState {
   darkMode: boolean;
   language: string;
-};
+}
 
 const initialState: AppState = {
   darkMode: false,
@@ -42,4 +42,4 @@ export const useSelectLanguage = (): string => {
   });
 };
 
-export default appStateSlice.reducer;
+export const appStateReducer = appStateSlice.reducer;

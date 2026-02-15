@@ -19,7 +19,7 @@ const tsConfigPath = join(__dirname, "..", "tsconfig.codegen.json");
 
 const command = `TS_NODE_PROJECT=${tsConfigPath} tsx ${cliPath} ${configPath}`;
 
-exec(command, (error, _stdout, stderr) => {
+exec(command, (error, _stdout, stderr): void => {
   if (error) {
     console.error(`Error: ${error.message}`);
     process.exit(1);
@@ -39,7 +39,7 @@ exec(command, (error, _stdout, stderr) => {
   exec(
     "bunx biome check --unsafe --write store/openApiSdk.ts",
     {cwd: join(__dirname, "..")},
-    (formatError) => {
+    (formatError): void => {
       if (formatError) {
         console.error(`Formatting error: ${formatError.message}`);
         process.exit(1);

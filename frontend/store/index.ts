@@ -6,7 +6,7 @@ import {useDispatch} from "react-redux";
 import type {Storage} from "redux-persist";
 import {persistReducer, persistStore} from "redux-persist";
 
-import appState from "./appState";
+import {appStateReducer} from "./appState";
 import {rtkQueryErrorMiddleware} from "./errors";
 import {terrenoApi} from "./sdk";
 
@@ -47,7 +47,7 @@ const persistConfig = {
 };
 
 const rootReducer = combineReducers({
-  appState,
+  appState: appStateReducer,
   auth: authSlice.authReducer,
   "terreno-rtk": terrenoApi.reducer,
 });
@@ -84,5 +84,5 @@ export type AppDispatch = typeof store.dispatch;
 export const useAppDispatch: () => AppDispatch = useDispatch;
 export {useAppSelector} from "./appState";
 
-export default store;
+export {store};
 export * from "./sdk";
