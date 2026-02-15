@@ -46,7 +46,9 @@
   "exclude": [
     "node_modules",
     "openapi-config.ts",
-    "scripts"
+    "scripts",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ],
   "include": [
     "**/*.ts",
