@@ -1,15 +1,15 @@
 import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
 import type { Router } from "express";
-import { User } from "../models";
-import type { UserDocument } from "../types";
+import { Group } from "../models";
+import type { GroupDocument } from "../types";
 
-export const addUserRoutes = (
+export const addGroupRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<UserDocument>>,
+  options?: Partial<ModelRouterOptions<GroupDocument>>,
 ): void => {
   router.use(
-    "/users",
-    modelRouter(User, {
+    "/groups",
+    modelRouter(Group, {
       ...options,
       permissions: {
         create: [Permissions.IsAdmin],
@@ -18,7 +18,7 @@ export const addUserRoutes = (
         read: [Permissions.IsAuthenticated],
         update: [Permissions.IsAdmin],
       },
-      queryFields: ["email", "name"],
+      queryFields: ["channelId", "isMain", "name"],
       sort: "name",
     }),
   );

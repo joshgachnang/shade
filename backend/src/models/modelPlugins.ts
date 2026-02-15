@@ -1,9 +1,4 @@
-import {
-  createdUpdatedPlugin,
-  findExactlyOne,
-  findOneOrNone,
-  isDeletedPlugin,
-} from "@terreno/api";
+import { createdUpdatedPlugin, findExactlyOne, findOneOrNone, isDeletedPlugin } from "@terreno/api";
 import type mongoose from "mongoose";
 
 // biome-ignore lint/suspicious/noExplicitAny: Leaving open for flexibility

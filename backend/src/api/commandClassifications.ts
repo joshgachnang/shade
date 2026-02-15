@@ -1,15 +1,15 @@
 import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
 import type { Router } from "express";
-import { User } from "../models";
-import type { UserDocument } from "../types";
+import { CommandClassification } from "../models";
+import type { CommandClassificationDocument } from "../types";
 
-export const addUserRoutes = (
+export const addCommandClassificationRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<UserDocument>>,
+  options?: Partial<ModelRouterOptions<CommandClassificationDocument>>,
 ): void => {
   router.use(
-    "/users",
-    modelRouter(User, {
+    "/commandClassifications",
+    modelRouter(CommandClassification, {
       ...options,
       permissions: {
         create: [Permissions.IsAdmin],
@@ -18,8 +18,8 @@ export const addUserRoutes = (
         read: [Permissions.IsAuthenticated],
         update: [Permissions.IsAdmin],
       },
-      queryFields: ["email", "name"],
-      sort: "name",
+      queryFields: ["classification"],
+      sort: "-priority",
     }),
   );
 };
