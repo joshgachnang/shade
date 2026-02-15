@@ -1,15 +1,15 @@
 import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
 import type { Router } from "express";
-import { User } from "../models";
-import type { UserDocument } from "../types";
+import { WebhookSource } from "../models";
+import type { WebhookSourceDocument } from "../types";
 
-export const addUserRoutes = (
+export const addWebhookSourceRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<UserDocument>>,
+  options?: Partial<ModelRouterOptions<WebhookSourceDocument>>,
 ): void => {
   router.use(
-    "/users",
-    modelRouter(User, {
+    "/webhookSources",
+    modelRouter(WebhookSource, {
       ...options,
       permissions: {
         create: [Permissions.IsAdmin],
@@ -18,7 +18,7 @@ export const addUserRoutes = (
         read: [Permissions.IsAuthenticated],
         update: [Permissions.IsAdmin],
       },
-      queryFields: ["email", "name"],
+      queryFields: ["type", "groupId", "enabled", "classification"],
       sort: "name",
     }),
   );

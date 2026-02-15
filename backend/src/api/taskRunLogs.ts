@@ -1,15 +1,15 @@
 import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
 import type { Router } from "express";
-import { User } from "../models";
-import type { UserDocument } from "../types";
+import { TaskRunLog } from "../models";
+import type { TaskRunLogDocument } from "../types";
 
-export const addUserRoutes = (
+export const addTaskRunLogRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<UserDocument>>,
+  options?: Partial<ModelRouterOptions<TaskRunLogDocument>>,
 ): void => {
   router.use(
-    "/users",
-    modelRouter(User, {
+    "/taskRunLogs",
+    modelRouter(TaskRunLog, {
       ...options,
       permissions: {
         create: [Permissions.IsAdmin],
@@ -18,8 +18,8 @@ export const addUserRoutes = (
         read: [Permissions.IsAuthenticated],
         update: [Permissions.IsAdmin],
       },
-      queryFields: ["email", "name"],
-      sort: "name",
+      queryFields: ["groupId", "taskId", "trigger", "status", "modelBackend"],
+      sort: "-startedAt",
     }),
   );
 };

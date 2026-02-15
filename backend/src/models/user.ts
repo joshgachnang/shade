@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import passportLocalMongoose from "passport-local-mongoose";
-import type {UserDocument, UserModel} from "../types";
-import {addDefaultPlugins} from "./modelPlugins";
+import type { UserDocument, UserModel } from "../types";
+import { addDefaultPlugins } from "./modelPlugins";
 
 const userSchema = new mongoose.Schema<UserDocument, UserModel>(
   {
@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema<UserDocument, UserModel>(
       type: String,
     },
   },
-  {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
+  { strict: "throw", toJSON: { virtuals: true }, toObject: { virtuals: true } },
 );
 
 userSchema.plugin(passportLocalMongoose, {
@@ -38,5 +38,5 @@ userSchema.method("getDisplayName", function (this: UserDocument): string {
 export const User = mongoose.model<UserDocument, UserModel>("User", userSchema);
 
 User.findByEmail = async function (email: string): Promise<UserDocument | null> {
-  return this.findOneOrNone({email: email.toLowerCase()});
+  return this.findOneOrNone({ email: email.toLowerCase() });
 };
