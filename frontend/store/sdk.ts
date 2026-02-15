@@ -1,7 +1,7 @@
-import {generateTags} from "@terreno/rtk";
+import { generateTags } from "@terreno/rtk";
 import startCase from "lodash/startCase";
 
-import {addTagTypes, openapi} from "./openApiSdk";
+import { addTagTypes, openapi } from "./openApiSdk";
 
 export interface ProfileResponse {
   data: {
@@ -45,20 +45,19 @@ export const terrenoApi = openapi
     },
   });
 
-export const {
-  useEmailLoginMutation,
-  useEmailSignUpMutation,
-  useGetMeQuery,
-  usePatchMeMutation,
-} = terrenoApi;
+export const { useEmailLoginMutation, useEmailSignUpMutation, useGetMeQuery, usePatchMeMutation } =
+  terrenoApi;
 export * from "./openApiSdk";
 
-type OpenApiEndpoints = Record<string, unknown>;
+interface OpenApiEndpoints extends Record<string, unknown> {}
 
-export const getSdkHook = (
-  modelName: string,
-  type: "list" | "read" | "create" | "update" | "remove"
-): Record<string, unknown> => {
+export const getSdkHook = ({
+  modelName,
+  type,
+}: {
+  modelName: string;
+  type: "list" | "read" | "create" | "update" | "remove";
+}): Record<string, unknown> => {
   const modelPath = startCase(modelName).replace(/\s/g, "");
   const endpoints = openapi.endpoints as OpenApiEndpoints;
   switch (type) {

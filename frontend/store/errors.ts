@@ -1,5 +1,5 @@
-import type {Middleware} from "@reduxjs/toolkit";
-import {useToast} from "@terreno/ui";
+import type { Middleware } from "@reduxjs/toolkit";
+import { useToast } from "@terreno/ui";
 
 const ignoredErrors = [
   "Password or username is incorrect",

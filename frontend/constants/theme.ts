@@ -111,5 +111,3 @@ export const colors = {
   tabIconDefault: primitives.neutral600,
   tabIconSelected: primitives.primary400,
 };
-
-export default colors;

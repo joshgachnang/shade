@@ -1,4 +1,4 @@
-import {Box, Heading, Page, Text} from "@terreno/ui";
+import { Box, Heading, Page, Text } from "@terreno/ui";
 import type React from "react";
 
 const HomeScreen: React.FC = () => {
@@ -15,4 +15,5 @@ const HomeScreen: React.FC = () => {
   );
 };
 
+// Expo Router requires default export for route files
 export default HomeScreen;

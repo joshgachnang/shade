@@ -21,7 +21,7 @@ const addMiddleware: AddRoutes = (_router, _options) => {
 };
 
 const addRoutes: AddRoutes = (router, options): void => {
-  addUserRoutes(router, options);
+  addUserRoutes({ router, options });
   addChannelRoutes(router, options);
   addGroupRoutes(router, options);
   addMessageRoutes(router, options);
@@ -34,7 +34,7 @@ const addRoutes: AddRoutes = (router, options): void => {
   addWebhookSourceRoutes(router, options);
 };
 
-export async function start(skipListen = false): Promise<ReturnType<typeof setupServer>> {
+export const start = async (skipListen = false): Promise<ReturnType<typeof setupServer>> => {
   await connectToMongoDB();
   await initDirectories();
 
@@ -58,7 +58,7 @@ export async function start(skipListen = false): Promise<ReturnType<typeof setup
   });
 
   return app;
-}
+};
 
 start().catch((error) => {
   logger.error(`Fatal error starting server: ${error}`);

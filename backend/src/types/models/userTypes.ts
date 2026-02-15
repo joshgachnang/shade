@@ -24,9 +24,9 @@ export interface DefaultPluginFields {
 export type DefaultModel<T> = Model<T & DefaultPluginFields> & DefaultStatics<T>;
 export type DefaultDoc = mongoose.Document<mongoose.Types.ObjectId> & DefaultPluginFields;
 
-export type UserMethods = {
+export interface UserMethods {
   getDisplayName: (this: UserDocument) => string;
-};
+}
 
 export type UserStatics = DefaultStatics<UserDocument> & {
   findByEmail: (this: UserModel, email: string) => Promise<UserDocument | null>;

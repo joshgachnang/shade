@@ -1,7 +1,7 @@
-import {Box, Button, Heading, Page, Text, TextField, useToast} from "@terreno/ui";
+import { Box, Button, Heading, Page, Text, TextField, useToast } from "@terreno/ui";
 import type React from "react";
-import {useCallback, useState} from "react";
-import {useEmailLoginMutation, useEmailSignUpMutation} from "@/store";
+import { useCallback, useState } from "react";
+import { useEmailLoginMutation, useEmailSignUpMutation } from "@/store";
 
 const LoginScreen: React.FC = () => {
   const [name, setName] = useState<string>("");
@@ -10,8 +10,9 @@ const LoginScreen: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState<boolean>(false);
   const toast = useToast();
 
-  const [emailLogin, {isLoading: isLoginLoading, error: loginError}] = useEmailLoginMutation();
-  const [emailSignUp, {isLoading: isSignUpLoading, error: signUpError}] = useEmailSignUpMutation();
+  const [emailLogin, { isLoading: isLoginLoading, error: loginError }] = useEmailLoginMutation();
+  const [emailSignUp, { isLoading: isSignUpLoading, error: signUpError }] =
+    useEmailSignUpMutation();
 
   const handleSubmit = useCallback(async (): Promise<void> => {
     if (!email || !password) {
@@ -26,9 +27,9 @@ const LoginScreen: React.FC = () => {
 
     try {
       if (isSignUp) {
-        await emailSignUp({email, name, password}).unwrap();
+        await emailSignUp({ email, name, password }).unwrap();
       } else {
-        await emailLogin({email, password}).unwrap();
+        await emailLogin({ email, password }).unwrap();
       }
     } catch (err) {
       console.error("Authentication error:", err);
@@ -86,7 +87,7 @@ const LoginScreen: React.FC = () => {
           />
           {Boolean(error) && (
             <Text color="error">
-              {(error as {data?: {message?: string}})?.data?.message || "An error occurred"}
+              {(error as { data?: { message?: string } })?.data?.message || "An error occurred"}
             </Text>
           )}
           <Box marginTop={4}>
@@ -113,4 +114,5 @@ const LoginScreen: React.FC = () => {
   );
 };
 
+// Expo Router requires default export for route files
 export default LoginScreen;

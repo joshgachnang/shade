@@ -1,12 +1,11 @@
-import {Box, Button, Heading, Page, Text} from "@terreno/ui";
+import { Box, Button, Heading, Page, Text } from "@terreno/ui";
 import type React from "react";
-import {useCallback} from "react";
-import {logout, useGetMeQuery} from "@/store";
-import {useAppDispatch} from "@/store";
+import { useCallback } from "react";
+import { logout, useAppDispatch, useGetMeQuery } from "@/store";
 
 const ProfileScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const {data: profile, isLoading} = useGetMeQuery();
+  const { data: profile, isLoading } = useGetMeQuery();
 
   const handleLogout = useCallback((): void => {
     dispatch(logout());
@@ -42,4 +41,5 @@ const ProfileScreen: React.FC = () => {
   );
 };
 
+// Expo Router requires default export for route files
 export default ProfileScreen;

@@ -1,4 +1,4 @@
-import type {ConfigFile} from "@rtk-query/codegen-openapi";
+import type { ConfigFile } from "@rtk-query/codegen-openapi";
 
 const config: ConfigFile = {
   apiFile: "@terreno/rtk",
@@ -13,4 +13,5 @@ const config: ConfigFile = {
   tag: true,
 };
 
+// @rtk-query/codegen-openapi requires default export
 export default config;
