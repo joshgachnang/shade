@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { ScheduledTask } from "../models";
-import type { ScheduledTaskDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {ScheduledTask} from "../models";
+import type {ScheduledTaskDocument} from "../types";
 
 export const addScheduledTaskRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<ScheduledTaskDocument>>,
+  options?: Partial<ModelRouterOptions<ScheduledTaskDocument>>
 ): void => {
   router.use(
     "/scheduledTasks",
@@ -20,6 +20,6 @@ export const addScheduledTaskRoutes = (
       },
       queryFields: ["groupId", "status", "scheduleType", "classification"],
       sort: "-created",
-    }),
+    })
   );
 };

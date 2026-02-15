@@ -1,18 +1,18 @@
-import { type AddRoutes, checkModelsStrict, logger, setupServer } from "@terreno/api";
-import { addAgentSessionRoutes } from "./api/agentSessions";
-import { addChannelRoutes } from "./api/channels";
-import { addCommandClassificationRoutes } from "./api/commandClassifications";
-import { addGroupRoutes } from "./api/groups";
-import { addMessageRoutes } from "./api/messages";
-import { addPluginRoutes } from "./api/plugins";
-import { addRemoteAgentRoutes } from "./api/remoteAgents";
-import { addScheduledTaskRoutes } from "./api/scheduledTasks";
-import { addTaskRunLogRoutes } from "./api/taskRunLogs";
-import { addUserRoutes } from "./api/users";
-import { addWebhookSourceRoutes } from "./api/webhookSources";
-import { User } from "./models/user";
-import { connectToMongoDB } from "./utils/database";
-import { initDirectories } from "./utils/directories";
+import {type AddRoutes, checkModelsStrict, logger, setupServer} from "@terreno/api";
+import {addAgentSessionRoutes} from "./api/agentSessions";
+import {addChannelRoutes} from "./api/channels";
+import {addCommandClassificationRoutes} from "./api/commandClassifications";
+import {addGroupRoutes} from "./api/groups";
+import {addMessageRoutes} from "./api/messages";
+import {addPluginRoutes} from "./api/plugins";
+import {addRemoteAgentRoutes} from "./api/remoteAgents";
+import {addScheduledTaskRoutes} from "./api/scheduledTasks";
+import {addTaskRunLogRoutes} from "./api/taskRunLogs";
+import {addUserRoutes} from "./api/users";
+import {addWebhookSourceRoutes} from "./api/webhookSources";
+import {User} from "./models/user";
+import {connectToMongoDB} from "./utils/database";
+import {initDirectories} from "./utils/directories";
 
 const isDeployed = process.env.NODE_ENV === "production";
 
@@ -21,7 +21,7 @@ const addMiddleware: AddRoutes = (_router, _options) => {
 };
 
 const addRoutes: AddRoutes = (router, options): void => {
-  addUserRoutes({ router, options });
+  addUserRoutes({router, options});
   addChannelRoutes(router, options);
   addGroupRoutes(router, options);
   addMessageRoutes(router, options);
@@ -53,7 +53,6 @@ export const start = async (skipListen = false): Promise<ReturnType<typeof setup
       logRequests: !isDeployed,
     },
     skipListen,
-    // biome-ignore lint/suspicious/noExplicitAny: Typing User model
     userModel: User as any,
   });
 

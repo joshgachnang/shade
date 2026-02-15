@@ -1,4 +1,4 @@
-import { Box, Heading, Page, Text } from "@terreno/ui";
+import {Box, Heading, Page, Text} from "@terreno/ui";
 import type React from "react";
 
 const HomeScreen: React.FC = () => {
@@ -7,7 +7,7 @@ const HomeScreen: React.FC = () => {
       <Box padding={4} gap={4}>
         <Heading>Welcome to Shade</Heading>
         <Text>Your app is ready for development!</Text>
-        <Text color="secondary">
+        <Text color="secondaryLight">
           Start by adding models to the backend and screens to the frontend.
         </Text>
       </Box>

@@ -21,8 +21,15 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ESNext",
-    "types": ["react-native", "@types/react"]
+    "types": ["react-native", "@types/react", "@types/node"]
   },
   "extends": "expo/tsconfig.base",
+  "exclude": [
+    "node_modules",
+    "openapi-config.ts",
+    "scripts",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ],
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

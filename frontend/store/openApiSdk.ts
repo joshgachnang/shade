@@ -1,7 +1,7 @@
 // THIS FILE IS AUTO-GENERATED. DO NOT EDIT.
 // Run "bun run sdk" to regenerate this file from the backend OpenAPI spec.
 
-import { emptySplitApi as api } from "@terreno/rtk";
+import {emptySplitApi as api} from "@terreno/rtk";
 export const addTagTypes = ["Users", "Auth"] as const;
 const injectedRtkApi = api
   .enhanceEndpoints({
@@ -26,7 +26,7 @@ const injectedRtkApi = api
     }),
     overrideExisting: false,
   });
-export { injectedRtkApi as openapi };
+export {injectedRtkApi as openapi};
 export type EmailLoginArgs = {
   email: string;
   password: string;
@@ -46,4 +46,4 @@ export type EmailSignUpRes = {
   refreshToken: string;
   userId: string;
 };
-export const { useEmailLoginMutation, useEmailSignUpMutation } = injectedRtkApi;
+export const {useEmailLoginMutation, useEmailSignUpMutation} = injectedRtkApi;

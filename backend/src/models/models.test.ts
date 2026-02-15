@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import {describe, expect, test} from "bun:test";
 
 describe("models", () => {
   test("all models export correctly", async () => {

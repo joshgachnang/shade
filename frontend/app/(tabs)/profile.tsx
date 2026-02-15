@@ -1,11 +1,11 @@
-import { Box, Button, Heading, Page, Text } from "@terreno/ui";
+import {Box, Button, Heading, Page, Text} from "@terreno/ui";
 import type React from "react";
-import { useCallback } from "react";
-import { logout, useAppDispatch, useGetMeQuery } from "@/store";
+import {useCallback} from "react";
+import {logout, useAppDispatch, useGetMeQuery} from "@/store";
 
 const ProfileScreen: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { data: profile, isLoading } = useGetMeQuery();
+  const {data: profile, isLoading} = useGetMeQuery();
 
   const handleLogout = useCallback((): void => {
     dispatch(logout());
@@ -26,11 +26,11 @@ const ProfileScreen: React.FC = () => {
       <Box padding={4} gap={4}>
         <Heading>Profile</Heading>
         <Box gap={2}>
-          <Text weight="bold">Name</Text>
+          <Text bold>Name</Text>
           <Text>{profile?.data?.name || "Not set"}</Text>
         </Box>
         <Box gap={2}>
-          <Text weight="bold">Email</Text>
+          <Text bold>Email</Text>
           <Text>{profile?.data?.email || "Not set"}</Text>
         </Box>
         <Box marginTop={4}>

@@ -1,21 +1,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { combineReducers, configureStore } from "@reduxjs/toolkit";
-import { generateAuthSlice } from "@terreno/rtk";
-import { DateTime } from "luxon";
-import { useDispatch } from "react-redux";
-import type { Storage } from "redux-persist";
-import { persistReducer, persistStore } from "redux-persist";
+import {combineReducers, configureStore} from "@reduxjs/toolkit";
+import {generateAuthSlice} from "@terreno/rtk";
+import {DateTime} from "luxon";
+import {useDispatch} from "react-redux";
+import type {Storage} from "redux-persist";
+import {persistReducer, persistStore} from "redux-persist";
 
-import { appStateReducer } from "./appState";
-import { rtkQueryErrorMiddleware } from "./errors";
-import { terrenoApi } from "./sdk";
+import {appStateReducer} from "./appState";
+import {rtkQueryErrorMiddleware} from "./errors";
+import {terrenoApi} from "./sdk";
 
 export * from "./appState";
-export { useSentryAndToast } from "./errors";
+export {useSentryAndToast} from "./errors";
 
 const authSlice = generateAuthSlice(terrenoApi);
 
-export const { logout } = authSlice;
+export const {logout} = authSlice;
 
 const createSafeStorage = (): Storage => {
   return {
@@ -58,8 +58,7 @@ const store = configureStore({
   devTools: process.env.NODE_ENV !== "production" && {
     name: `App-${
       typeof window !== "undefined"
-        ? // biome-ignore lint/suspicious/noAssignInExpressions: Window name assignment
-          window.name || ((window.name = `Window-${DateTime.now().toFormat("HH:mm:ss")}`))
+        ? window.name || ((window.name = `Window-${DateTime.now().toFormat("HH:mm:ss")}`))
         : "Unknown"
     }`,
   },
@@ -70,10 +69,8 @@ const store = configureStore({
       thunk: true,
     }).concat([
       ...authSlice.middleware,
-      // biome-ignore lint/suspicious/noExplicitAny: RTK Query middleware typing
       terrenoApi.middleware as any,
       rtkQueryErrorMiddleware,
-      // biome-ignore lint/suspicious/noExplicitAny: Middleware array typing
     ]) as any;
   },
   reducer: persistedReducer,
@@ -85,7 +82,7 @@ export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
 
 export const useAppDispatch: () => AppDispatch = useDispatch;
-export { useAppSelector } from "./appState";
+export {useAppSelector} from "./appState";
 
-export { store };
+export {store};
 export * from "./sdk";

@@ -1,6 +1,6 @@
-import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { RootState } from "@terreno/rtk";
-import { type TypedUseSelectorHook, useSelector } from "react-redux";
+import {createSlice, type PayloadAction} from "@reduxjs/toolkit";
+import type {RootState} from "@terreno/rtk";
+import {type TypedUseSelectorHook, useSelector} from "react-redux";
 
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 
@@ -28,7 +28,7 @@ export const appStateSlice = createSlice({
   },
 });
 
-export const { setDarkMode, setLanguage, resetAppState } = appStateSlice.actions;
+export const {setDarkMode, setLanguage, resetAppState} = appStateSlice.actions;
 
 export const useSelectDarkMode = (): boolean => {
   return useAppSelector((state: RootState): boolean => {

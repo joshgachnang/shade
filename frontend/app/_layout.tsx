@@ -1,18 +1,18 @@
 import FontAwesome from "@expo/vector-icons/FontAwesome";
-import { DefaultTheme, ThemeProvider } from "@react-navigation/native";
-import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import {DefaultTheme, ThemeProvider} from "@react-navigation/native";
+import {useFonts} from "expo-font";
+import {Stack} from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import type React from "react";
-import { useEffect } from "react";
+import {useEffect} from "react";
 import "react-native-reanimated";
-import { baseUrl, useSelectCurrentUserId } from "@terreno/rtk";
-import { TerrenoProvider } from "@terreno/ui";
-import { Provider } from "react-redux";
-import { PersistGate } from "redux-persist/integration/react";
-import { persistor, store } from "@/store";
+import {baseUrl, useSelectCurrentUserId} from "@terreno/rtk";
+import {TerrenoProvider} from "@terreno/ui";
+import {Provider} from "react-redux";
+import {PersistGate} from "redux-persist/integration/react";
+import {persistor, store} from "@/store";
 
-export { ErrorBoundary } from "expo-router";
+export {ErrorBoundary} from "expo-router";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -27,9 +27,9 @@ const RootLayoutNav: React.FC = () => {
     <ThemeProvider value={DefaultTheme}>
       <Stack>
         {!userId ? (
-          <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{headerShown: false}} />
         ) : (
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{headerShown: false}} />
         )}
       </Stack>
     </ThemeProvider>

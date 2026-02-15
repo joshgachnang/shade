@@ -1,7 +1,7 @@
-import { generateTags } from "@terreno/rtk";
+import {generateTags} from "@terreno/rtk";
 import startCase from "lodash/startCase";
 
-import { addTagTypes, openapi } from "./openApiSdk";
+import {addTagTypes, openapi} from "./openApiSdk";
 
 export interface ProfileResponse {
   data: {
@@ -22,14 +22,14 @@ export const terrenoApi = openapi
   .injectEndpoints({
     endpoints: (builder) => ({
       getMe: builder.query<ProfileResponse, void>({
-        providesTags: ["profile"],
+        providesTags: ["profile" as any],
         query: () => ({
           method: "GET",
           url: "/auth/me",
         }),
       }),
       patchMe: builder.mutation<ProfileResponse, UpdateProfileRequest>({
-        invalidatesTags: ["profile"],
+        invalidatesTags: ["profile" as any],
         query: (body) => ({
           body,
           method: "PATCH",
@@ -45,7 +45,7 @@ export const terrenoApi = openapi
     },
   });
 
-export const { useEmailLoginMutation, useEmailSignUpMutation, useGetMeQuery, usePatchMeMutation } =
+export const {useEmailLoginMutation, useEmailSignUpMutation, useGetMeQuery, usePatchMeMutation} =
   terrenoApi;
 export * from "./openApiSdk";
 

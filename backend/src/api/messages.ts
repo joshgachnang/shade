@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { Message } from "../models";
-import type { MessageDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {Message} from "../models";
+import type {MessageDocument} from "../types";
 
 export const addMessageRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<MessageDocument>>,
+  options?: Partial<ModelRouterOptions<MessageDocument>>
 ): void => {
   router.use(
     "/messages",
@@ -20,6 +20,6 @@ export const addMessageRoutes = (
       },
       queryFields: ["groupId", "isFromBot", "processedAt"],
       sort: "-created",
-    }),
+    })
   );
 };

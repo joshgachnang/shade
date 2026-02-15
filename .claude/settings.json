@@ -1,0 +1,18 @@
+{
+  "defaultMode": "acceptEdits",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write", 
+      "Edit",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(pytest *)",
+      "Bash(bun *)",
+      "Bash(PATH=* bun *)",
+      "Bash(gh *)",
+      "Bash(wc *)",
+      "Bash(grep *)"
+    ]
+  }
+}

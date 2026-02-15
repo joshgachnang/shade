@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { AgentSession } from "../models";
-import type { AgentSessionDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {AgentSession} from "../models";
+import type {AgentSessionDocument} from "../types";
 
 export const addAgentSessionRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<AgentSessionDocument>>,
+  options?: Partial<ModelRouterOptions<AgentSessionDocument>>
 ): void => {
   router.use(
     "/agentSessions",
@@ -20,6 +20,6 @@ export const addAgentSessionRoutes = (
       },
       queryFields: ["groupId", "status"],
       sort: "-lastActivityAt",
-    }),
+    })
   );
 };

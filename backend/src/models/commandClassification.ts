@@ -1,23 +1,23 @@
 import mongoose from "mongoose";
-import type { CommandClassificationDocument, CommandClassificationModel } from "../types";
-import { addDefaultPlugins } from "./modelPlugins";
+import type {CommandClassificationDocument, CommandClassificationModel} from "../types";
+import {addDefaultPlugins} from "./modelPlugins";
 
 const commandClassificationSchema = new mongoose.Schema<
   CommandClassificationDocument,
   CommandClassificationModel
 >(
   {
-    pattern: { type: String, required: true },
+    pattern: {type: String, required: true},
     classification: {
       type: String,
       required: true,
       enum: ["public", "internal", "sensitive", "critical"],
     },
-    routeTo: { type: String, enum: ["claude", "ollama", "codex"] },
-    description: { type: String },
-    priority: { type: Number, default: 0 },
+    routeTo: {type: String, enum: ["claude", "ollama", "codex"]},
+    description: {type: String},
+    priority: {type: Number, default: 0},
   },
-  { strict: "throw", toJSON: { virtuals: true }, toObject: { virtuals: true } },
+  {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );
 
 addDefaultPlugins(commandClassificationSchema);

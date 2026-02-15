@@ -1,5 +1,5 @@
-import type { Middleware } from "@reduxjs/toolkit";
-import { useToast } from "@terreno/ui";
+import type {Middleware} from "@reduxjs/toolkit";
+import {useToast} from "@terreno/ui";
 
 const ignoredErrors = [
   "Password or username is incorrect",
@@ -7,7 +7,6 @@ const ignoredErrors = [
   "Failed to refresh token",
 ];
 
-// biome-ignore lint/suspicious/noExplicitAny: Generic middleware
 export const rtkQueryErrorMiddleware: Middleware = () => (next) => (action: any) => {
   if (action?.error && action?.payload) {
     const errorMessage =

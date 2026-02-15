@@ -1,7 +1,7 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { User } from "../models";
-import type { UserDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {User} from "../models";
+import type {UserDocument} from "../types";
 
 export const addUserRoutes = ({
   router,
@@ -23,6 +23,6 @@ export const addUserRoutes = ({
       },
       queryFields: ["email", "name"],
       sort: "name",
-    }),
+    })
   );
 };

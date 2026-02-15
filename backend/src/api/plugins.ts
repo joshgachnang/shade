@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { Plugin } from "../models";
-import type { PluginDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {Plugin} from "../models";
+import type {PluginDocument} from "../types";
 
 export const addPluginRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<PluginDocument>>,
+  options?: Partial<ModelRouterOptions<PluginDocument>>
 ): void => {
   router.use(
     "/plugins",
@@ -20,6 +20,6 @@ export const addPluginRoutes = (
       },
       queryFields: ["enabled"],
       sort: "name",
-    }),
+    })
   );
 };

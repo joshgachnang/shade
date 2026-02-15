@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
-import { exec } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {exec} from "node:child_process";
+import {existsSync, readFileSync, writeFileSync} from "node:fs";
+import {join} from "node:path";
 
 const cliPath = join(
   __dirname,
@@ -12,7 +12,7 @@ const cliPath = join(
   "codegen-openapi",
   "lib",
   "bin",
-  "cli.mjs",
+  "cli.mjs"
 );
 const configPath = join(__dirname, "..", "openapi-config.ts");
 const tsConfigPath = join(__dirname, "..", "tsconfig.codegen.json");
@@ -38,12 +38,12 @@ exec(command, (error, _stdout, stderr): void => {
 
   exec(
     "bunx biome check --unsafe --write store/openApiSdk.ts",
-    { cwd: join(__dirname, "..") },
+    {cwd: join(__dirname, "..")},
     (formatError): void => {
       if (formatError) {
         console.error(`Formatting error: ${formatError.message}`);
         process.exit(1);
       }
-    },
+    }
   );
 });
