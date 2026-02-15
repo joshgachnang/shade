@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { TaskRunLog } from "../models";
-import type { TaskRunLogDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {TaskRunLog} from "../models";
+import type {TaskRunLogDocument} from "../types";
 
 export const addTaskRunLogRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<TaskRunLogDocument>>,
+  options?: Partial<ModelRouterOptions<TaskRunLogDocument>>
 ): void => {
   router.use(
     "/taskRunLogs",
@@ -20,6 +20,6 @@ export const addTaskRunLogRoutes = (
       },
       queryFields: ["groupId", "taskId", "trigger", "status", "modelBackend"],
       sort: "-startedAt",
-    }),
+    })
   );
 };

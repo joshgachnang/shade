@@ -1,8 +1,7 @@
 import {Box, Button, Heading, Page, Text} from "@terreno/ui";
 import type React from "react";
 import {useCallback} from "react";
-import {logout, useGetMeQuery} from "@/store";
-import {useAppDispatch} from "@/store";
+import {logout, useAppDispatch, useGetMeQuery} from "@/store";
 
 const ProfileScreen: React.FC = () => {
   const dispatch = useAppDispatch();

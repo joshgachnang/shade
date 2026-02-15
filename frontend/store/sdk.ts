@@ -45,12 +45,8 @@ export const terrenoApi = openapi
     },
   });
 
-export const {
-  useEmailLoginMutation,
-  useEmailSignUpMutation,
-  useGetMeQuery,
-  usePatchMeMutation,
-} = terrenoApi;
+export const {useEmailLoginMutation, useEmailSignUpMutation, useGetMeQuery, usePatchMeMutation} =
+  terrenoApi;
 export * from "./openApiSdk";
 
 type OpenApiEndpoints = Record<string, unknown>;

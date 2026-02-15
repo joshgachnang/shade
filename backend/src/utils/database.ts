@@ -1,4 +1,4 @@
-import { logger } from "@terreno/api";
+import {logger} from "@terreno/api";
 import mongoose from "mongoose";
 
 export const connectToMongoDB = async (): Promise<void> => {

@@ -58,7 +58,6 @@ const store = configureStore({
   devTools: process.env.NODE_ENV !== "production" && {
     name: `App-${
       typeof window !== "undefined"
-        // biome-ignore lint/suspicious/noAssignInExpressions: Window name assignment
         ? window.name || ((window.name = `Window-${DateTime.now().toFormat("HH:mm:ss")}`))
         : "Unknown"
     }`,
@@ -70,10 +69,8 @@ const store = configureStore({
       thunk: true,
     }).concat([
       ...authSlice.middleware,
-      // biome-ignore lint/suspicious/noExplicitAny: RTK Query middleware typing
       terrenoApi.middleware as any,
       rtkQueryErrorMiddleware,
-      // biome-ignore lint/suspicious/noExplicitAny: Middleware array typing
     ]) as any;
   },
   reducer: persistedReducer,

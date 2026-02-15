@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { RemoteAgent } from "../models";
-import type { RemoteAgentDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {RemoteAgent} from "../models";
+import type {RemoteAgentDocument} from "../types";
 
 export const addRemoteAgentRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<RemoteAgentDocument>>,
+  options?: Partial<ModelRouterOptions<RemoteAgentDocument>>
 ): void => {
   router.use(
     "/remoteAgents",
@@ -20,6 +20,6 @@ export const addRemoteAgentRoutes = (
       },
       queryFields: ["status", "capabilities"],
       sort: "name",
-    }),
+    })
   );
 };

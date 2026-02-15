@@ -1,17 +1,17 @@
 /// <reference types="passport-local-mongoose" />
-import type { APIErrorConstructor } from "@terreno/api";
+import type {APIErrorConstructor} from "@terreno/api";
 import type mongoose from "mongoose";
-import type { Document, FilterQuery, Model } from "mongoose";
+import type {Document, FilterQuery, Model} from "mongoose";
 
 export interface DefaultStatics<T> {
   findOneOrNone(
     query: FilterQuery<T>,
-    errorArgs?: Partial<APIErrorConstructor>,
+    errorArgs?: Partial<APIErrorConstructor>
   ): Promise<(Document & T) | null>;
 
   findExactlyOne(
     query: FilterQuery<T>,
-    errorArgs?: Partial<APIErrorConstructor>,
+    errorArgs?: Partial<APIErrorConstructor>
   ): Promise<Document & T>;
 }
 

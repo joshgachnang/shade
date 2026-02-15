@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { CommandClassification } from "../models";
-import type { CommandClassificationDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {CommandClassification} from "../models";
+import type {CommandClassificationDocument} from "../types";
 
 export const addCommandClassificationRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<CommandClassificationDocument>>,
+  options?: Partial<ModelRouterOptions<CommandClassificationDocument>>
 ): void => {
   router.use(
     "/commandClassifications",
@@ -20,6 +20,6 @@ export const addCommandClassificationRoutes = (
       },
       queryFields: ["classification"],
       sort: "-priority",
-    }),
+    })
   );
 };

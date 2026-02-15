@@ -7,7 +7,6 @@ const ignoredErrors = [
   "Failed to refresh token",
 ];
 
-// biome-ignore lint/suspicious/noExplicitAny: Generic middleware
 export const rtkQueryErrorMiddleware: Middleware = () => (next) => (action: any) => {
   if (action?.error && action?.payload) {
     const errorMessage =

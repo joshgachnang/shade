@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { Group } from "../models";
-import type { GroupDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {Group} from "../models";
+import type {GroupDocument} from "../types";
 
 export const addGroupRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<GroupDocument>>,
+  options?: Partial<ModelRouterOptions<GroupDocument>>
 ): void => {
   router.use(
     "/groups",
@@ -20,6 +20,6 @@ export const addGroupRoutes = (
       },
       queryFields: ["channelId", "isMain", "name"],
       sort: "name",
-    }),
+    })
   );
 };

@@ -1,5 +1,5 @@
 import type mongoose from "mongoose";
-import type { DefaultDoc, DefaultModel, DefaultStatics } from "./userTypes";
+import type {DefaultDoc, DefaultModel, DefaultStatics} from "./userTypes";
 
 export interface GroupModelConfig {
   defaultBackend?: "claude" | "ollama" | "codex";

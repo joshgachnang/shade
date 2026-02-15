@@ -1,11 +1,11 @@
-import { type ModelRouterOptions, modelRouter, Permissions } from "@terreno/api";
-import type { Router } from "express";
-import { Channel } from "../models";
-import type { ChannelDocument } from "../types";
+import {type ModelRouterOptions, modelRouter, Permissions} from "@terreno/api";
+import type {Router} from "express";
+import {Channel} from "../models";
+import type {ChannelDocument} from "../types";
 
 export const addChannelRoutes = (
   router: Router,
-  options?: Partial<ModelRouterOptions<ChannelDocument>>,
+  options?: Partial<ModelRouterOptions<ChannelDocument>>
 ): void => {
   router.use(
     "/channels",
@@ -20,6 +20,6 @@ export const addChannelRoutes = (
       },
       queryFields: ["type", "status"],
       sort: "name",
-    }),
+    })
   );
 };
