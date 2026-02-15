@@ -22,14 +22,14 @@ export const terrenoApi = openapi
   .injectEndpoints({
     endpoints: (builder) => ({
       getMe: builder.query<ProfileResponse, void>({
-        providesTags: ["profile"],
+        providesTags: ["profile" as any],
         query: () => ({
           method: "GET",
           url: "/auth/me",
         }),
       }),
       patchMe: builder.mutation<ProfileResponse, UpdateProfileRequest>({
-        invalidatesTags: ["profile"],
+        invalidatesTags: ["profile" as any],
         query: (body) => ({
           body,
           method: "PATCH",

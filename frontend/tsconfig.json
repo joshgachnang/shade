@@ -38,10 +38,16 @@
     "target": "ESNext",
     "types": [
       "react-native",
-      "@types/react"
+      "@types/react",
+      "@types/node"
     ]
   },
   "extends": "expo/tsconfig.base",
+  "exclude": [
+    "node_modules",
+    "openapi-config.ts",
+    "scripts"
+  ],
   "include": [
     "**/*.ts",
     "**/*.tsx",

@@ -26,11 +26,11 @@ const ProfileScreen: React.FC = () => {
       <Box padding={4} gap={4}>
         <Heading>Profile</Heading>
         <Box gap={2}>
-          <Text weight="bold">Name</Text>
+          <Text bold>Name</Text>
           <Text>{profile?.data?.name || "Not set"}</Text>
         </Box>
         <Box gap={2}>
-          <Text weight="bold">Email</Text>
+          <Text bold>Email</Text>
           <Text>{profile?.data?.email || "Not set"}</Text>
         </Box>
         <Box marginTop={4}>

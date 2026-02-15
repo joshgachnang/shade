@@ -6,8 +6,8 @@ const NotFoundScreen: React.FC = () => {
   return (
     <>
       <Stack.Screen options={{title: "Oops!"}} />
-      <Box flex={1} alignItems="center" justifyContent="center" padding={4}>
-        <Text size="lg" weight="bold">
+      <Box flex="grow" alignItems="center" justifyContent="center" padding={4}>
+        <Text size="lg" bold>
           This screen doesn't exist.
         </Text>
         <Link href="/" style={{marginTop: 16}}>
