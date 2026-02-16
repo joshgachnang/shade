@@ -17,10 +17,9 @@ setup("authenticate", async ({page, request}) => {
 
   if (signupRes.ok()) {
     const body = await signupRes.json();
-    console.log(`[Auth Setup] Signup response body: ${JSON.stringify(body)}`);
-    token = body.token;
-    refreshToken = body.refreshToken;
-    userId = body.userId;
+    token = body.data.token;
+    refreshToken = body.data.refreshToken;
+    userId = body.data.userId;
     console.log(`[Auth Setup] Signup succeeded, userId: ${userId}`);
   } else {
     // User exists — log in instead
@@ -30,9 +29,9 @@ setup("authenticate", async ({page, request}) => {
     });
     expect(loginRes.ok()).toBeTruthy();
     const body = await loginRes.json();
-    token = body.token;
-    refreshToken = body.refreshToken;
-    userId = body.userId;
+    token = body.data.token;
+    refreshToken = body.data.refreshToken;
+    userId = body.data.userId;
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
