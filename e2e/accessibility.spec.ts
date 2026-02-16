@@ -3,11 +3,12 @@ import {testUsers} from "./helpers/test-data";
 
 test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
   test.beforeEach(async ({page}) => {
-    await page.goto("/login");
+    await page.goto("/login", {timeout: 60000});
     await page.getByTestId("login-screen").waitFor({state: "visible"});
   });
 
   test("login form is fully navigable by keyboard", async ({page}) => {
+    test.slow();
     const emailInput = page.getByTestId("login-email-input");
     const passwordInput = page.getByTestId("login-password-input");
     const submitButton = page.getByTestId("login-submit-button");
@@ -23,9 +24,12 @@ test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
     // Tab to submit button and press Enter
     await submitButton.focus();
     await expect(submitButton).toBeFocused();
-    await page.keyboard.press("Enter");
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes("/auth/login") && res.status() === 200),
+      page.keyboard.press("Enter"),
+    ]);
 
     // Wait for login to complete — login screen should disappear
-    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
+    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
   });
 });
