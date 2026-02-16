@@ -3,13 +3,7 @@ import type {GroupDocument, MessageDocument} from "../types";
 import {GroupQueue} from "./groupQueue";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
 
-// Mock dependencies to avoid DB calls
-mock.module("../models/message", () => ({
-  Message: {
-    updateMany: mock(() => Promise.resolve()),
-  },
-}));
-
+// Mock DB models to avoid MongoDB connections
 mock.module("../models/taskRunLog", () => ({
   TaskRunLog: {
     create: mock(() => Promise.resolve({_id: "taskrun1"})),
@@ -23,7 +17,7 @@ mock.module("../models/agentSession", () => ({
     create: mock(() =>
       Promise.resolve({
         sessionId: "session1",
-        transcriptPath: "/tmp/transcript.jsonl",
+        transcriptPath: "/tmp/claude/transcript.jsonl",
         messageCount: 0,
       })
     ),
@@ -39,15 +33,22 @@ mock.module("../models/message", () => ({
   },
 }));
 
-// Mock filesystem operations used by sessions and memory
-mock.module("node:fs/promises", () => ({
-  default: {
-    mkdir: mock(() => Promise.resolve()),
-    appendFile: mock(() => Promise.resolve()),
-    readFile: mock(() => Promise.resolve("")),
-    writeFile: mock(() => Promise.resolve()),
-    stat: mock(() => Promise.resolve({isDirectory: () => true})),
-  },
+// Mock session and memory modules to avoid filesystem operations
+mock.module("./sessions", () => ({
+  getOrCreateSession: mock(() =>
+    Promise.resolve({
+      sessionId: "session1",
+      transcriptPath: "/tmp/claude/transcript.jsonl",
+      messageCount: 0,
+      resumeSessionAt: undefined,
+    })
+  ),
+  updateSessionActivity: mock(() => Promise.resolve()),
+  appendToTranscript: mock(() => Promise.resolve()),
+}));
+
+mock.module("./memory", () => ({
+  ensureGroupDirectory: mock((folder: string) => Promise.resolve(`/tmp/claude/groups/${folder}`)),
 }));
 
 const makeGroup = (id = "group1"): GroupDocument => {
