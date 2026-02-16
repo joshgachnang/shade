@@ -1,0 +1,83 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+
+    env:
+      PORT: 4020
+      MONGO_URI: mongodb://localhost:27017/shade-test
+      TOKEN_SECRET: test-secret-for-ci
+      REFRESH_TOKEN_SECRET: test-refresh-secret-for-ci
+      EXPO_PUBLIC_API_URL: http://localhost:4020
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install backend dependencies
+        run: cd backend && bun install
+
+      - name: Install frontend dependencies
+        run: cd frontend && bun install
+
+      - name: Install Playwright
+        run: bun add -d @playwright/test
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
+      - name: Start backend
+        run: cd backend && nohup bun run start > /tmp/backend.log 2>&1 &
+
+      - name: Wait for backend
+        run: |
+          echo "Waiting for backend on port 4020..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:4020/openapi.json > /dev/null 2>&1; then
+              echo "Backend is ready!"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend failed to start within 60 seconds"
+          exit 1
+
+      - name: Run Playwright tests
+        run: bunx playwright test --project=chromium
+        env:
+          CI: true
+
+      - name: Print backend logs
+        if: ${{ !cancelled() }}
+        run: cat /tmp/backend.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 14

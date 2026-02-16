@@ -52,10 +52,11 @@ const LoginScreen: React.FC = () => {
         justifyContent="center"
         maxWidth={400}
         padding={4}
+        testID="login-screen"
         width="100%"
       >
         <Box marginBottom={8}>
-          <Heading>{isSignUp ? "Create Account" : "Welcome Back"}</Heading>
+          <Heading testID="login-heading">{isSignUp ? "Create Account" : "Welcome Back"}</Heading>
         </Box>
         <Box gap={4} width="100%">
           {isSignUp && (
@@ -63,6 +64,7 @@ const LoginScreen: React.FC = () => {
               disabled={isLoading}
               onChange={setName}
               placeholder="Name"
+              testID="login-name-input"
               title="Name"
               value={name}
             />
@@ -72,6 +74,7 @@ const LoginScreen: React.FC = () => {
             disabled={isLoading}
             onChange={setEmail}
             placeholder="Email"
+            testID="login-email-input"
             title="Email"
             type="email"
             value={email}
@@ -80,12 +83,13 @@ const LoginScreen: React.FC = () => {
             disabled={isLoading}
             onChange={setPassword}
             placeholder="Password"
+            testID="login-password-input"
             title="Password"
             type="password"
             value={password}
           />
           {Boolean(error) && (
-            <Text color="error">
+            <Text color="error" testID="login-error-message">
               {(error as {data?: {message?: string}})?.data?.message || "An error occurred"}
             </Text>
           )}
@@ -95,6 +99,7 @@ const LoginScreen: React.FC = () => {
               fullWidth
               loading={isLoading}
               onClick={handleSubmit}
+              testID="login-submit-button"
               text={isSignUp ? "Sign Up" : "Login"}
             />
           </Box>
@@ -103,6 +108,7 @@ const LoginScreen: React.FC = () => {
               disabled={isLoading}
               fullWidth
               onClick={toggleMode}
+              testID="login-toggle-button"
               text={isSignUp ? "Already have an account? Login" : "Need an account? Sign Up"}
               variant="outline"
             />

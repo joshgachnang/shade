@@ -14,8 +14,8 @@ const ProfileScreen: React.FC = () => {
   if (isLoading) {
     return (
       <Page navigation={undefined} title="Profile">
-        <Box padding={4}>
-          <Text>Loading...</Text>
+        <Box padding={4} testID="profile-screen">
+          <Text testID="profile-loading">Loading...</Text>
         </Box>
       </Page>
     );
@@ -23,18 +23,24 @@ const ProfileScreen: React.FC = () => {
 
   return (
     <Page navigation={undefined} title="Profile">
-      <Box padding={4} gap={4}>
+      <Box padding={4} gap={4} testID="profile-screen">
         <Heading>Profile</Heading>
         <Box gap={2}>
           <Text bold>Name</Text>
-          <Text>{profile?.data?.name || "Not set"}</Text>
+          <Text testID="profile-name-text">{profile?.data?.name || "Not set"}</Text>
         </Box>
         <Box gap={2}>
           <Text bold>Email</Text>
-          <Text>{profile?.data?.email || "Not set"}</Text>
+          <Text testID="profile-email-text">{profile?.data?.email || "Not set"}</Text>
         </Box>
         <Box marginTop={4}>
-          <Button onClick={handleLogout} text="Logout" variant="outline" fullWidth />
+          <Button
+            onClick={handleLogout}
+            testID="profile-logout-button"
+            text="Logout"
+            variant="outline"
+            fullWidth
+          />
         </Box>
       </Box>
     </Page>

@@ -4,7 +4,7 @@ import type React from "react";
 const HomeScreen: React.FC = () => {
   return (
     <Page navigation={undefined} title="Home">
-      <Box padding={4} gap={4}>
+      <Box padding={4} gap={4} testID="home-screen">
         <Heading>Welcome to Shade</Heading>
         <Text>Your app is ready for development!</Text>
         <Text color="secondaryLight">
