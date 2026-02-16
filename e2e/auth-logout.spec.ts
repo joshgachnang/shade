@@ -40,8 +40,8 @@ test.describe("Feature: Logout", () => {
       {timeout: 15000}
     );
 
-    // Reload so Expo Router re-evaluates layout with cleared auth state
-    await page.reload({timeout: 60000});
+    // Navigate to login since Expo Router doesn't auto-redirect after logout
+    await page.goto("/login", {timeout: 60000});
     await expect(page.getByTestId("login-screen")).toBeVisible({timeout: 15000});
   });
 });

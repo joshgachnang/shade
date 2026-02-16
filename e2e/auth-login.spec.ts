@@ -16,9 +16,10 @@ test.describe("Feature: Login", () => {
       page.waitForResponse((res) => res.url().includes("/auth/login") && res.status() === 200),
       page.getByTestId("login-submit-button").click(),
     ]);
-    // Wait for auth state to persist, then reload so Expo Router re-evaluates layout
+    // Wait for RTK listener middleware to persist auth state, then navigate to root
+    // (reload at /login won't work because Expo Router still matches the login route)
     await waitForAuthPersisted(page);
-    await page.reload({timeout: 60000});
+    await page.goto("/", {timeout: 60000});
     await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   });
 
@@ -81,9 +82,9 @@ test.describe("Feature: Signup", () => {
       page.waitForResponse((res) => res.url().includes("/auth/signup") && res.status() === 200),
       page.getByTestId("login-submit-button").click(),
     ]);
-    // Wait for auth state to persist, then reload so Expo Router re-evaluates layout
+    // Wait for RTK listener middleware to persist auth state, then navigate to root
     await waitForAuthPersisted(page);
-    await page.reload({timeout: 60000});
+    await page.goto("/", {timeout: 60000});
     await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   });
 });
