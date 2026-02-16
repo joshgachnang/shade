@@ -11,6 +11,7 @@ import {addTaskRunLogRoutes} from "./api/taskRunLogs";
 import {addUserRoutes} from "./api/users";
 import {addWebhookSourceRoutes} from "./api/webhookSources";
 import {User} from "./models/user";
+import {startOrchestrator} from "./orchestrator";
 import {connectToMongoDB} from "./utils/database";
 import {initDirectories} from "./utils/directories";
 
@@ -55,6 +56,13 @@ export const start = async (skipListen = false): Promise<ReturnType<typeof setup
     skipListen,
     userModel: User as any,
   });
+
+  // Start the orchestrator with the Express app for webhook routes
+  if (!skipListen) {
+    startOrchestrator(app).catch((err) => {
+      logger.error(`Failed to start orchestrator: ${err}`);
+    });
+  }
 
   return app;
 };
