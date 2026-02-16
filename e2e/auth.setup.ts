@@ -1,57 +1,74 @@
 import {test as setup, expect} from "@playwright/test";
 
-setup("authenticate", async ({page}) => {
+setup("authenticate", async ({page, request}) => {
   setup.setTimeout(90000);
 
-  // Log API responses for debugging
-  page.on("response", (response) => {
-    if (response.url().includes("/auth/")) {
-      console.log(`[Auth API] ${response.status()} ${response.url()}`);
-    }
+  const baseApiUrl = "http://localhost:4020";
+
+  // Create test user via API directly (faster and more reliable than UI)
+  let token: string;
+  let refreshToken: string;
+  let userId: string;
+
+  // Try signup first
+  const signupRes = await request.post(`${baseApiUrl}/auth/signup`, {
+    data: {email: "test@example.com", name: "Test User", password: "password123"},
   });
 
-  await page.goto("/login", {timeout: 60000});
-  await page.getByTestId("login-screen").waitFor({state: "visible"});
-
-  // Try to sign up first (for fresh CI databases)
-  await page.getByTestId("login-toggle-button").click();
-  await page.getByTestId("login-name-input").waitFor({state: "visible"});
-  await page.getByTestId("login-name-input").fill("Test User");
-  await page.getByTestId("login-email-input").fill("test@example.com");
-  await page.getByTestId("login-password-input").fill("password123");
-
-  // Click and wait for the actual API response
-  const [signupResponse] = await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/auth/signup"), {timeout: 15000}),
-    page.getByTestId("login-submit-button").click(),
-  ]);
-
-  const signupOk = signupResponse.ok();
-  console.log(`[Auth Setup] Signup response: ${signupResponse.status()}`);
-
-  if (!signupOk) {
-    console.log("[Auth Setup] Signup failed, falling back to login");
-
-    // Switch to login mode
-    await page.getByTestId("login-toggle-button").click();
-    await page.getByTestId("login-name-input").waitFor({state: "hidden"});
-
-    // Clear and re-fill for login
-    await page.getByTestId("login-email-input").fill("");
-    await page.getByTestId("login-email-input").fill("test@example.com");
-    await page.getByTestId("login-password-input").fill("");
-    await page.getByTestId("login-password-input").fill("password123");
-
-    const [loginResponse] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/auth/login"), {timeout: 15000}),
-      page.getByTestId("login-submit-button").click(),
-    ]);
-    console.log(`[Auth Setup] Login response: ${loginResponse.status()}`);
+  if (signupRes.ok()) {
+    const body = await signupRes.json();
+    token = body.token;
+    refreshToken = body.refreshToken;
+    userId = body.userId;
+    console.log(`[Auth Setup] Signup succeeded, userId: ${userId}`);
+  } else {
+    // User exists — log in instead
+    console.log(`[Auth Setup] Signup returned ${signupRes.status()}, falling back to login`);
+    const loginRes = await request.post(`${baseApiUrl}/auth/login`, {
+      data: {email: "test@example.com", password: "password123"},
+    });
+    expect(loginRes.ok()).toBeTruthy();
+    const body = await loginRes.json();
+    token = body.token;
+    refreshToken = body.refreshToken;
+    userId = body.userId;
+    console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
-  // Wait for auth state change
+  // Navigate to the app to set up the browser context
+  await page.goto("/", {timeout: 60000});
+
+  // Inject auth state into localStorage (matching @terreno/rtk persist format)
+  await page.evaluate(
+    ({token, refreshToken, userId}) => {
+      const authState = {
+        token,
+        refreshToken,
+        userId,
+      };
+
+      // The Redux persist key is "root" and auth is at the "auth" key
+      const persistedState = {
+        auth: authState,
+        appState: {},
+        _persist: {version: 1, rehydrated: true},
+      };
+
+      localStorage.setItem("persist:root", JSON.stringify({
+        auth: JSON.stringify(authState),
+        appState: JSON.stringify({}),
+        _persist: JSON.stringify({version: 1, rehydrated: true}),
+      }));
+    },
+    {token, refreshToken, userId}
+  );
+
+  // Reload to pick up the persisted state
+  await page.reload({timeout: 60000});
+
+  // Verify we're authenticated — login screen should not appear
   await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
 
-  // Save auth state
+  // Save browser state for other tests
   await page.context().storageState({path: "./e2e/.auth/user.json"});
 });
