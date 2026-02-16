@@ -17,6 +17,7 @@ setup("authenticate", async ({page, request}) => {
 
   if (signupRes.ok()) {
     const body = await signupRes.json();
+    console.log(`[Auth Setup] Signup response body: ${JSON.stringify(body)}`);
     token = body.token;
     refreshToken = body.refreshToken;
     userId = body.userId;
