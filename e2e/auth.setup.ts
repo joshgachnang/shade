@@ -19,15 +19,18 @@ setup("authenticate", async ({page}) => {
   await page.getByTestId("login-name-input").fill("Test User");
   await page.getByTestId("login-email-input").fill("test@example.com");
   await page.getByTestId("login-password-input").fill("password123");
-  await page.getByTestId("login-submit-button").click();
 
-  // Wait for the API response
-  await page.waitForLoadState("networkidle");
+  // Click and wait for the actual API response
+  const [signupResponse] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/auth/signup"), {timeout: 15000}),
+    page.getByTestId("login-submit-button").click(),
+  ]);
 
-  // Check if signup failed (user already exists) — fall back to login
-  const stillOnLogin = await page.getByTestId("login-screen").isVisible();
-  if (stillOnLogin) {
-    console.log("[Auth Setup] Signup failed or user exists, falling back to login");
+  const signupOk = signupResponse.ok();
+  console.log(`[Auth Setup] Signup response: ${signupResponse.status()}`);
+
+  if (!signupOk) {
+    console.log("[Auth Setup] Signup failed, falling back to login");
 
     // Switch to login mode
     await page.getByTestId("login-toggle-button").click();
@@ -38,9 +41,12 @@ setup("authenticate", async ({page}) => {
     await page.getByTestId("login-email-input").fill("test@example.com");
     await page.getByTestId("login-password-input").fill("");
     await page.getByTestId("login-password-input").fill("password123");
-    await page.getByTestId("login-submit-button").click();
 
-    await page.waitForLoadState("networkidle");
+    const [loginResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/auth/login"), {timeout: 15000}),
+      page.getByTestId("login-submit-button").click(),
+    ]);
+    console.log(`[Auth Setup] Login response: ${loginResponse.status()}`);
   }
 
   // Wait for auth state change
