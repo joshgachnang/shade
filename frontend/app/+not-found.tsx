@@ -6,11 +6,17 @@ const NotFoundScreen: React.FC = () => {
   return (
     <>
       <Stack.Screen options={{title: "Oops!"}} />
-      <Box flex="grow" alignItems="center" justifyContent="center" padding={4}>
-        <Text size="lg" bold>
+      <Box
+        flex="grow"
+        alignItems="center"
+        justifyContent="center"
+        padding={4}
+        testID="not-found-screen"
+      >
+        <Text size="lg" bold testID="not-found-message">
           This screen doesn't exist.
         </Text>
-        <Link href="/" style={{marginTop: 16}}>
+        <Link href="/" style={{marginTop: 16}} testID="not-found-home-link">
           <Text color="link">Go to home screen</Text>
         </Link>
       </Box>
