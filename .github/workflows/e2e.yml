@@ -17,6 +17,12 @@ jobs:
         ports:
           - 27017:27017
 
+    env:
+      PORT: 4020
+      MONGO_URI: mongodb://localhost:27017/shade-test
+      JWT_SECRET: test-secret-for-ci
+      EXPO_PUBLIC_API_URL: http://localhost:4020
+
     steps:
       - uses: actions/checkout@v4
 
@@ -38,17 +44,19 @@ jobs:
 
       - name: Start backend
         run: cd backend && bun run start &
-        env:
-          PORT: 4020
-          MONGO_URI: mongodb://localhost:27017/shade-test
-          JWT_SECRET: test-secret-for-ci
 
       - name: Wait for backend
         run: |
-          for i in $(seq 1 30); do
-            curl -s http://localhost:4020/health && break
+          echo "Waiting for backend on port 4020..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:4020/openapi.json > /dev/null 2>&1; then
+              echo "Backend is ready!"
+              exit 0
+            fi
             sleep 1
           done
+          echo "Backend failed to start within 60 seconds"
+          exit 1
 
       - name: Run Playwright tests
         run: bunx playwright test --project=chromium
