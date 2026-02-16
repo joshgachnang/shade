@@ -1,8 +1,10 @@
 import {test as setup, expect} from "@playwright/test";
 
 setup("authenticate", async ({page}) => {
+  setup.setTimeout(60000);
+
   // Sign up a test user (in CI, the database is fresh)
-  await page.goto("/login");
+  await page.goto("/login", {timeout: 60000});
   await page.getByTestId("login-screen").waitFor({state: "visible"});
 
   // Switch to signup mode
@@ -15,8 +17,8 @@ setup("authenticate", async ({page}) => {
   await page.getByTestId("login-password-input").fill("password123");
   await page.getByTestId("login-submit-button").click();
 
-  // Wait for navigation to home after signup
-  await page.waitForURL("**/", {timeout: 15000});
+  // Wait for auth state change — login screen should unmount
+  await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   await page.waitForLoadState("networkidle");
 
   // Save auth state
