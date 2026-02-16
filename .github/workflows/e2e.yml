@@ -20,7 +20,7 @@ jobs:
     env:
       PORT: 4020
       MONGO_URI: mongodb://localhost:27017/shade-test
-      JWT_SECRET: test-secret-for-ci
+      TOKEN_SECRET: test-secret-for-ci
       EXPO_PUBLIC_API_URL: http://localhost:4020
 
     steps:
