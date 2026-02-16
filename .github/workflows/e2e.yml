@@ -43,7 +43,7 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Start backend
-        run: cd backend && bun run start &
+        run: cd backend && nohup bun run start > /tmp/backend.log 2>&1 &
 
       - name: Wait for backend
         run: |
@@ -62,6 +62,10 @@ jobs:
         run: bunx playwright test --project=chromium
         env:
           CI: true
+
+      - name: Print backend logs
+        if: ${{ !cancelled() }}
+        run: cat /tmp/backend.log || true
 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
