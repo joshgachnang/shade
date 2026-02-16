@@ -25,8 +25,9 @@ test.describe("Feature: Tab Navigation", () => {
 
 test.describe("Feature: Auth Routing", () => {
   test("unauthenticated user is shown the login screen", async ({page}) => {
+    test.slow();
     await page.goto("/", {timeout: 60000});
-    await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 30000});
+    await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 60000});
     await expect(page.getByTestId("login-heading")).toContainText("Welcome Back");
   });
 

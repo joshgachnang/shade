@@ -1,4 +1,5 @@
 import {test, expect} from "@playwright/test";
+import {waitForAuthPersisted} from "./helpers/auth";
 import {testUsers} from "./helpers/test-data";
 
 test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
@@ -29,7 +30,8 @@ test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
       page.keyboard.press("Enter"),
     ]);
 
-    // Wait for login to complete — login screen should disappear
+    // Wait for auth state to persist and login screen to disappear
+    await waitForAuthPersisted(page);
     await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
   });
 });

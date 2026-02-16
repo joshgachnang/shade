@@ -1,4 +1,5 @@
 import {test, expect} from "@playwright/test";
+import {waitForAuthPersisted} from "./helpers/auth";
 import {testUsers} from "./helpers/test-data";
 
 test.describe("Feature: Login", () => {
@@ -15,6 +16,8 @@ test.describe("Feature: Login", () => {
       page.waitForResponse((res) => res.url().includes("/auth/login") && res.status() === 200),
       page.getByTestId("login-submit-button").click(),
     ]);
+    // Wait for RTK listener middleware to persist auth state
+    await waitForAuthPersisted(page);
     await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
   });
 
@@ -77,6 +80,8 @@ test.describe("Feature: Signup", () => {
       page.waitForResponse((res) => res.url().includes("/auth/signup") && res.status() === 200),
       page.getByTestId("login-submit-button").click(),
     ]);
+    // Wait for RTK listener middleware to persist auth state
+    await waitForAuthPersisted(page);
     await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
   });
 });

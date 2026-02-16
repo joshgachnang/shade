@@ -19,6 +19,27 @@ test.describe("Feature: Logout", () => {
     // Logout
     await page.getByTestId("profile-logout-button").click();
 
+    // Wait for auth state to be cleared from localStorage
+    await page.waitForFunction(
+      () => {
+        try {
+          const stored = localStorage.getItem("persist:root");
+          if (!stored) {
+            return true;
+          }
+          const parsed = JSON.parse(stored);
+          if (!parsed.auth) {
+            return true;
+          }
+          const auth = JSON.parse(parsed.auth);
+          return !auth.userId;
+        } catch {
+          return true;
+        }
+      },
+      {timeout: 15000}
+    );
+
     // Should redirect to login screen
     await expect(page.getByTestId("login-screen")).toBeVisible({timeout: 30000});
   });
