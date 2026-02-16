@@ -30,6 +30,9 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && bun install
 
+      - name: Install Playwright
+        run: bun add -d @playwright/test
+
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
@@ -48,7 +51,7 @@ jobs:
           done
 
       - name: Run Playwright tests
-        run: bunx playwright test
+        run: bunx playwright test --project=chromium
         env:
           CI: true
 
