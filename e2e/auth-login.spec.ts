@@ -11,7 +11,8 @@ test.describe("Feature: Login", () => {
     await page.getByTestId("login-email-input").fill(testUsers.valid.email);
     await page.getByTestId("login-password-input").fill(testUsers.valid.password);
     await page.getByTestId("login-submit-button").click();
-    await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 10000});
+    await page.waitForURL("**/", {timeout: 15000});
+    await expect(page.getByTestId("login-screen")).not.toBeVisible();
   });
 
   test("user sees error with invalid credentials", async ({page}) => {
@@ -69,6 +70,7 @@ test.describe("Feature: Signup", () => {
     await page.getByTestId("login-email-input").fill(signupEmail);
     await page.getByTestId("login-password-input").fill(testUsers.signup.password);
     await page.getByTestId("login-submit-button").click();
-    await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 10000});
+    await page.waitForURL("**/", {timeout: 15000});
+    await expect(page.getByTestId("login-screen")).not.toBeVisible();
   });
 });

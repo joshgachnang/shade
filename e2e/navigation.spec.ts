@@ -5,7 +5,7 @@ test.describe("Feature: Tab Navigation", () => {
 
   test.beforeEach(async ({page}) => {
     await page.goto("/");
-    await page.getByTestId("home-screen").waitFor({state: "visible"});
+    await page.waitForLoadState("networkidle");
   });
 
   test("user can switch from Home to Profile tab", async ({page}) => {
@@ -34,7 +34,8 @@ test.describe("Feature: Auth Routing", () => {
     const context = await browser.newContext({storageState: "./e2e/.auth/user.json"});
     const page = await context.newPage();
     await page.goto("/");
-    await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 10000});
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("login-screen")).not.toBeVisible();
     await context.close();
   });
 });

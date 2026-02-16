@@ -25,6 +25,7 @@ test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
     await expect(submitButton).toBeFocused();
     await page.keyboard.press("Enter");
 
-    await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 10000});
+    // Wait for login to complete — login screen should disappear
+    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   });
 });

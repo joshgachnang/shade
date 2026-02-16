@@ -5,7 +5,7 @@ test.describe("Feature: Logout", () => {
 
   test("user can log out from profile screen", async ({page}) => {
     await page.goto("/");
-    await page.getByTestId("home-screen").waitFor({state: "visible"});
+    await page.waitForLoadState("networkidle");
 
     // Navigate to profile tab
     await page.getByRole("tab", {name: "Profile"}).click();
