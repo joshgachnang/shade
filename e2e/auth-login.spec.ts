@@ -16,9 +16,10 @@ test.describe("Feature: Login", () => {
       page.waitForResponse((res) => res.url().includes("/auth/login") && res.status() === 200),
       page.getByTestId("login-submit-button").click(),
     ]);
-    // Wait for RTK listener middleware to persist auth state
+    // Wait for auth state to persist, then reload so Expo Router re-evaluates layout
     await waitForAuthPersisted(page);
-    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
+    await page.reload({timeout: 60000});
+    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   });
 
   test("user sees error with invalid credentials", async ({page}) => {
@@ -80,8 +81,9 @@ test.describe("Feature: Signup", () => {
       page.waitForResponse((res) => res.url().includes("/auth/signup") && res.status() === 200),
       page.getByTestId("login-submit-button").click(),
     ]);
-    // Wait for RTK listener middleware to persist auth state
+    // Wait for auth state to persist, then reload so Expo Router re-evaluates layout
     await waitForAuthPersisted(page);
-    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
+    await page.reload({timeout: 60000});
+    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   });
 });

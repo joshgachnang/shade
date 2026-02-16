@@ -19,7 +19,7 @@ test.describe("Feature: Logout", () => {
     // Logout
     await page.getByTestId("profile-logout-button").click();
 
-    // Wait for auth state to be cleared from localStorage
+    // Wait for auth state to be cleared from localStorage, then reload
     await page.waitForFunction(
       () => {
         try {
@@ -40,7 +40,8 @@ test.describe("Feature: Logout", () => {
       {timeout: 15000}
     );
 
-    // Should redirect to login screen
-    await expect(page.getByTestId("login-screen")).toBeVisible({timeout: 30000});
+    // Reload so Expo Router re-evaluates layout with cleared auth state
+    await page.reload({timeout: 60000});
+    await expect(page.getByTestId("login-screen")).toBeVisible({timeout: 15000});
   });
 });

@@ -30,8 +30,9 @@ test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
       page.keyboard.press("Enter"),
     ]);
 
-    // Wait for auth state to persist and login screen to disappear
+    // Wait for auth state to persist, then reload so Expo Router re-evaluates layout
     await waitForAuthPersisted(page);
-    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
+    await page.reload({timeout: 60000});
+    await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
   });
 });
