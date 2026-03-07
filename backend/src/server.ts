@@ -1,6 +1,7 @@
 import {type AddRoutes, checkModelsStrict, logger, setupServer} from "@terreno/api";
 import {addAgentSessionRoutes} from "./api/agentSessions";
 import {addChannelRoutes} from "./api/channels";
+import {addCommandRoutes} from "./api/command";
 import {addCommandClassificationRoutes} from "./api/commandClassifications";
 import {addGroupRoutes} from "./api/groups";
 import {addMessageRoutes} from "./api/messages";
@@ -33,6 +34,7 @@ const addRoutes: AddRoutes = (router, options): void => {
   addCommandClassificationRoutes(router, options);
   addPluginRoutes(router, options);
   addWebhookSourceRoutes(router, options);
+  addCommandRoutes(router);
 };
 
 export const start = async (skipListen = false): Promise<ReturnType<typeof setupServer>> => {
@@ -67,6 +69,8 @@ export const start = async (skipListen = false): Promise<ReturnType<typeof setup
   return app;
 };
 
-start().catch((error) => {
-  logger.error(`Fatal error starting server: ${error}`);
-});
+if (process.env.NODE_ENV !== "test") {
+  start().catch((error) => {
+    logger.error(`Fatal error starting server: ${error}`);
+  });
+}
