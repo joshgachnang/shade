@@ -78,6 +78,15 @@ export class SlackChannelConnector implements ChannelConnector {
     await this.app.start();
     this.connected = true;
 
+    try {
+      await this.app.client.users.setPresence({
+        token: config.botToken,
+        presence: "auto",
+      });
+    } catch (err) {
+      logger.warn(`Could not set presence for "${this.channelDoc.name}": ${err}`);
+    }
+
     await Channel.findByIdAndUpdate(this.channelDoc._id, {
       $set: {status: "connected", lastConnectedAt: new Date()},
     });
