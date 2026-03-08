@@ -13,11 +13,20 @@ const SENSITIVE_ENV_VARS = [
 ];
 
 export const buildAgentEnv = (extraEnv?: Record<string, string>): Record<string, string> => {
+  // Start with the full process env — the SDK replaces process.env entirely,
+  // so the child process needs PATH, HOME, etc. to function
   const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
 
-  // Pass through ANTHROPIC_API_KEY for the SDK to use
-  if (process.env.ANTHROPIC_API_KEY) {
-    env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  // Remove sensitive vars that shouldn't leak to agent tools
+  for (const v of SENSITIVE_ENV_VARS) {
+    if (v !== "ANTHROPIC_API_KEY") {
+      delete env[v];
+    }
   }
 
   // Pass through user-specified env vars

@@ -1,3 +1,7 @@
+// Must unset CLAUDECODE before importing the SDK to allow nested sessions
+delete process.env.CLAUDECODE;
+delete process.env.CLAUDE_CODE_ENTRYPOINT;
+
 import path from "node:path";
 import {query} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
@@ -31,6 +35,10 @@ export class DirectAgentRunner implements AgentRunner {
         SHADE_CHANNEL_ID: "",
         ...config.env,
       });
+
+      // Ensure CLAUDECODE vars are NOT in the env — their presence (even empty) blocks nested sessions
+      delete env.CLAUDECODE;
+      delete env.CLAUDE_CODE_ENTRYPOINT;
 
       // Set up MCP servers - include Shade's built-in MCP server
       const mcpServers: Record<string, any> = {};
@@ -70,8 +78,18 @@ export class DirectAgentRunner implements AgentRunner {
       };
 
       logger.info(`Starting agent for session ${config.sessionId} in ${config.groupFolder}`);
+      logger.info(
+        `CLAUDECODE env: "${process.env.CLAUDECODE}" entrypoint: "${process.env.CLAUDE_CODE_ENTRYPOINT}"`
+      );
 
-      for await (const message of query(queryOptions)) {
+      const stream = query(queryOptions);
+      logger.info("Agent SDK query() called, awaiting first message...");
+
+      for await (const message of stream) {
+        logger.debug(
+          `Agent SDK message: type=${message.type} subtype=${"subtype" in message ? message.subtype : "none"}`
+        );
+
         if (message.type === "system" && message.subtype === "init") {
           sessionId = message.session_id;
           logger.debug(`Agent session initialized: ${sessionId}`);

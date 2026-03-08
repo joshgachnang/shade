@@ -42,10 +42,21 @@ describe("buildAgentEnv", () => {
     expect(env.ANTHROPIC_API_KEY).toBe("override-key");
   });
 
-  test("returns empty object with no key and no extras", () => {
-    delete process.env.ANTHROPIC_API_KEY;
+  test("inherits process.env and strips sensitive vars except ANTHROPIC_API_KEY", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test-key";
+    process.env.SLACK_BOT_TOKEN = "xoxb-secret";
+    process.env.MONGO_URI = "mongodb://secret";
     const env = buildAgentEnv();
-    expect(Object.keys(env).length).toBe(0);
+    // Should have PATH, HOME, etc. from process.env
+    expect(env.PATH).toBeDefined();
+    // Should keep ANTHROPIC_API_KEY
+    expect(env.ANTHROPIC_API_KEY).toBe("sk-test-key");
+    // Should strip other sensitive vars
+    expect(env.SLACK_BOT_TOKEN).toBeUndefined();
+    expect(env.MONGO_URI).toBeUndefined();
+    // Cleanup
+    delete process.env.SLACK_BOT_TOKEN;
+    delete process.env.MONGO_URI;
   });
 });
 

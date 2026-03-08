@@ -33,8 +33,17 @@ export class SlackChannelConnector implements ChannelConnector {
       socketMode: true,
     });
 
+    this.app.use(async ({body, next}) => {
+      const eventType = "event" in body ? (body.event as {type?: string})?.type : undefined;
+      logger.debug(`Slack event received: ${eventType ?? body.type ?? "unknown"}`);
+      await next();
+    });
+
     this.app.message(async ({message}) => {
       const msg = message as GenericMessageEvent;
+      logger.debug(
+        `Slack message: subtype=${msg.subtype} bot_id=${msg.bot_id} text="${msg.text?.substring(0, 50)}"`
+      );
       if (msg.subtype || msg.bot_id) {
         return;
       }
