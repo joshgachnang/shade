@@ -67,6 +67,18 @@ export class ChannelManager {
 
     await connector.connect();
     this.connectors.set(channelDoc._id.toString(), connector);
+
+    // Announce in all groups linked to this channel
+    if (channelDoc.type === "slack") {
+      const groups = await Group.find({channelId: channelDoc._id});
+      for (const group of groups) {
+        try {
+          await connector.sendMessage(group.externalId, "Shade is online :wave:");
+        } catch (err) {
+          logger.warn(`Could not announce in ${group.name}: ${err}`);
+        }
+      }
+    }
   }
 
   private async handleInboundMessage(
