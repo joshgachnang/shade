@@ -1,16 +1,17 @@
-import {type AddRoutes, checkModelsStrict, logger, setupServer} from "@terreno/api";
-import {addAgentSessionRoutes} from "./api/agentSessions";
-import {addChannelRoutes} from "./api/channels";
-import {addCommandRoutes} from "./api/command";
-import {addCommandClassificationRoutes} from "./api/commandClassifications";
-import {addGroupRoutes} from "./api/groups";
-import {addMessageRoutes} from "./api/messages";
-import {addPluginRoutes} from "./api/plugins";
-import {addRemoteAgentRoutes} from "./api/remoteAgents";
-import {addScheduledTaskRoutes} from "./api/scheduledTasks";
-import {addTaskRunLogRoutes} from "./api/taskRunLogs";
-import {addUserRoutes} from "./api/users";
-import {addWebhookSourceRoutes} from "./api/webhookSources";
+import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
+import {agentSessionRoutes} from "./api/agentSessions";
+import {channelRoutes} from "./api/channels";
+import {CommandPlugin} from "./api/command";
+import {commandClassificationRoutes} from "./api/commandClassifications";
+import {groupRoutes} from "./api/groups";
+import {HealthPlugin} from "./api/health";
+import {messageRoutes} from "./api/messages";
+import {pluginRoutes} from "./api/plugins";
+import {remoteAgentRoutes} from "./api/remoteAgents";
+import {scheduledTaskRoutes} from "./api/scheduledTasks";
+import {taskRunLogRoutes} from "./api/taskRunLogs";
+import {userRoutes} from "./api/users";
+import {webhookSourceRoutes} from "./api/webhookSources";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
 import {connectToMongoDB} from "./utils/database";
@@ -18,26 +19,7 @@ import {initDirectories} from "./utils/directories";
 
 const isDeployed = process.env.NODE_ENV === "production";
 
-const addMiddleware: AddRoutes = (_router, _options) => {
-  // Add middleware here
-};
-
-const addRoutes: AddRoutes = (router, options): void => {
-  addUserRoutes({router, options});
-  addChannelRoutes(router, options);
-  addGroupRoutes(router, options);
-  addMessageRoutes(router, options);
-  addScheduledTaskRoutes(router, options);
-  addTaskRunLogRoutes(router, options);
-  addAgentSessionRoutes(router, options);
-  addRemoteAgentRoutes(router, options);
-  addCommandClassificationRoutes(router, options);
-  addPluginRoutes(router, options);
-  addWebhookSourceRoutes(router, options);
-  addCommandRoutes(router);
-};
-
-export const start = async (skipListen = false): Promise<ReturnType<typeof setupServer>> => {
+export const start = async (skipListen = false) => {
   await connectToMongoDB();
   await initDirectories();
 
@@ -47,19 +29,30 @@ export const start = async (skipListen = false): Promise<ReturnType<typeof setup
     checkModelsStrict();
   }
 
-  const app = setupServer({
-    addMiddleware,
-    addRoutes,
+  const app = new TerrenoApp({
+    userModel: User as any,
     loggingOptions: {
       disableConsoleColors: isDeployed,
       level: "debug",
-      logRequests: !isDeployed,
     },
+    logRequests: !isDeployed,
     skipListen,
-    userModel: User as any,
-  });
+  })
+    .register(new HealthPlugin())
+    .register(new CommandPlugin())
+    .register(userRoutes)
+    .register(channelRoutes)
+    .register(groupRoutes)
+    .register(messageRoutes)
+    .register(scheduledTaskRoutes)
+    .register(taskRunLogRoutes)
+    .register(agentSessionRoutes)
+    .register(remoteAgentRoutes)
+    .register(commandClassificationRoutes)
+    .register(pluginRoutes)
+    .register(webhookSourceRoutes)
+    .start();
 
-  // Start the orchestrator with the Express app for webhook routes
   if (!skipListen) {
     startOrchestrator(app).catch((err) => {
       logger.error(`Failed to start orchestrator: ${err}`);
