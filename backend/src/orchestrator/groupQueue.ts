@@ -97,7 +97,14 @@ export class GroupQueue {
   private async executeAgentRun(item: QueuedItem): Promise<void> {
     const {group, message} = item;
     const groupId = group._id.toString();
+    const channelId = group.channelId.toString();
+    const messageTs = (message.metadata as {ts?: string})?.ts;
     const startedAt = new Date();
+
+    // React with 👀 to acknowledge we're processing
+    if (messageTs) {
+      await this.channelManager.addReaction(channelId, group.externalId, messageTs, "eyes");
+    }
 
     // Build the prompt from conversation context
     const {prompt, messageIds} = await buildPromptForGroup(group, message);
@@ -181,6 +188,17 @@ export class GroupQueue {
       // Mark messages as processed
       const {Message} = await import("../models/message");
       await Message.updateMany({_id: {$in: messageIds}}, {$set: {processedAt: new Date()}});
+
+      // Swap 👀 → ✅ to indicate completion
+      if (messageTs) {
+        await this.channelManager.removeReaction(channelId, group.externalId, messageTs, "eyes");
+        await this.channelManager.addReaction(
+          channelId,
+          group.externalId,
+          messageTs,
+          "white_check_mark"
+        );
+      }
 
       logger.info(
         `Agent run completed for group ${group.name} in ${result.durationMs}ms (status: ${result.status})`

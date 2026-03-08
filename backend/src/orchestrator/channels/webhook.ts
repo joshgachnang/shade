@@ -97,6 +97,14 @@ export class WebhookChannelConnector implements ChannelConnector {
     logger.debug("Webhook channel does not support outbound messages");
   }
 
+  async addReaction(_groupExternalId: string, _messageTs: string, _emoji: string): Promise<void> {}
+
+  async removeReaction(
+    _groupExternalId: string,
+    _messageTs: string,
+    _emoji: string
+  ): Promise<void> {}
+
   onMessage(handler: (message: InboundMessage) => Promise<void>): void {
     this.messageHandler = handler;
   }

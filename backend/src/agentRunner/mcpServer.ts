@@ -3,21 +3,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {z} from "zod";
+import {ScheduledTask} from "../models/scheduledTask";
 
-const getIpcDir = (): string => {
-  return process.env.SHADE_IPC_DIR || path.join(process.cwd(), "../../data/ipc");
-};
+interface McpContext {
+  groupId: string;
+  channelId: string;
+  ipcDir: string;
+}
 
-const getGroupId = (): string => {
-  return process.env.SHADE_GROUP_ID || "";
-};
-
-const getChannelId = (): string => {
-  return process.env.SHADE_CHANNEL_ID || "";
-};
-
-const writeIpcFile = async (data: Record<string, unknown>): Promise<string> => {
-  const ipcDir = getIpcDir();
+const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Promise<string> => {
   await fs.mkdir(ipcDir, {recursive: true});
 
   const fileId = randomUUID();
@@ -30,150 +24,249 @@ const writeIpcFile = async (data: Record<string, unknown>): Promise<string> => {
   return fileId;
 };
 
-const sendMessageTool = tool(
-  "send_message",
-  "Send a message to a channel. Use this to respond to users or communicate with other groups.",
-  {
-    content: z.string().describe("The message content to send"),
-    targetGroupId: z
-      .string()
-      .optional()
-      .describe("Target group ID. Omit to send to the current group."),
-  },
-  async (args) => {
-    const fileId = await writeIpcFile({
-      type: "send_message",
-      groupId: getGroupId(),
-      channelId: getChannelId(),
-      content: args.content,
-      targetGroupId: args.targetGroupId,
-    });
-    return {
-      content: [{type: "text" as const, text: `Message queued (${fileId})`}],
-    };
-  }
-);
+const buildTools = (ctx: McpContext) => {
+  const sendMessageTool = tool(
+    "send_message",
+    "Send a message to a channel. Use this to respond to users or communicate with other groups.",
+    {
+      content: z.string().describe("The message content to send"),
+      targetGroupId: z
+        .string()
+        .optional()
+        .describe("Target group ID. Omit to send to the current group."),
+    },
+    async (args) => {
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "send_message",
+        groupId: ctx.groupId,
+        channelId: ctx.channelId,
+        content: args.content,
+        targetGroupId: args.targetGroupId,
+      });
+      return {
+        content: [{type: "text" as const, text: `Message queued (${fileId})`}],
+      };
+    }
+  );
 
-const scheduleTaskTool = tool(
-  "schedule_task",
-  "Schedule a new recurring or one-time task for this group.",
-  {
-    name: z.string().describe("Task name"),
-    prompt: z.string().describe("The prompt/instruction for the task"),
-    scheduleType: z.enum(["cron", "interval", "once"]).describe("Schedule type"),
-    schedule: z.string().describe("Cron expression, interval in ms, or ISO date for once"),
-    classification: z
-      .enum(["public", "internal", "sensitive", "critical"])
-      .default("internal")
-      .describe("Security classification"),
-  },
-  async (args) => {
-    const fileId = await writeIpcFile({
-      type: "create_task",
-      groupId: getGroupId(),
-      data: {
-        name: args.name,
-        prompt: args.prompt,
-        scheduleType: args.scheduleType,
-        schedule: args.schedule,
-        classification: args.classification,
-        status: "active",
-      },
-    });
-    return {
-      content: [{type: "text" as const, text: `Task scheduled (${fileId})`}],
-    };
-  }
-);
-
-const listTasksTool = tool(
-  "list_tasks",
-  "List scheduled tasks for the current group.",
-  {
-    status: z
-      .enum(["active", "paused", "completed", "cancelled"])
-      .optional()
-      .describe("Filter by status"),
-  },
-  async (_args) => {
-    // Tasks are read directly from MongoDB via the agent's file system access
-    // This tool provides a convenience wrapper
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Use the Read tool to query the API at GET /scheduledTasks?groupId=${getGroupId()}`,
+  const scheduleTaskTool = tool(
+    "schedule_task",
+    "Schedule a new recurring or one-time task for this group.",
+    {
+      name: z.string().describe("Task name"),
+      prompt: z.string().describe("The prompt/instruction for the task"),
+      scheduleType: z.enum(["cron", "interval", "once"]).describe("Schedule type"),
+      schedule: z.string().describe("Cron expression, interval in ms, or ISO date for once"),
+      classification: z
+        .enum(["public", "internal", "sensitive", "critical"])
+        .default("internal")
+        .describe("Security classification"),
+    },
+    async (args) => {
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "create_task",
+        groupId: ctx.groupId,
+        data: {
+          name: args.name,
+          prompt: args.prompt,
+          scheduleType: args.scheduleType,
+          schedule: args.schedule,
+          classification: args.classification,
+          status: "active",
         },
-      ],
-    };
-  }
-);
+      });
+      return {
+        content: [{type: "text" as const, text: `Task scheduled (${fileId})`}],
+      };
+    }
+  );
 
-const pauseTaskTool = tool(
-  "pause_task",
-  "Pause an active scheduled task.",
-  {
-    taskId: z.string().describe("The task ID to pause"),
-  },
-  async (args) => {
-    const fileId = await writeIpcFile({
-      type: "pause_task",
-      groupId: getGroupId(),
-      taskId: args.taskId,
-    });
-    return {
-      content: [{type: "text" as const, text: `Task pause queued (${fileId})`}],
-    };
-  }
-);
+  const listTasksTool = tool(
+    "list_tasks",
+    "List scheduled tasks for the current group. Returns task details including name, schedule, status, and last/next run times.",
+    {
+      status: z
+        .enum(["active", "paused", "completed", "cancelled"])
+        .optional()
+        .describe("Filter by status"),
+    },
+    async (args) => {
+      const filter: Record<string, string> = {groupId: ctx.groupId};
+      if (args.status) {
+        filter.status = args.status;
+      }
 
-const resumeTaskTool = tool(
-  "resume_task",
-  "Resume a paused scheduled task.",
-  {
-    taskId: z.string().describe("The task ID to resume"),
-  },
-  async (args) => {
-    const fileId = await writeIpcFile({
-      type: "resume_task",
-      groupId: getGroupId(),
-      taskId: args.taskId,
-    });
-    return {
-      content: [{type: "text" as const, text: `Task resume queued (${fileId})`}],
-    };
-  }
-);
+      const tasks = await ScheduledTask.find(filter).sort({created: -1}).limit(50).lean();
 
-const cancelTaskTool = tool(
-  "cancel_task",
-  "Cancel a scheduled task.",
-  {
-    taskId: z.string().describe("The task ID to cancel"),
-  },
-  async (args) => {
-    const fileId = await writeIpcFile({
-      type: "cancel_task",
-      groupId: getGroupId(),
-      taskId: args.taskId,
-    });
-    return {
-      content: [{type: "text" as const, text: `Task cancel queued (${fileId})`}],
-    };
-  }
-);
+      if (tasks.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: args.status
+                ? `No ${args.status} tasks found for this group.`
+                : "No scheduled tasks found for this group.",
+            },
+          ],
+        };
+      }
 
-export const createShadeMcpServer = () => {
+      const taskList = tasks.map((t) => ({
+        id: t._id.toString(),
+        name: t.name,
+        scheduleType: t.scheduleType,
+        schedule: t.schedule,
+        status: t.status,
+        classification: t.classification,
+        nextRunAt: t.nextRunAt?.toISOString() ?? null,
+        lastRunAt: t.lastRunAt?.toISOString() ?? null,
+        runCount: t.runCount,
+      }));
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(taskList, null, 2),
+          },
+        ],
+      };
+    }
+  );
+
+  const pauseTaskTool = tool(
+    "pause_task",
+    "Pause an active scheduled task.",
+    {
+      taskId: z.string().describe("The task ID to pause"),
+    },
+    async (args) => {
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "pause_task",
+        groupId: ctx.groupId,
+        taskId: args.taskId,
+      });
+      return {
+        content: [{type: "text" as const, text: `Task pause queued (${fileId})`}],
+      };
+    }
+  );
+
+  const resumeTaskTool = tool(
+    "resume_task",
+    "Resume a paused scheduled task.",
+    {
+      taskId: z.string().describe("The task ID to resume"),
+    },
+    async (args) => {
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "resume_task",
+        groupId: ctx.groupId,
+        taskId: args.taskId,
+      });
+      return {
+        content: [{type: "text" as const, text: `Task resume queued (${fileId})`}],
+      };
+    }
+  );
+
+  const cancelTaskTool = tool(
+    "cancel_task",
+    "Cancel a scheduled task.",
+    {
+      taskId: z.string().describe("The task ID to cancel"),
+    },
+    async (args) => {
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "cancel_task",
+        groupId: ctx.groupId,
+        taskId: args.taskId,
+      });
+      return {
+        content: [{type: "text" as const, text: `Task cancel queued (${fileId})`}],
+      };
+    }
+  );
+
+  const getWeatherTool = tool(
+    "get_weather",
+    "Get current weather information for a location using wttr.in free API. Returns temperature, conditions, humidity, wind, and more.",
+    {
+      location: z
+        .string()
+        .describe(
+          "City name, airport code, or 'here' for IP-based location (e.g., 'London', 'SFO', 'New York')"
+        ),
+      format: z
+        .enum(["short", "detailed"])
+        .default("detailed")
+        .describe("Response format: 'short' for one-line summary, 'detailed' for full info"),
+    },
+    async (args) => {
+      try {
+        // Use wttr.in free weather API
+        const location = encodeURIComponent(args.location);
+        const url =
+          args.format === "short"
+            ? `https://wttr.in/${location}?format=%l:+%C+%t+%w+%h`
+            : `https://wttr.in/${location}?format=j1`;
+
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Weather API returned ${response.status}`);
+        }
+
+        const data = await response.text();
+
+        if (args.format === "short") {
+          return {
+            content: [{type: "text" as const, text: data}],
+          };
+        }
+
+        // Parse JSON response for detailed format
+        const weatherData = JSON.parse(data);
+        const current = weatherData.current_condition[0];
+        const area = weatherData.nearest_area[0];
+
+        const formatted = [
+          `📍 Location: ${area.areaName[0].value}, ${area.country[0].value}`,
+          `🌡️  Temperature: ${current.temp_C}°C (${current.temp_F}°F)`,
+          `🌤️  Conditions: ${current.weatherDesc[0].value}`,
+          `💨 Wind: ${current.windspeedKmph} km/h ${current.winddir16Point}`,
+          `💧 Humidity: ${current.humidity}%`,
+          `👁️  Visibility: ${current.visibility} km`,
+          `🌡️  Feels Like: ${current.FeelsLikeC}°C (${current.FeelsLikeF}°F)`,
+          `☔ Precipitation: ${current.precipMM} mm`,
+        ].join("\n");
+
+        return {
+          content: [{type: "text" as const, text: formatted}],
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error fetching weather";
+        return {
+          content: [{type: "text" as const, text: `Error: ${errorMsg}`}],
+        };
+      }
+    }
+  );
+
+  return [
+    sendMessageTool,
+    scheduleTaskTool,
+    listTasksTool,
+    pauseTaskTool,
+    resumeTaskTool,
+    cancelTaskTool,
+    getWeatherTool,
+  ];
+};
+
+export const createShadeMcpServer = (ctx: McpContext) => {
   return createSdkMcpServer({
     name: "shade-orchestrator",
     version: "1.0.0",
-    tools: [
-      sendMessageTool,
-      scheduleTaskTool,
-      listTasksTool,
-      pauseTaskTool,
-      resumeTaskTool,
-      cancelTaskTool,
-    ],
+    tools: buildTools(ctx),
   });
 };

@@ -36,55 +36,59 @@ export const formatMessagesAsXml = (messages: MessageDocument[], assistantName: 
   return lines.join("\n");
 };
 
+const CONVERSATION_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 export const buildPromptForGroup = async (
   group: GroupDocument,
   triggeringMessage: MessageDocument
 ): Promise<FormattedPrompt> => {
   const assistantName = config.assistantName;
+  const windowStart = new Date(Date.now() - CONVERSATION_WINDOW_MS);
 
-  // Gather context: messages since last bot response or last 20 messages
-  const recentMessages = await Message.find({
+  // Get all messages (user + bot) from the last 4 hours for conversation context
+  const conversationMessages = await Message.find({
     groupId: group._id,
-    processedAt: {$exists: false},
+    created: {$gte: windowStart},
   })
     .sort({created: 1})
-    .limit(50);
+    .limit(100);
 
-  // Find the last bot message for context boundary
-  const lastBotMessage = await Message.findOne({
+  // Also get any unprocessed messages that might be older than 4h (edge case)
+  const unprocessedMessages = await Message.find({
     groupId: group._id,
-    isFromBot: true,
-  }).sort({created: -1});
+    processedAt: {$exists: false},
+    isFromBot: false,
+  }).sort({created: 1});
 
-  // Get messages since last bot response (catch-up)
-  let contextMessages: MessageDocument[];
-  if (lastBotMessage) {
-    contextMessages = await Message.find({
-      groupId: group._id,
-      created: {$gt: lastBotMessage.created},
-    }).sort({created: 1});
-  } else {
-    contextMessages = recentMessages;
+  // Merge: use conversation window as base, add any unprocessed not already included
+  const seenIds = new Set(conversationMessages.map((m) => m._id.toString()));
+  const allMessages = [...conversationMessages];
+  for (const msg of unprocessedMessages) {
+    if (!seenIds.has(msg._id.toString())) {
+      allMessages.push(msg);
+    }
   }
+  allMessages.sort((a, b) => a.created.getTime() - b.created.getTime());
 
-  // Limit to last 50 messages for context
-  if (contextMessages.length > 50) {
-    contextMessages = contextMessages.slice(-50);
-  }
+  // Cap at 100 messages, keep the most recent
+  const contextMessages = allMessages.length > 100 ? allMessages.slice(-100) : allMessages;
+
+  // Track which unprocessed messages are included (for marking as processed later)
+  const messageIds = contextMessages.filter((m) => !m.isFromBot).map((m) => m._id.toString());
 
   const xmlConversation = formatMessagesAsXml(contextMessages, assistantName);
-  const messageIds = contextMessages.map((m) => m._id.toString());
 
   const prompt = [
     `You are ${assistantName}, responding in a group chat called "${group.name}".`,
     "",
-    "Here is the recent conversation:",
+    "Here is the conversation from the last few hours:",
     xmlConversation,
     "",
     `The latest message requiring your response is from ${triggeringMessage.sender}:`,
     triggeringMessage.content,
     "",
     "Respond naturally and helpfully. Keep responses concise unless detail is needed.",
+    "You have context from the conversation above — reference it when relevant.",
   ].join("\n");
 
   return {prompt, messageIds};

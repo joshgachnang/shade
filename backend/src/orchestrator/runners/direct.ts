@@ -44,7 +44,11 @@ export class DirectAgentRunner implements AgentRunner {
       const mcpServers: Record<string, any> = {};
 
       // Add the in-process Shade MCP server for send_message, schedule_task, etc.
-      const shadeMcp = createShadeMcpServer();
+      const shadeMcp = createShadeMcpServer({
+        groupId: config.groupId,
+        channelId: config.env?.SHADE_CHANNEL_ID ?? "",
+        ipcDir: path.join(process.cwd(), "data/ipc"),
+      });
       mcpServers["shade-orchestrator"] = shadeMcp;
 
       // Add any additional external MCP servers

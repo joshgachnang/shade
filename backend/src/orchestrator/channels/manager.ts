@@ -118,6 +118,30 @@ export class ChannelManager {
     await connector.sendMessage(groupExternalId, content);
   }
 
+  async addReaction(
+    channelId: string,
+    groupExternalId: string,
+    messageTs: string,
+    emoji: string
+  ): Promise<void> {
+    const connector = this.connectors.get(channelId);
+    if (connector) {
+      await connector.addReaction(groupExternalId, messageTs, emoji);
+    }
+  }
+
+  async removeReaction(
+    channelId: string,
+    groupExternalId: string,
+    messageTs: string,
+    emoji: string
+  ): Promise<void> {
+    const connector = this.connectors.get(channelId);
+    if (connector) {
+      await connector.removeReaction(groupExternalId, messageTs, emoji);
+    }
+  }
+
   async sendMessageToGroup(groupId: string, content: string): Promise<void> {
     const group = this.groupCache.get(groupId);
     if (!group) {
