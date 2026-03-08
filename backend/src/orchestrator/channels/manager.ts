@@ -74,6 +74,7 @@ export class ChannelManager {
       for (const group of groups) {
         try {
           await connector.sendMessage(group.externalId, "Shade is online :wave:");
+          logger.info(`Announced in ${group.name} (${group.externalId})`);
         } catch (err) {
           logger.warn(`Could not announce in ${group.name}: ${err}`);
         }
