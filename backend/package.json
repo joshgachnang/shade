@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.6",
+    "mongodb-memory-server-global": "^10.4.0",
     "@types/bun": "^1.2.4",
     "@types/express": "^4.17.21",
     "@types/luxon": "^3.4.2",
@@ -36,5 +37,9 @@
     "test": "bun test"
   },
   "type": "module",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "trustedDependencies": [
+    "@sentry-internal/node-cpu-profiler",
+    "mongodb-memory-server-global"
+  ]
 }
