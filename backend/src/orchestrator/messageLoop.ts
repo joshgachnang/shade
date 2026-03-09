@@ -3,6 +3,7 @@ import {config} from "../config";
 import {Message} from "../models/message";
 import type {GroupDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
+import {logError} from "./errors";
 import type {GroupQueue} from "./groupQueue";
 import {shouldTrigger} from "./router";
 
@@ -45,10 +46,7 @@ export class MessageLoop {
       try {
         await this.pollGroup(group);
       } catch (err) {
-        logger.error(`Error polling group ${group.name}: ${err}`);
-        if (err instanceof Error) {
-          logger.error(err.stack ?? "no stack trace");
-        }
+        logError(`Error polling group ${group.name}`, err);
       }
     }
   }

@@ -1,6 +1,7 @@
 import {logger} from "@terreno/api";
 import type express from "express";
 import {ChannelManager} from "./channels/manager";
+import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
 import {IpcWatcher} from "./ipc";
 import {initGlobalMemory} from "./memory";
@@ -53,10 +54,7 @@ export const startOrchestrator = async (
     await channelManager.initialize();
     logger.info("Channel manager initialized");
   } catch (err) {
-    logger.error(`Channel manager initialization error (non-fatal): ${err}`);
-    if (err instanceof Error) {
-      logger.error(err.stack ?? "no stack trace");
-    }
+    logError("Channel manager initialization error (non-fatal)", err);
   }
 
   // Create group queue wired to the agent runner

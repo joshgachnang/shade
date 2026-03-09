@@ -4,14 +4,25 @@ import {Channel} from "../../models/channel";
 import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
-import {SlackChannelConnector} from "./slack";
-import type {ChannelConnector, InboundMessage} from "./types";
-import {WebhookChannelConnector} from "./webhook";
+import {logError} from "../errors";
+import {createSlackConnector} from "./slack";
+import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
+import {createWebhookConnector} from "./webhook";
+
+const defaultConnectorFactories: Record<string, ConnectorFactory> = {
+  slack: createSlackConnector,
+  webhook: createWebhookConnector,
+};
 
 export class ChannelManager {
   private connectors = new Map<string, ChannelConnector>();
   private groupCache = new Map<string, GroupDocument>();
   private expressApp: express.Application | null = null;
+  private connectorFactories: Record<string, ConnectorFactory>;
+
+  constructor(factories?: Record<string, ConnectorFactory>) {
+    this.connectorFactories = factories ?? defaultConnectorFactories;
+  }
 
   setExpressApp(app: express.Application): void {
     this.expressApp = app;
@@ -40,10 +51,7 @@ export class ChannelManager {
       try {
         await this.connectChannel(channelDoc);
       } catch (err) {
-        logger.error(`Failed to connect channel "${channelDoc.name}": ${err}`);
-        if (err instanceof Error) {
-          logger.error(err.stack ?? "no stack trace");
-        }
+        logError(`Failed to connect channel "${channelDoc.name}"`, err);
         try {
           await Channel.findByIdAndUpdate(channelDoc._id, {$set: {status: "error"}});
         } catch (dbErr) {
@@ -58,35 +66,22 @@ export class ChannelManager {
   }
 
   private async connectChannel(channelDoc: ChannelDocument): Promise<void> {
-    let connector: ChannelConnector;
-
-    switch (channelDoc.type) {
-      case "slack":
-        connector = new SlackChannelConnector(channelDoc);
-        break;
-      case "webhook": {
-        const webhookConnector = new WebhookChannelConnector(channelDoc);
-        if (this.expressApp) {
-          webhookConnector.registerRoutes(this.expressApp);
-        }
-        connector = webhookConnector;
-        break;
-      }
-      default:
-        logger.warn(`Unknown channel type: ${channelDoc.type}`);
-        return;
+    const factory = this.connectorFactories[channelDoc.type];
+    if (!factory) {
+      logger.warn(`Unknown channel type: ${channelDoc.type}`);
+      return;
     }
+
+    const connector = factory(channelDoc, {expressApp: this.expressApp});
 
     connector.onMessage(async (inbound) => {
       try {
         await this.handleInboundMessage(channelDoc, inbound);
       } catch (err) {
-        logger.error(
-          `Error handling inbound message in channel "${channelDoc.name}" from ${inbound.sender}: ${err}`
+        logError(
+          `Error handling inbound message in channel "${channelDoc.name}" from ${inbound.sender}`,
+          err
         );
-        if (err instanceof Error) {
-          logger.error(err.stack ?? "no stack trace");
-        }
       }
     });
 

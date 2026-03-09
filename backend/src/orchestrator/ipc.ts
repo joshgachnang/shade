@@ -141,13 +141,13 @@ export class IpcWatcher {
         await this.handleUpdateTask(ipcData);
         break;
       case "pause_task":
-        await this.handlePauseTask(ipcData);
+        await this.handleTaskStatusChange(ipcData, "paused");
         break;
       case "resume_task":
-        await this.handleResumeTask(ipcData);
+        await this.handleTaskStatusChange(ipcData, "active");
         break;
       case "cancel_task":
-        await this.handleCancelTask(ipcData);
+        await this.handleTaskStatusChange(ipcData, "cancelled");
         break;
       default:
         logger.warn(`Unknown IPC type: ${(ipcData as {type: string}).type}`);
@@ -188,27 +188,11 @@ export class IpcWatcher {
     logger.info(`IPC: updated task ${data.taskId}`);
   }
 
-  private async handlePauseTask(data: IpcTaskAction): Promise<void> {
+  private async handleTaskStatusChange(data: IpcTaskAction, status: string): Promise<void> {
     if (!data.taskId) {
       return;
     }
-    await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: {status: "paused"}});
-    logger.info(`IPC: paused task ${data.taskId}`);
-  }
-
-  private async handleResumeTask(data: IpcTaskAction): Promise<void> {
-    if (!data.taskId) {
-      return;
-    }
-    await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: {status: "active"}});
-    logger.info(`IPC: resumed task ${data.taskId}`);
-  }
-
-  private async handleCancelTask(data: IpcTaskAction): Promise<void> {
-    if (!data.taskId) {
-      return;
-    }
-    await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: {status: "cancelled"}});
-    logger.info(`IPC: cancelled task ${data.taskId}`);
+    await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: {status}});
+    logger.info(`IPC: set task ${data.taskId} to ${status}`);
   }
 }

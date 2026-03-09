@@ -66,6 +66,31 @@ export const initGlobalMemory = async (): Promise<void> => {
   }
 };
 
+export const buildSystemPrompt = async (groupFolder: string, fallback: string): Promise<string> => {
+  const parts: string[] = [];
+
+  const soul = await readMemory(getSoulPath());
+  if (soul) {
+    parts.push(soul);
+  }
+
+  const globalMemory = await readMemory(getGlobalMemoryPath());
+  if (globalMemory) {
+    parts.push(globalMemory);
+  }
+
+  const groupMemory = await readMemory(getGroupMemoryPath(groupFolder));
+  if (groupMemory) {
+    parts.push(groupMemory);
+  }
+
+  if (parts.length === 0) {
+    parts.push(fallback);
+  }
+
+  return parts.join("\n\n---\n\n");
+};
+
 export const canWriteGlobalMemory = (isMainGroup: boolean): boolean => {
   return isMainGroup;
 };

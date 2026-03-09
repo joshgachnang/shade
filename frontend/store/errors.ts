@@ -1,7 +1,6 @@
 import type {Middleware} from "@reduxjs/toolkit";
-import {useToast} from "@terreno/ui";
 
-const ignoredErrors = [
+const IGNORED_ERRORS = [
   "Password or username is incorrect",
   "Token refresh failed with 401",
   "Failed to refresh token",
@@ -29,22 +28,11 @@ export const rtkQueryErrorMiddleware: Middleware = () => (next) => (action: any)
       return next(action);
     }
 
-    const shouldIgnore = ignoredErrors.some((err) => errorMessage.includes(err));
+    const shouldIgnore = IGNORED_ERRORS.some((err) => errorMessage.includes(err));
     if (!shouldIgnore) {
       console.warn(message);
     }
   }
 
   return next(action);
-};
-
-export const useSentryAndToast = (): ((errorMessage: string) => void) => {
-  const toast = useToast();
-  return (error: string): void => {
-    if (!error) {
-      return;
-    }
-    toast.error(error);
-    console.warn(`Error: ${error}`);
-  };
 };

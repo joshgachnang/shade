@@ -2,6 +2,7 @@ import {Box, Button, Heading, Page, Text, TextField, useToast} from "@terreno/ui
 import type React from "react";
 import {useCallback, useState} from "react";
 import {useEmailLoginMutation, useEmailSignUpMutation} from "@/store";
+import type {ApiErrorResponse} from "@/store/sdk";
 
 const LoginScreen: React.FC = () => {
   const [name, setName] = useState<string>("");
@@ -90,7 +91,7 @@ const LoginScreen: React.FC = () => {
           />
           {Boolean(error) && (
             <Text color="error" testID="login-error-message">
-              {(error as {data?: {message?: string}})?.data?.message || "An error occurred"}
+              {(error as ApiErrorResponse)?.data?.message || "An error occurred"}
             </Text>
           )}
           <Box marginTop={4}>
