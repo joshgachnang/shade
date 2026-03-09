@@ -18,11 +18,15 @@ export class ChannelManager {
   }
 
   async initialize(): Promise<void> {
+    logger.info("Initializing channel manager...");
+
     const channels = await Channel.find({});
     if (channels.length === 0) {
       logger.info("No channels configured, orchestrator will idle");
       return;
     }
+
+    logger.info(`Found ${channels.length} channel(s) to connect`);
 
     // Cache all groups for external ID lookups
     const groups = await Group.find({});
@@ -30,15 +34,27 @@ export class ChannelManager {
       this.groupCache.set(group.externalId, group);
       this.groupCache.set(group._id.toString(), group);
     }
+    logger.info(`Cached ${groups.length} group(s)`);
 
     for (const channelDoc of channels) {
       try {
         await this.connectChannel(channelDoc);
       } catch (err) {
         logger.error(`Failed to connect channel "${channelDoc.name}": ${err}`);
-        await Channel.findByIdAndUpdate(channelDoc._id, {$set: {status: "error"}});
+        if (err instanceof Error) {
+          logger.error(err.stack ?? "no stack trace");
+        }
+        try {
+          await Channel.findByIdAndUpdate(channelDoc._id, {$set: {status: "error"}});
+        } catch (dbErr) {
+          logger.error(`Failed to update channel error status in DB: ${dbErr}`);
+        }
       }
     }
+
+    logger.info(
+      `Channel manager initialized: ${this.connectors.size} connected, ${channels.length - this.connectors.size} failed`
+    );
   }
 
   private async connectChannel(channelDoc: ChannelDocument): Promise<void> {
@@ -62,7 +78,16 @@ export class ChannelManager {
     }
 
     connector.onMessage(async (inbound) => {
-      await this.handleInboundMessage(channelDoc, inbound);
+      try {
+        await this.handleInboundMessage(channelDoc, inbound);
+      } catch (err) {
+        logger.error(
+          `Error handling inbound message in channel "${channelDoc.name}" from ${inbound.sender}: ${err}`
+        );
+        if (err instanceof Error) {
+          logger.error(err.stack ?? "no stack trace");
+        }
+      }
     });
 
     await connector.connect();
@@ -93,19 +118,26 @@ export class ChannelManager {
       return;
     }
 
-    // Store the message
-    await Message.create({
-      groupId: group._id,
-      channelId: channelDoc._id,
-      externalId: inbound.externalId,
-      sender: inbound.sender,
-      senderExternalId: inbound.senderExternalId,
-      content: inbound.content,
-      isFromBot: false,
-      metadata: inbound.metadata ?? {},
-    });
+    logger.debug(
+      `Storing inbound message from ${inbound.sender} in group ${group.name} (${inbound.content.substring(0, 80)})`
+    );
 
-    logger.debug(`Stored message from ${inbound.sender} in group ${group.name}`);
+    // Store the message
+    try {
+      await Message.create({
+        groupId: group._id,
+        channelId: channelDoc._id,
+        externalId: inbound.externalId,
+        sender: inbound.sender,
+        senderExternalId: inbound.senderExternalId,
+        content: inbound.content,
+        isFromBot: false,
+        metadata: inbound.metadata ?? {},
+      });
+      logger.debug(`Stored message from ${inbound.sender} in group ${group.name}`);
+    } catch (err) {
+      logger.error(`Failed to store message from ${inbound.sender} in group ${group.name}: ${err}`);
+    }
   }
 
   async sendMessage(channelId: string, groupExternalId: string, content: string): Promise<void> {
@@ -115,7 +147,12 @@ export class ChannelManager {
       return;
     }
 
-    await connector.sendMessage(groupExternalId, content);
+    try {
+      await connector.sendMessage(groupExternalId, content);
+    } catch (err) {
+      logger.error(`Failed to send message via channel ${channelId} to ${groupExternalId}: ${err}`);
+      throw err;
+    }
   }
 
   async sendMessageToGroup(groupId: string, content: string): Promise<void> {
@@ -126,17 +163,30 @@ export class ChannelManager {
     }
 
     const channelId = group.channelId.toString();
-    await this.sendMessage(channelId, group.externalId, content);
+    logger.debug(
+      `Sending message to group ${group.name} via channel ${channelId} (${content.length} chars)`
+    );
+
+    try {
+      await this.sendMessage(channelId, group.externalId, content);
+    } catch (err) {
+      logger.error(`Failed to send outbound message to group ${group.name}: ${err}`);
+      // Don't throw — still try to store the message
+    }
 
     // Store outbound message
-    await Message.create({
-      groupId: group._id,
-      channelId: group.channelId,
-      sender: "Shade",
-      content,
-      isFromBot: true,
-      metadata: {},
-    });
+    try {
+      await Message.create({
+        groupId: group._id,
+        channelId: group.channelId,
+        sender: "Shade",
+        content,
+        isFromBot: true,
+        metadata: {},
+      });
+    } catch (err) {
+      logger.error(`Failed to store outbound message for group ${group.name}: ${err}`);
+    }
   }
 
   getConnectedChannelCount(): number {
@@ -171,6 +221,7 @@ export class ChannelManager {
   }
 
   async disconnectAll(): Promise<void> {
+    logger.info(`Disconnecting ${this.connectors.size} channel(s)...`);
     for (const [id, connector] of this.connectors) {
       try {
         await connector.disconnect();
@@ -180,5 +231,6 @@ export class ChannelManager {
     }
     this.connectors.clear();
     this.groupCache.clear();
+    logger.info("All channels disconnected");
   }
 }

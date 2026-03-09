@@ -82,6 +82,10 @@ export class DirectAgentRunner implements AgentRunner {
         `CLAUDECODE env: "${process.env.CLAUDECODE}" entrypoint: "${process.env.CLAUDE_CODE_ENTRYPOINT}"`
       );
 
+      logger.info(
+        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${config.groupFolder}, model=${config.modelName ?? "default"}`
+      );
+
       const stream = query(queryOptions);
       logger.info("Agent SDK query() called, awaiting first message...");
 

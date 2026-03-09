@@ -64,7 +64,8 @@ export class IpcWatcher {
     let files: string[];
     try {
       files = await fs.readdir(ipcDir);
-    } catch {
+    } catch (err) {
+      logger.debug(`IPC directory not readable (${ipcDir}): ${err}`);
       return;
     }
 

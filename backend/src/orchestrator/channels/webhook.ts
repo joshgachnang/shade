@@ -17,11 +17,14 @@ export class WebhookChannelConnector implements ChannelConnector {
 
   registerRoutes(app: express.Application): void {
     app.post("/webhooks/:sourceId", async (req: express.Request, res: express.Response) => {
+      const {sourceId} = req.params;
+      logger.debug(`Webhook received for source ${sourceId}`);
+
       try {
-        const {sourceId} = req.params;
         const source = await WebhookSource.findById(sourceId);
 
         if (!source || !source.enabled) {
+          logger.debug(`Webhook source ${sourceId} not found or disabled`);
           res.status(404).json({error: "Webhook source not found"});
           return;
         }
@@ -29,6 +32,7 @@ export class WebhookChannelConnector implements ChannelConnector {
         if (source.secret) {
           const signature = req.headers["x-webhook-signature"] as string;
           if (!this.validateSignature(req.body, source.secret, signature)) {
+            logger.warn(`Invalid webhook signature for source ${sourceId} (${source.name})`);
             res.status(401).json({error: "Invalid signature"});
             return;
           }
@@ -42,38 +46,59 @@ export class WebhookChannelConnector implements ChannelConnector {
             metadata?: Record<string, unknown>;
           };
 
-          await this.messageHandler({
-            externalId: body.externalId || crypto.randomUUID(),
-            sender: body.sender || "webhook",
-            senderExternalId: `webhook:${sourceId}`,
-            content: body.content || JSON.stringify(req.body),
-            groupExternalId: source.groupId.toString(),
-            metadata: {
-              sourceId,
-              sourceName: source.name,
-              ...body.metadata,
-            },
-          });
+          logger.debug(
+            `Processing webhook from source ${source.name}: sender=${body.sender ?? "webhook"}`
+          );
+
+          try {
+            await this.messageHandler({
+              externalId: body.externalId || crypto.randomUUID(),
+              sender: body.sender || "webhook",
+              senderExternalId: `webhook:${sourceId}`,
+              content: body.content || JSON.stringify(req.body),
+              groupExternalId: source.groupId.toString(),
+              metadata: {
+                sourceId,
+                sourceName: source.name,
+                ...body.metadata,
+              },
+            });
+          } catch (err) {
+            logger.error(`Error in webhook message handler for source ${source.name}: ${err}`);
+          }
         }
 
-        await WebhookSource.findByIdAndUpdate(sourceId, {
-          $set: {lastReceivedAt: new Date()},
-        });
+        try {
+          await WebhookSource.findByIdAndUpdate(sourceId, {
+            $set: {lastReceivedAt: new Date()},
+          });
+        } catch (err) {
+          logger.warn(`Failed to update webhook source lastReceivedAt: ${err}`);
+        }
 
         res.json({received: true});
       } catch (err) {
-        logger.error(`Webhook error: ${err}`);
+        logger.error(`Webhook error for source ${sourceId}: ${err}`);
+        if (err instanceof Error) {
+          logger.error(err.stack ?? "no stack trace");
+        }
         res.status(500).json({error: "Internal error"});
       }
     });
+
+    logger.info(`Webhook routes registered for channel "${this.channelDoc.name}"`);
   }
 
   async connect(): Promise<void> {
     this.connected = true;
 
-    await Channel.findByIdAndUpdate(this.channelDoc._id, {
-      $set: {status: "connected", lastConnectedAt: new Date()},
-    });
+    try {
+      await Channel.findByIdAndUpdate(this.channelDoc._id, {
+        $set: {status: "connected", lastConnectedAt: new Date()},
+      });
+    } catch (err) {
+      logger.error(`Failed to update webhook channel status: ${err}`);
+    }
 
     logger.info(`Webhook channel "${this.channelDoc.name}" connected`);
   }
@@ -81,9 +106,13 @@ export class WebhookChannelConnector implements ChannelConnector {
   async disconnect(): Promise<void> {
     this.connected = false;
 
-    await Channel.findByIdAndUpdate(this.channelDoc._id, {
-      $set: {status: "disconnected"},
-    });
+    try {
+      await Channel.findByIdAndUpdate(this.channelDoc._id, {
+        $set: {status: "disconnected"},
+      });
+    } catch (err) {
+      logger.error(`Failed to update webhook channel status: ${err}`);
+    }
 
     logger.info(`Webhook channel "${this.channelDoc.name}" disconnected`);
   }
@@ -106,9 +135,22 @@ export class WebhookChannelConnector implements ChannelConnector {
       return false;
     }
 
-    const payload = typeof body === "string" ? body : JSON.stringify(body);
-    const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+    try {
+      const payload = typeof body === "string" ? body : JSON.stringify(body);
+      const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");
 
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+      // timingSafeEqual requires equal-length buffers
+      const sigBuf = Buffer.from(signature);
+      const expectedBuf = Buffer.from(expected);
+
+      if (sigBuf.length !== expectedBuf.length) {
+        return false;
+      }
+
+      return crypto.timingSafeEqual(sigBuf, expectedBuf);
+    } catch (err) {
+      logger.error(`Webhook signature validation error: ${err}`);
+      return false;
+    }
   }
 }

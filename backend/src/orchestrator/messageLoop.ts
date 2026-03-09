@@ -46,6 +46,9 @@ export class MessageLoop {
         await this.pollGroup(group);
       } catch (err) {
         logger.error(`Error polling group ${group.name}: ${err}`);
+        if (err instanceof Error) {
+          logger.error(err.stack ?? "no stack trace");
+        }
       }
     }
   }
