@@ -4,6 +4,11 @@ import {logger} from "@terreno/api";
 import {config} from "../config";
 
 const MEMORY_FILENAME = "CLAUDE.md";
+const SOUL_FILENAME = "SOUL.md";
+
+export const getSoulPath = (): string => {
+  return path.join(config.paths.groups, SOUL_FILENAME);
+};
 
 export const getGlobalMemoryPath = (): string => {
   return path.join(config.paths.groups, MEMORY_FILENAME);

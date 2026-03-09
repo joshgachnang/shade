@@ -3,7 +3,13 @@ import {config} from "../config";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
-import {ensureGroupDirectory} from "./memory";
+import {
+  ensureGroupDirectory,
+  getGlobalMemoryPath,
+  getGroupMemoryPath,
+  getSoulPath,
+  readMemory,
+} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import type {AgentRunner} from "./runners/types";
 import {appendToTranscript, getOrCreateSession, updateSessionActivity} from "./sessions";
@@ -170,6 +176,33 @@ export class GroupQueue {
       throw err;
     }
 
+    // Build system prompt from SOUL.md + memory files
+    const systemPromptParts: string[] = [];
+
+    const soul = await readMemory(getSoulPath());
+    if (soul) {
+      systemPromptParts.push(soul);
+    }
+
+    const globalMemory = await readMemory(getGlobalMemoryPath());
+    if (globalMemory) {
+      systemPromptParts.push(globalMemory);
+    }
+
+    const groupMemory = await readMemory(getGroupMemoryPath(group.folder));
+    if (groupMemory) {
+      systemPromptParts.push(groupMemory);
+    }
+
+    // Fallback if no soul/memory files exist
+    if (systemPromptParts.length === 0) {
+      systemPromptParts.push(
+        `You are ${config.assistantName}, an AI assistant in the "${group.name}" group.`
+      );
+    }
+
+    const systemPrompt = systemPromptParts.join("\n\n---\n\n");
+
     // Create task run log
     let taskRunLog;
     try {
@@ -208,7 +241,7 @@ export class GroupQueue {
         groupFolder,
         sessionId: session.sessionId,
         prompt,
-        systemPrompt: `You are ${config.assistantName}, an AI assistant in the "${group.name}" group.`,
+        systemPrompt,
         modelBackend: group.modelConfig.defaultBackend || "claude",
         modelName: group.modelConfig.defaultModel,
         env: {
