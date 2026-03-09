@@ -1,4 +1,5 @@
 export * from "./agentSession";
+export * from "./aiRequest";
 export * from "./channel";
 export * from "./commandClassification";
 export * from "./group";

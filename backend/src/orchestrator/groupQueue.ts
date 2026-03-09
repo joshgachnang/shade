@@ -1,5 +1,6 @@
 import {logger} from "@terreno/api";
 import {config} from "../config";
+import {AIRequest} from "../models/aiRequest";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
@@ -293,6 +294,24 @@ export class GroupQueue {
         });
       } catch (err) {
         logger.warn(`Failed to update task run log: ${err}`);
+      }
+
+      // Log AI request (non-fatal)
+      try {
+        await AIRequest.create({
+          aiModel: group.modelConfig.defaultModel || "claude-sonnet-4-20250514",
+          costUsd: result.costUsd,
+          error: result.error,
+          groupId: group._id,
+          prompt: message.content,
+          requestType: "agent",
+          response: result.output.substring(0, 10000),
+          responseTime: result.durationMs,
+          sessionId: result.sessionId,
+          status: result.status,
+        });
+      } catch (err) {
+        logger.warn(`Failed to log AI request: ${err}`);
       }
 
       // Log to transcript (non-fatal)
