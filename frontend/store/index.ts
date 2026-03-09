@@ -11,7 +11,6 @@ import {rtkQueryErrorMiddleware} from "./errors";
 import {terrenoApi} from "./sdk";
 
 export * from "./appState";
-export {useSentryAndToast} from "./errors";
 
 const authSlice = generateAuthSlice(terrenoApi);
 

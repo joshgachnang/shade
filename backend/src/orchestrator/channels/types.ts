@@ -1,3 +1,4 @@
+import type express from "express";
 import type {ChannelDocument} from "../../types";
 
 export interface InboundMessage {
@@ -20,3 +21,12 @@ export interface ChannelConnector {
 
   onMessage(handler: (message: InboundMessage) => Promise<void>): void;
 }
+
+export interface ConnectorFactoryContext {
+  expressApp: express.Application | null;
+}
+
+export type ConnectorFactory = (
+  channelDoc: ChannelDocument,
+  context: ConnectorFactoryContext
+) => ChannelConnector;

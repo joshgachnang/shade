@@ -15,6 +15,7 @@ import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
+import {logError} from "./orchestrator/errors";
 import {connectToMongoDB} from "./utils/database";
 import {initDirectories} from "./utils/directories";
 
@@ -22,15 +23,11 @@ const isDeployed = process.env.NODE_ENV === "production";
 
 // Global error handlers — prevent uncaught errors from crashing the process
 process.on("uncaughtException", (error) => {
-  logger.error(`Uncaught exception (process will continue): ${error}`);
-  logger.error(error.stack ?? "no stack trace");
+  logError("Uncaught exception (process will continue)", error);
 });
 
 process.on("unhandledRejection", (reason, _promise) => {
-  logger.error(`Unhandled promise rejection: ${reason}`);
-  if (reason instanceof Error) {
-    logger.error(reason.stack ?? "no stack trace");
-  }
+  logError("Unhandled promise rejection", reason);
 });
 
 export const start = async (skipListen = false) => {
@@ -79,10 +76,7 @@ export const start = async (skipListen = false) => {
 
   if (!skipListen) {
     startOrchestrator(app).catch((err) => {
-      logger.error(`Failed to start orchestrator: ${err}`);
-      if (err instanceof Error) {
-        logger.error(err.stack ?? "no stack trace");
-      }
+      logError("Failed to start orchestrator", err);
     });
   }
 
@@ -91,10 +85,7 @@ export const start = async (skipListen = false) => {
 
 if (process.env.NODE_ENV !== "test") {
   start().catch((error) => {
-    logger.error(`Fatal error starting server: ${error}`);
-    if (error instanceof Error) {
-      logger.error(error.stack ?? "no stack trace");
-    }
+    logError("Fatal error starting server", error);
     process.exit(1);
   });
 }

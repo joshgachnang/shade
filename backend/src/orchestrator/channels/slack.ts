@@ -3,7 +3,8 @@ import type {GenericMessageEvent} from "@slack/types";
 import {logger} from "@terreno/api";
 import {Channel} from "../../models/channel";
 import type {ChannelDocument} from "../../types";
-import type {ChannelConnector, InboundMessage} from "./types";
+import {logError} from "../errors";
+import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
 
 export class SlackChannelConnector implements ChannelConnector {
   readonly channelDoc: ChannelDocument;
@@ -68,10 +69,7 @@ export class SlackChannelConnector implements ChannelConnector {
           },
         });
       } catch (err) {
-        logger.error(`Error handling Slack message in "${this.channelDoc.name}": ${err}`);
-        if (err instanceof Error) {
-          logger.error(err.stack ?? "no stack trace");
-        }
+        logError(`Error handling Slack message in "${this.channelDoc.name}"`, err);
       }
     });
 
@@ -99,10 +97,7 @@ export class SlackChannelConnector implements ChannelConnector {
           },
         });
       } catch (err) {
-        logger.error(`Error handling Slack mention in "${this.channelDoc.name}": ${err}`);
-        if (err instanceof Error) {
-          logger.error(err.stack ?? "no stack trace");
-        }
+        logError(`Error handling Slack mention in "${this.channelDoc.name}"`, err);
       }
     });
 
@@ -193,3 +188,7 @@ export class SlackChannelConnector implements ChannelConnector {
     this.messageHandler = handler;
   }
 }
+
+export const createSlackConnector: ConnectorFactory = (channelDoc) => {
+  return new SlackChannelConnector(channelDoc);
+};

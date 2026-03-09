@@ -4,7 +4,8 @@ import type express from "express";
 import {Channel} from "../../models/channel";
 import {WebhookSource} from "../../models/webhookSource";
 import type {ChannelDocument} from "../../types";
-import type {ChannelConnector, InboundMessage} from "./types";
+import {logError} from "../errors";
+import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
 
 export class WebhookChannelConnector implements ChannelConnector {
   readonly channelDoc: ChannelDocument;
@@ -78,10 +79,7 @@ export class WebhookChannelConnector implements ChannelConnector {
 
         res.json({received: true});
       } catch (err) {
-        logger.error(`Webhook error for source ${sourceId}: ${err}`);
-        if (err instanceof Error) {
-          logger.error(err.stack ?? "no stack trace");
-        }
+        logError(`Webhook error for source ${sourceId}`, err);
         res.status(500).json({error: "Internal error"});
       }
     });
@@ -154,3 +152,11 @@ export class WebhookChannelConnector implements ChannelConnector {
     }
   }
 }
+
+export const createWebhookConnector: ConnectorFactory = (channelDoc, context) => {
+  const connector = new WebhookChannelConnector(channelDoc);
+  if (context.expressApp) {
+    connector.registerRoutes(context.expressApp);
+  }
+  return connector;
+};
