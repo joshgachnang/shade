@@ -182,7 +182,15 @@ export class GroupQueue {
         `Agent completed for group ${group.name}: status=${result.status}, duration=${result.durationMs}ms`
       );
 
-      await this.handleAgentSuccess(group, groupId, session, taskRunLog._id, result, message, messageIds);
+      await this.handleAgentSuccess(
+        group,
+        groupId,
+        session,
+        taskRunLog._id,
+        result,
+        message,
+        messageIds
+      );
     } catch (err) {
       logger.error(`Agent execution failed for group ${group.name}: ${err}`);
       await this.updateTaskRunLogStatus(taskRunLog._id, "failed", {
