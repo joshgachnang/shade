@@ -1,5 +1,6 @@
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
+import {aiRequestRoutes} from "./api/aiRequests";
 import {channelRoutes} from "./api/channels";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
@@ -66,6 +67,7 @@ export const start = async (skipListen = false) => {
     .register(scheduledTaskRoutes)
     .register(taskRunLogRoutes)
     .register(agentSessionRoutes)
+    .register(aiRequestRoutes)
     .register(remoteAgentRoutes)
     .register(commandClassificationRoutes)
     .register(pluginRoutes)

@@ -64,6 +64,12 @@ Implementation plans are tracked in `docs/implementationPlans/`. Each IP has a d
 - **Source of truth**: IP file status > index (if discrepancy, file wins)
 - **Archive**: Completed IPs move to `docs/implementationPlans/archive/`
 
+## Skills
+
+New skills (slash commands) must be created in the project directory at `.claude/skills/<skill-name>/SKILL.md`, not in the personal `~/.claude/skills/` directory. Project skills are checked into the repo and shared across sessions.
+
+---
+
 ### Inline Annotations (`%%`)
 
 Lines starting with `%%` in any file are **inline annotations from the user**. When you encounter them:

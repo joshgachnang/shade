@@ -60,6 +60,7 @@ export class DirectAgentRunner implements AgentRunner {
 
       let result = "";
       let sessionId = config.sessionId;
+      let costUsd: number | undefined;
 
       const queryOptions: Parameters<typeof query>[0] = {
         prompt: config.prompt,
@@ -102,6 +103,7 @@ export class DirectAgentRunner implements AgentRunner {
         if (message.type === "result") {
           if (message.subtype === "success") {
             result = message.result;
+            costUsd = message.total_cost_usd;
             logger.info(
               `Agent completed in ${message.duration_ms}ms, cost: $${message.total_cost_usd.toFixed(4)}`
             );
@@ -124,6 +126,7 @@ export class DirectAgentRunner implements AgentRunner {
         sessionId,
         durationMs: Date.now() - startedAt,
         status: "completed",
+        costUsd,
       };
     } catch (error) {
       const isAbort = error instanceof Error && error.name === "AbortError";

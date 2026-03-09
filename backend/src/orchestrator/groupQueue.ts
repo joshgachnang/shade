@@ -1,6 +1,7 @@
 import {logger} from "@terreno/api";
 import type {Types} from "mongoose";
 import {config} from "../config";
+import {AIRequest} from "../models/aiRequest";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
@@ -181,7 +182,7 @@ export class GroupQueue {
         `Agent completed for group ${group.name}: status=${result.status}, duration=${result.durationMs}ms`
       );
 
-      await this.handleAgentSuccess(group, groupId, session, taskRunLog._id, result, messageIds);
+      await this.handleAgentSuccess(group, groupId, session, taskRunLog._id, result, message, messageIds);
     } catch (err) {
       logger.error(`Agent execution failed for group ${group.name}: ${err}`);
       await this.updateTaskRunLogStatus(taskRunLog._id, "failed", {
@@ -198,6 +199,7 @@ export class GroupQueue {
     session: AgentSessionDocument,
     taskRunLogId: Types.ObjectId,
     result: AgentRunResult,
+    message: MessageDocument,
     messageIds: string[]
   ): Promise<void> {
     const outbound = formatOutboundMessage(result.output, config.assistantName);
@@ -225,6 +227,23 @@ export class GroupQueue {
         durationMs: result.durationMs,
       }
     );
+
+    try {
+      await AIRequest.create({
+        aiModel: group.modelConfig.defaultModel || "claude-sonnet-4-20250514",
+        costUsd: result.costUsd,
+        error: result.error,
+        groupId: group._id,
+        prompt: message.content,
+        requestType: "agent",
+        response: result.output.substring(0, 10000),
+        responseTime: result.durationMs,
+        sessionId: result.sessionId,
+        status: result.status,
+      });
+    } catch (err) {
+      logger.warn(`Failed to log AI request: ${err}`);
+    }
 
     await this.safeAppendTranscript(session.transcriptPath, group.name, {
       type: "agent_response",

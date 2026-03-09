@@ -27,6 +27,7 @@ export interface AgentRunResult {
   durationMs: number;
   status: "completed" | "failed" | "timeout";
   error?: string;
+  costUsd?: number;
 }
 
 export interface AgentRunner {
