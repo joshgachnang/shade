@@ -1,3 +1,4 @@
+import {logger} from "@terreno/api";
 import {config} from "../config";
 import {Message} from "../models/message";
 import type {GroupDocument, MessageDocument} from "../types";
@@ -41,28 +42,48 @@ export const buildPromptForGroup = async (
   triggeringMessage: MessageDocument
 ): Promise<FormattedPrompt> => {
   const assistantName = config.assistantName;
+  const groupName = group.name;
+
+  logger.debug(`Building prompt for group ${groupName}, trigger from ${triggeringMessage.sender}`);
 
   // Gather context: messages since last bot response or last 20 messages
-  const recentMessages = await Message.find({
-    groupId: group._id,
-    processedAt: {$exists: false},
-  })
-    .sort({created: 1})
-    .limit(50);
+  let recentMessages: MessageDocument[];
+  try {
+    recentMessages = await Message.find({
+      groupId: group._id,
+      processedAt: {$exists: false},
+    })
+      .sort({created: 1})
+      .limit(50);
+  } catch (err) {
+    logger.error(`Failed to fetch recent messages for group ${groupName}: ${err}`);
+    throw err;
+  }
 
   // Find the last bot message for context boundary
-  const lastBotMessage = await Message.findOne({
-    groupId: group._id,
-    isFromBot: true,
-  }).sort({created: -1});
+  let lastBotMessage: MessageDocument | null;
+  try {
+    lastBotMessage = await Message.findOne({
+      groupId: group._id,
+      isFromBot: true,
+    }).sort({created: -1});
+  } catch (err) {
+    logger.error(`Failed to fetch last bot message for group ${groupName}: ${err}`);
+    throw err;
+  }
 
   // Get messages since last bot response (catch-up)
   let contextMessages: MessageDocument[];
   if (lastBotMessage) {
-    contextMessages = await Message.find({
-      groupId: group._id,
-      created: {$gt: lastBotMessage.created},
-    }).sort({created: 1});
+    try {
+      contextMessages = await Message.find({
+        groupId: group._id,
+        created: {$gt: lastBotMessage.created},
+      }).sort({created: 1});
+    } catch (err) {
+      logger.error(`Failed to fetch context messages for group ${groupName}: ${err}`);
+      throw err;
+    }
   } else {
     contextMessages = recentMessages;
   }
@@ -71,6 +92,10 @@ export const buildPromptForGroup = async (
   if (contextMessages.length > 50) {
     contextMessages = contextMessages.slice(-50);
   }
+
+  logger.debug(
+    `Prompt context for group ${groupName}: ${contextMessages.length} messages (last bot msg: ${lastBotMessage ? "yes" : "none"})`
+  );
 
   const xmlConversation = formatMessagesAsXml(contextMessages, assistantName);
   const messageIds = contextMessages.map((m) => m._id.toString());

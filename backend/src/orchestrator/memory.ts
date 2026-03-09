@@ -15,21 +15,35 @@ export const getGroupMemoryPath = (groupFolder: string): string => {
 
 export const readMemory = async (filePath: string): Promise<string | null> => {
   try {
-    return await fs.readFile(filePath, "utf-8");
+    const content = await fs.readFile(filePath, "utf-8");
+    logger.debug(`Memory read from ${filePath} (${content.length} chars)`);
+    return content;
   } catch {
+    logger.debug(`Memory file not found: ${filePath}`);
     return null;
   }
 };
 
 export const writeMemory = async (filePath: string, content: string): Promise<void> => {
-  await fs.mkdir(path.dirname(filePath), {recursive: true});
-  await fs.writeFile(filePath, content, "utf-8");
-  logger.debug(`Memory written to ${filePath}`);
+  try {
+    await fs.mkdir(path.dirname(filePath), {recursive: true});
+    await fs.writeFile(filePath, content, "utf-8");
+    logger.debug(`Memory written to ${filePath} (${content.length} chars)`);
+  } catch (err) {
+    logger.error(`Failed to write memory to ${filePath}: ${err}`);
+    throw err;
+  }
 };
 
 export const ensureGroupDirectory = async (groupFolder: string): Promise<string> => {
   const groupDir = path.join(config.paths.groups, groupFolder);
-  await fs.mkdir(groupDir, {recursive: true});
+  try {
+    await fs.mkdir(groupDir, {recursive: true});
+    logger.debug(`Group directory ensured: ${groupDir}`);
+  } catch (err) {
+    logger.error(`Failed to create group directory ${groupDir}: ${err}`);
+    throw err;
+  }
   return groupDir;
 };
 
@@ -42,6 +56,8 @@ export const initGlobalMemory = async (): Promise<void> => {
       `# Shade Global Memory\n\nThis file is shared across all groups. The main group can edit it.\n`
     );
     logger.info("Global CLAUDE.md initialized");
+  } else {
+    logger.debug("Global CLAUDE.md already exists");
   }
 };
 

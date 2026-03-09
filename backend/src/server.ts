@@ -19,14 +19,36 @@ import {initDirectories} from "./utils/directories";
 
 const isDeployed = process.env.NODE_ENV === "production";
 
+// Global error handlers — prevent uncaught errors from crashing the process
+process.on("uncaughtException", (error) => {
+  logger.error(`Uncaught exception (process will continue): ${error}`);
+  logger.error(error.stack ?? "no stack trace");
+});
+
+process.on("unhandledRejection", (reason, _promise) => {
+  logger.error(`Unhandled promise rejection: ${reason}`);
+  if (reason instanceof Error) {
+    logger.error(reason.stack ?? "no stack trace");
+  }
+});
+
 export const start = async (skipListen = false) => {
+  logger.info("Shade server starting up...");
+
   await connectToMongoDB();
+  logger.info("MongoDB connected, initializing directories...");
+
   await initDirectories();
+  logger.info("Directories initialized, configuring server...");
 
   logger.info(`Starting Shade server on port ${process.env.PORT || 4020}`);
 
   if (!isDeployed) {
-    checkModelsStrict();
+    try {
+      checkModelsStrict();
+    } catch (err) {
+      logger.error(`Model validation failed (non-fatal): ${err}`);
+    }
   }
 
   const app = new TerrenoApp({
@@ -56,6 +78,9 @@ export const start = async (skipListen = false) => {
   if (!skipListen) {
     startOrchestrator(app).catch((err) => {
       logger.error(`Failed to start orchestrator: ${err}`);
+      if (err instanceof Error) {
+        logger.error(err.stack ?? "no stack trace");
+      }
     });
   }
 
@@ -65,5 +90,9 @@ export const start = async (skipListen = false) => {
 if (process.env.NODE_ENV !== "test") {
   start().catch((error) => {
     logger.error(`Fatal error starting server: ${error}`);
+    if (error instanceof Error) {
+      logger.error(error.stack ?? "no stack trace");
+    }
+    process.exit(1);
   });
 }

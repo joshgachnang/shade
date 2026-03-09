@@ -17,7 +17,13 @@ export const getTranscriptPath = (groupId: string, sessionId: string): string =>
 export const createSession = async (groupId: string): Promise<AgentSessionDocument> => {
   const sessionId = randomUUID();
   const sessionDir = getSessionDir(groupId);
-  await fs.mkdir(sessionDir, {recursive: true});
+
+  try {
+    await fs.mkdir(sessionDir, {recursive: true});
+  } catch (err) {
+    logger.error(`Failed to create session directory ${sessionDir}: ${err}`);
+    throw err;
+  }
 
   const transcriptPath = getTranscriptPath(groupId, sessionId);
 
@@ -41,6 +47,7 @@ export const resumeSession = async (groupId: string): Promise<AgentSessionDocume
   }).sort({lastActivityAt: -1});
 
   if (!session) {
+    logger.debug(`No active session found for group ${groupId}`);
     return null;
   }
 
@@ -60,29 +67,46 @@ export const updateSessionActivity = async (
   sessionId: string,
   incrementMessages = 1
 ): Promise<void> => {
-  await AgentSession.findOneAndUpdate(
-    {sessionId},
-    {
-      $inc: {messageCount: incrementMessages},
-      $set: {lastActivityAt: new Date()},
-    }
-  );
+  try {
+    await AgentSession.findOneAndUpdate(
+      {sessionId},
+      {
+        $inc: {messageCount: incrementMessages},
+        $set: {lastActivityAt: new Date()},
+      }
+    );
+    logger.debug(`Session ${sessionId} activity updated (+${incrementMessages} messages)`);
+  } catch (err) {
+    logger.error(`Failed to update session activity for ${sessionId}: ${err}`);
+    throw err;
+  }
 };
 
 export const closeSession = async (sessionId: string): Promise<void> => {
-  await AgentSession.findOneAndUpdate(
-    {sessionId},
-    {$set: {status: "closed", lastActivityAt: new Date()}}
-  );
-  logger.info(`Closed session ${sessionId}`);
+  try {
+    await AgentSession.findOneAndUpdate(
+      {sessionId},
+      {$set: {status: "closed", lastActivityAt: new Date()}}
+    );
+    logger.info(`Closed session ${sessionId}`);
+  } catch (err) {
+    logger.error(`Failed to close session ${sessionId}: ${err}`);
+    throw err;
+  }
 };
 
 export const appendToTranscript = async (
   transcriptPath: string,
   entry: Record<string, unknown>
 ): Promise<void> => {
-  const line = `${JSON.stringify({...entry, timestamp: new Date().toISOString()})}\n`;
-  await fs.appendFile(transcriptPath, line, "utf-8");
+  try {
+    const line = `${JSON.stringify({...entry, timestamp: new Date().toISOString()})}\n`;
+    await fs.appendFile(transcriptPath, line, "utf-8");
+    logger.debug(`Transcript appended: ${transcriptPath} (${line.length} chars)`);
+  } catch (err) {
+    logger.error(`Failed to append to transcript ${transcriptPath}: ${err}`);
+    throw err;
+  }
 };
 
 export const readTranscript = async (
@@ -90,12 +114,15 @@ export const readTranscript = async (
 ): Promise<Record<string, unknown>[]> => {
   try {
     const content = await fs.readFile(transcriptPath, "utf-8");
-    return content
+    const entries = content
       .trim()
       .split("\n")
       .filter(Boolean)
       .map((line) => JSON.parse(line));
+    logger.debug(`Read ${entries.length} transcript entries from ${transcriptPath}`);
+    return entries;
   } catch {
+    logger.debug(`Transcript not found or empty: ${transcriptPath}`);
     return [];
   }
 };

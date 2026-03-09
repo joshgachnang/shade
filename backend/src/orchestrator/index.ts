@@ -32,20 +32,36 @@ export const startOrchestrator = async (
   logger.info("Starting Shade orchestrator...");
 
   // Initialize memory system
-  await initGlobalMemory();
+  try {
+    await initGlobalMemory();
+    logger.info("Global memory initialized");
+  } catch (err) {
+    logger.error(`Failed to initialize global memory (non-fatal): ${err}`);
+  }
 
   // Create the agent runner
   const runner = new DirectAgentRunner();
+  logger.info("Agent runner created");
 
   // Create and initialize channel manager
   const channelManager = new ChannelManager();
   if (expressApp) {
     channelManager.setExpressApp(expressApp);
   }
-  await channelManager.initialize();
+
+  try {
+    await channelManager.initialize();
+    logger.info("Channel manager initialized");
+  } catch (err) {
+    logger.error(`Channel manager initialization error (non-fatal): ${err}`);
+    if (err instanceof Error) {
+      logger.error(err.stack ?? "no stack trace");
+    }
+  }
 
   // Create group queue wired to the agent runner
   const groupQueue = new GroupQueue(runner, channelManager);
+  logger.info("Group queue created");
 
   // Create and start message polling loop
   const messageLoop = new MessageLoop(channelManager, groupQueue);
@@ -54,7 +70,13 @@ export const startOrchestrator = async (
   // Create and start IPC watcher with send message handler
   const ipcWatcher = new IpcWatcher();
   ipcWatcher.setSendMessage(async (channelId, targetGroupExternalId, content) => {
-    await channelManager.sendMessage(channelId, targetGroupExternalId, content);
+    try {
+      await channelManager.sendMessage(channelId, targetGroupExternalId, content);
+    } catch (err) {
+      logger.error(
+        `IPC sendMessage failed (channel=${channelId}, group=${targetGroupExternalId}): ${err}`
+      );
+    }
   });
   ipcWatcher.start();
 
@@ -83,7 +105,12 @@ export const stopOrchestrator = async (): Promise<void> => {
 
   state.messageLoop.stop();
   state.ipcWatcher.stop();
-  await state.channelManager.disconnectAll();
+
+  try {
+    await state.channelManager.disconnectAll();
+  } catch (err) {
+    logger.error(`Error during channel disconnect: ${err}`);
+  }
 
   state.isRunning = false;
   state = null;
@@ -94,7 +121,11 @@ export const stopOrchestrator = async (): Promise<void> => {
 // Graceful shutdown
 const handleShutdown = async (signal: string): Promise<void> => {
   logger.info(`Received ${signal}, shutting down orchestrator...`);
-  await stopOrchestrator();
+  try {
+    await stopOrchestrator();
+  } catch (err) {
+    logger.error(`Error during shutdown: ${err}`);
+  }
   process.exit(0);
 };
 

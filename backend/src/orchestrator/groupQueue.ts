@@ -39,10 +39,11 @@ export class GroupQueue {
     const queue = this.queues.get(groupId)!;
     queue.push({group, message, retryCount: 0});
 
-    logger.debug(`Enqueued message for group ${group.name} (queue size: ${queue.length})`);
+    logger.info(
+      `Enqueued message for group ${group.name} (queue depth: ${queue.length}, active agents: ${this.globalActiveCount})`
+    );
 
-    // Try to process immediately (fire-and-forget)
-    void this.processNext(groupId);
+    this.safeProcessNext(groupId);
   }
 
   getQueueDepth(groupId: string): number {
@@ -57,16 +58,34 @@ export class GroupQueue {
     return this.globalActiveCount;
   }
 
+  /** Safely kick off processNext without risk of unhandled rejection */
+  private safeProcessNext(groupId: string): void {
+    try {
+      this.processNext(groupId).catch((err) => {
+        logger.error(`Unhandled error in processNext for group ${groupId}: ${err}`);
+        if (err instanceof Error) {
+          logger.error(err.stack ?? "no stack trace");
+        }
+        // Ensure we don't leave the group stuck as active
+        this.activeRuns.set(groupId, false);
+      });
+    } catch (err) {
+      logger.error(`Synchronous error starting processNext for group ${groupId}: ${err}`);
+      this.activeRuns.set(groupId, false);
+    }
+  }
+
   private async processNext(groupId: string): Promise<void> {
     // Check per-group concurrency
     if (this.activeRuns.get(groupId)) {
+      logger.debug(`Group ${groupId} already has an active run, skipping`);
       return;
     }
 
     // Check global concurrency
     if (this.globalActiveCount >= config.concurrency.maxGlobal) {
       logger.debug(
-        `Global concurrency limit reached (${this.globalActiveCount}/${config.concurrency.maxGlobal})`
+        `Global concurrency limit reached (${this.globalActiveCount}/${config.concurrency.maxGlobal}), deferring group ${groupId}`
       );
       return;
     }
@@ -80,17 +99,31 @@ export class GroupQueue {
     this.activeRuns.set(groupId, true);
     this.globalActiveCount++;
 
+    logger.info(
+      `Starting agent run for group ${item.group.name} (active: ${this.globalActiveCount}, remaining in queue: ${queue.length})`
+    );
+
     try {
       await this.executeAgentRun(item);
     } catch (err) {
       logger.error(`Agent run error for group ${item.group.name}: ${err}`);
-      await this.handleFailure(item, String(err));
+      if (err instanceof Error) {
+        logger.error(err.stack ?? "no stack trace");
+      }
+      try {
+        await this.handleFailure(item, String(err));
+      } catch (failErr) {
+        logger.error(`Error in handleFailure for group ${item.group.name}: ${failErr}`);
+      }
     } finally {
       this.activeRuns.set(groupId, false);
       this.globalActiveCount--;
+      logger.debug(
+        `Agent run finished for group ${item.group.name} (active: ${this.globalActiveCount})`
+      );
 
-      // Process next item in queue (fire-and-forget)
-      void this.processNext(groupId);
+      // Process next item in queue
+      this.safeProcessNext(groupId);
     }
   }
 
@@ -99,37 +132,77 @@ export class GroupQueue {
     const groupId = group._id.toString();
     const startedAt = new Date();
 
+    logger.info(
+      `Executing agent run for group ${group.name}, trigger: "${message.content.substring(0, 80)}"`
+    );
+
     // Build the prompt from conversation context
-    const {prompt, messageIds} = await buildPromptForGroup(group, message);
+    let prompt: string;
+    let messageIds: string[];
+    try {
+      const result = await buildPromptForGroup(group, message);
+      prompt = result.prompt;
+      messageIds = result.messageIds;
+      logger.debug(
+        `Built prompt for group ${group.name}: ${messageIds.length} messages, ${prompt.length} chars`
+      );
+    } catch (err) {
+      logger.error(`Failed to build prompt for group ${group.name}: ${err}`);
+      throw err;
+    }
 
     // Get or create session
-    const session = await getOrCreateSession(groupId);
+    let session;
+    try {
+      session = await getOrCreateSession(groupId);
+      logger.debug(`Using session ${session.sessionId} for group ${group.name}`);
+    } catch (err) {
+      logger.error(`Failed to get/create session for group ${group.name}: ${err}`);
+      throw err;
+    }
 
     // Ensure group directory exists
-    const groupFolder = await ensureGroupDirectory(group.folder);
+    let groupFolder: string;
+    try {
+      groupFolder = await ensureGroupDirectory(group.folder);
+    } catch (err) {
+      logger.error(`Failed to ensure group directory for ${group.name}: ${err}`);
+      throw err;
+    }
 
     // Create task run log
-    const taskRunLog = await TaskRunLog.create({
-      groupId: group._id,
-      trigger: "message",
-      classification: "internal",
-      modelBackend: group.modelConfig.defaultBackend || "claude",
-      modelName: group.modelConfig.defaultModel,
-      status: "running",
-      prompt: message.content,
-      startedAt,
-    });
+    let taskRunLog;
+    try {
+      taskRunLog = await TaskRunLog.create({
+        groupId: group._id,
+        trigger: "message",
+        classification: "internal",
+        modelBackend: group.modelConfig.defaultBackend || "claude",
+        modelName: group.modelConfig.defaultModel,
+        status: "running",
+        prompt: message.content,
+        startedAt,
+      });
+    } catch (err) {
+      logger.error(`Failed to create task run log for group ${group.name}: ${err}`);
+      throw err;
+    }
 
-    // Log to transcript
-    await appendToTranscript(session.transcriptPath, {
-      type: "user_message",
-      sender: message.sender,
-      content: message.content,
-      messageIds,
-    });
+    // Log to transcript (non-fatal)
+    try {
+      await appendToTranscript(session.transcriptPath, {
+        type: "user_message",
+        sender: message.sender,
+        content: message.content,
+        messageIds,
+      });
+    } catch (err) {
+      logger.warn(`Failed to append to transcript for group ${group.name}: ${err}`);
+    }
 
     try {
       // Execute the agent
+      logger.info(`Invoking agent runner for group ${group.name}...`);
       const result = await this.runner.run({
         groupId,
         groupFolder,
@@ -148,68 +221,102 @@ export class GroupQueue {
         resumeSessionAt: session.resumeSessionAt,
       });
 
+      logger.info(
+        `Agent completed for group ${group.name}: status=${result.status}, duration=${result.durationMs}ms, output=${result.output.length} chars`
+      );
+
       // Format outbound message
       const outbound = formatOutboundMessage(result.output, config.assistantName);
 
       // Send response if there's output
       if (outbound) {
-        await this.channelManager.sendMessageToGroup(groupId, outbound);
+        logger.debug(`Sending ${outbound.length}-char response to group ${group.name}`);
+        try {
+          await this.channelManager.sendMessageToGroup(groupId, outbound);
+        } catch (err) {
+          logger.error(`Failed to send response to group ${group.name}: ${err}`);
+        }
+      } else {
+        logger.debug(`No outbound message for group ${group.name} (empty output)`);
       }
 
-      // Update session
-      await updateSessionActivity(session.sessionId);
+      // Update session (non-fatal)
+      try {
+        await updateSessionActivity(session.sessionId);
+      } catch (err) {
+        logger.warn(`Failed to update session activity for ${session.sessionId}: ${err}`);
+      }
 
-      // Update task run log
-      await TaskRunLog.findByIdAndUpdate(taskRunLog._id, {
-        $set: {
-          status: result.status === "completed" ? "completed" : "failed",
-          result: result.output,
-          error: result.error,
+      // Update task run log (non-fatal)
+      try {
+        await TaskRunLog.findByIdAndUpdate(taskRunLog._id, {
+          $set: {
+            status: result.status === "completed" ? "completed" : "failed",
+            result: result.output,
+            error: result.error,
+            durationMs: result.durationMs,
+            completedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        logger.warn(`Failed to update task run log: ${err}`);
+      }
+
+      // Log to transcript (non-fatal)
+      try {
+        await appendToTranscript(session.transcriptPath, {
+          type: "agent_response",
+          output: result.output,
+          status: result.status,
           durationMs: result.durationMs,
-          completedAt: new Date(),
-        },
-      });
+        });
+      } catch (err) {
+        logger.warn(`Failed to append agent response to transcript: ${err}`);
+      }
 
-      // Log to transcript
-      await appendToTranscript(session.transcriptPath, {
-        type: "agent_response",
-        output: result.output,
-        status: result.status,
-        durationMs: result.durationMs,
-      });
-
-      // Mark messages as processed
-      const {Message} = await import("../models/message");
-      await Message.updateMany({_id: {$in: messageIds}}, {$set: {processedAt: new Date()}});
+      // Mark messages as processed (non-fatal)
+      try {
+        const {Message} = await import("../models/message");
+        await Message.updateMany({_id: {$in: messageIds}}, {$set: {processedAt: new Date()}});
+        logger.debug(`Marked ${messageIds.length} messages as processed for group ${group.name}`);
+      } catch (err) {
+        logger.warn(`Failed to mark messages as processed for group ${group.name}: ${err}`);
+      }
 
       logger.info(
         `Agent run completed for group ${group.name} in ${result.durationMs}ms (status: ${result.status})`
       );
     } catch (err) {
-      await TaskRunLog.findByIdAndUpdate(taskRunLog._id, {
-        $set: {
-          status: "failed",
-          error: String(err),
-          durationMs: Date.now() - startedAt.getTime(),
-          completedAt: new Date(),
-        },
-      });
+      logger.error(`Agent execution failed for group ${group.name}: ${err}`);
+
+      try {
+        await TaskRunLog.findByIdAndUpdate(taskRunLog._id, {
+          $set: {
+            status: "failed",
+            error: String(err),
+            durationMs: Date.now() - startedAt.getTime(),
+            completedAt: new Date(),
+          },
+        });
+      } catch (dbErr) {
+        logger.warn(`Failed to update task run log after failure: ${dbErr}`);
+      }
 
       throw err;
     }
   }
 
-  private async handleFailure(item: QueuedItem, _error: string): Promise<void> {
+  private async handleFailure(item: QueuedItem, error: string): Promise<void> {
     if (item.retryCount >= MAX_RETRIES) {
       logger.error(
-        `Max retries (${MAX_RETRIES}) reached for group ${item.group.name}, dropping message`
+        `Max retries (${MAX_RETRIES}) reached for group ${item.group.name}, dropping message: "${item.message.content.substring(0, 80)}"`
       );
       return;
     }
 
     const delay = BASE_RETRY_DELAY_MS * 2 ** item.retryCount;
     logger.warn(
-      `Retrying group ${item.group.name} in ${delay}ms (attempt ${item.retryCount + 1}/${MAX_RETRIES})`
+      `Retrying group ${item.group.name} in ${delay}ms (attempt ${item.retryCount + 1}/${MAX_RETRIES}, error: ${error.substring(0, 200)})`
     );
 
     item.retryCount++;
@@ -221,7 +328,7 @@ export class GroupQueue {
       }
       // Add to front of queue for retry
       this.queues.get(groupId)!.unshift(item);
-      void this.processNext(groupId);
+      this.safeProcessNext(groupId);
     }, delay);
   }
 }
