@@ -1,0 +1,37 @@
+name: Build & Release Binary
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - "deploy/build.sh"
+      - ".github/workflows/deploy-binary.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build binary
+        run: bash deploy/build.sh
+
+      - name: Upload binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          files: backend/shade-server
+          prerelease: false
+          make_latest: true
+          body: |
+            Automated build from ${{ github.sha }}

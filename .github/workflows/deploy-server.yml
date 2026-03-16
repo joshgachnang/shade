@@ -1,0 +1,31 @@
+name: Deploy to Server
+
+on:
+  workflow_run:
+    workflows: ["Build & Release Binary"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Download binary from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download latest --repo ${{ github.repository }} --pattern shade-server --dir /tmp
+          chmod +x /tmp/shade-server
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to server
+        run: |
+          tailscale ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'cat > /tmp/shade-server-new' < /tmp/shade-server
+          tailscale ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'set -euo pipefail && export PATH="$HOME/.bun/bin:$PATH" && mv /tmp/shade-server-new /opt/shade/shade-server && chmod +x /opt/shade/shade-server && echo "=== Installing dependencies ===" && cd /opt/shade && bun install && echo "=== Restarting service ===" && sudo systemctl restart shade && echo "=== Verifying ===" && sleep 3 && systemctl is-active shade && echo "Deploy complete"'
