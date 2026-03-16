@@ -31,8 +31,8 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install backend dependencies
-        run: cd backend && bun install
+      - name: Install workspace dependencies
+        run: bun install
 
       - name: Install frontend dependencies
         run: cd frontend && bun install

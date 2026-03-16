@@ -1,6 +1,7 @@
 {
 	"name": "shade",
 	"private": true,
+	"workspaces": ["packages/*", "backend"],
 	"scripts": {
 		"rules": "rulesync generate",
 		"lint": "cd backend && bun run lint && cd ../frontend && bun run lint",
