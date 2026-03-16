@@ -17,8 +17,5 @@
 		"types": ["bun-types"]
 	},
 	"include": ["src/**/*"],
-	"exclude": ["node_modules", "dist"],
-	"references": [
-		{ "path": "../fleet-types" }
-	]
+	"exclude": ["node_modules", "dist"]
 }
