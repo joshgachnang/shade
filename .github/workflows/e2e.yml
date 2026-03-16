@@ -31,11 +31,8 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install backend dependencies
-        run: cd backend && bun install
-
-      - name: Install frontend dependencies
-        run: cd frontend && bun install
+      - name: Install dependencies
+        run: bun install
 
       - name: Install Playwright
         run: bun add -d @playwright/test
