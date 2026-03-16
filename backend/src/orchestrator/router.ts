@@ -46,47 +46,42 @@ export const buildPromptForGroup = async (
 
   logger.debug(`Building prompt for group ${groupName}, trigger from ${triggeringMessage.sender}`);
 
-  // Gather context: messages since last bot response or last 20 messages
+  // Always fetch the last 10 messages in the channel for context (regardless of processed state)
   let recentMessages: MessageDocument[];
   try {
-    recentMessages = await Message.find({
-      groupId: group._id,
-      processedAt: {$exists: false},
-    })
-      .sort({created: 1})
-      .limit(50);
+    recentMessages = await Message.find({groupId: group._id}).sort({created: -1}).limit(10);
+    recentMessages.reverse(); // Sort chronologically
   } catch (err) {
     logger.error(`Failed to fetch recent messages for group ${groupName}: ${err}`);
     throw err;
   }
 
-  // Find the last bot message for context boundary
-  let lastBotMessage: MessageDocument | null;
+  // Also fetch any unprocessed messages that may fall outside the last 10
+  let unprocessedMessages: MessageDocument[];
   try {
-    lastBotMessage = await Message.findOne({
+    unprocessedMessages = await Message.find({
       groupId: group._id,
-      isFromBot: true,
-    }).sort({created: -1});
+      processedAt: {$exists: false},
+      isFromBot: false,
+    }).sort({created: 1});
   } catch (err) {
-    logger.error(`Failed to fetch last bot message for group ${groupName}: ${err}`);
+    logger.error(`Failed to fetch unprocessed messages for group ${groupName}: ${err}`);
     throw err;
   }
 
-  // Get messages since last bot response (catch-up)
-  let contextMessages: MessageDocument[];
-  if (lastBotMessage) {
-    try {
-      contextMessages = await Message.find({
-        groupId: group._id,
-        created: {$gt: lastBotMessage.created},
-      }).sort({created: 1});
-    } catch (err) {
-      logger.error(`Failed to fetch context messages for group ${groupName}: ${err}`);
-      throw err;
-    }
-  } else {
-    contextMessages = recentMessages;
+  // Merge and deduplicate: combine recent context with any unprocessed messages
+  const messageMap = new Map<string, MessageDocument>();
+  for (const msg of recentMessages) {
+    messageMap.set(msg._id.toString(), msg);
   }
+  for (const msg of unprocessedMessages) {
+    messageMap.set(msg._id.toString(), msg);
+  }
+
+  // Sort chronologically
+  let contextMessages = Array.from(messageMap.values()).sort(
+    (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime()
+  );
 
   // Limit to last 50 messages for context
   if (contextMessages.length > 50) {
@@ -94,7 +89,7 @@ export const buildPromptForGroup = async (
   }
 
   logger.debug(
-    `Prompt context for group ${groupName}: ${contextMessages.length} messages (last bot msg: ${lastBotMessage ? "yes" : "none"})`
+    `Prompt context for group ${groupName}: ${contextMessages.length} messages (${recentMessages.length} recent, ${unprocessedMessages.length} unprocessed)`
   );
 
   const xmlConversation = formatMessagesAsXml(contextMessages, assistantName);
@@ -103,13 +98,14 @@ export const buildPromptForGroup = async (
   const prompt = [
     `You are ${assistantName}, responding in a group chat called "${group.name}".`,
     "",
-    "Here is the recent conversation:",
+    "Here is the recent conversation (last 10 messages plus any unprocessed messages):",
     xmlConversation,
     "",
     `The latest message requiring your response is from ${triggeringMessage.sender}:`,
     triggeringMessage.content,
     "",
     "Respond naturally and helpfully. Keep responses concise unless detail is needed.",
+    "If you need more conversation history for context, use the get_channel_history tool.",
   ].join("\n");
 
   return {prompt, messageIds};

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {z} from "zod";
+import {Message} from "../models/message";
 
 const getIpcDir = (): string => {
   return process.env.SHADE_IPC_DIR || path.join(process.cwd(), "../../data/ipc");
@@ -163,6 +164,67 @@ const cancelTaskTool = tool(
   }
 );
 
+const getChannelHistoryTool = tool(
+  "get_channel_history",
+  "Fetch older messages from the current channel for additional context. Returns messages in chronological order.",
+  {
+    limit: z
+      .number()
+      .min(1)
+      .max(100)
+      .default(20)
+      .describe("Number of messages to fetch (default 20, max 100)"),
+    before: z
+      .string()
+      .optional()
+      .describe(
+        "Fetch messages before this ISO date string. Omit to get the most recent messages."
+      ),
+  },
+  async (args) => {
+    const groupId = getGroupId();
+    if (!groupId) {
+      return {
+        content: [{type: "text" as const, text: "Error: No group context available"}],
+      };
+    }
+
+    const query: Record<string, unknown> = {groupId};
+    if (args.before) {
+      query.created = {$lt: new Date(args.before)};
+    }
+
+    const messages = await Message.find(query).sort({created: -1}).limit(args.limit);
+
+    // Reverse to chronological order
+    messages.reverse();
+
+    if (messages.length === 0) {
+      return {
+        content: [{type: "text" as const, text: "No messages found."}],
+      };
+    }
+
+    const formatted = messages
+      .map((msg) => {
+        const role = msg.isFromBot ? "assistant" : "user";
+        const sender = msg.isFromBot ? "Shade" : msg.sender;
+        const time = new Date(msg.created).toISOString();
+        return `[${time}] ${role} (${sender}): ${msg.content}`;
+      })
+      .join("\n");
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Channel history (${messages.length} messages):\n${formatted}`,
+        },
+      ],
+    };
+  }
+);
+
 export const createShadeMcpServer = () => {
   return createSdkMcpServer({
     name: "shade-orchestrator",
@@ -174,6 +236,7 @@ export const createShadeMcpServer = () => {
       pauseTaskTool,
       resumeTaskTool,
       cancelTaskTool,
+      getChannelHistoryTool,
     ],
   });
 };
