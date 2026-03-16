@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "backend/**"
+      - "packages/**"
       - ".github/workflows/backend-ci.yml"
 
 jobs:
@@ -28,7 +29,9 @@ jobs:
           path: |
             ~/.bun/install/cache
             node_modules
-          key: bun-${{ runner.os }}-${{ github.ref }}-${{ hashFiles('bun.lockb', 'package.json') }}
+            backend/node_modules
+            packages/fleet-types/node_modules
+          key: bun-${{ runner.os }}-${{ github.ref }}-${{ hashFiles('bun.lock', 'package.json') }}
           restore-keys: |
             bun-${{ runner.os }}-${{ github.ref }}-
             bun-${{ runner.os }}-
@@ -40,7 +43,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        working-directory: backend
 
       - name: Lint
         run: bun run lint
