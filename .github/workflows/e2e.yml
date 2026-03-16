@@ -31,8 +31,11 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
+      - name: Install workspace dependencies
         run: bun install
+
+      - name: Install frontend dependencies
+        run: cd frontend && bun install
 
       - name: Install Playwright
         run: bun add -d @playwright/test
