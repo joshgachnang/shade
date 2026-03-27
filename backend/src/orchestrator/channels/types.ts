@@ -18,6 +18,8 @@ export interface ChannelConnector {
   isConnected(): boolean;
 
   sendMessage(groupExternalId: string, content: string): Promise<void>;
+  addReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void>;
+  removeReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void>;
 
   onMessage(handler: (message: InboundMessage) => Promise<void>): void;
 }

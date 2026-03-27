@@ -126,12 +126,20 @@ export class GroupQueue {
   private async executeAgentRun(item: QueuedItem): Promise<void> {
     const {group, message} = item;
     const groupId = group._id.toString();
+    const channelId = group.channelId.toString();
+    const messageTs = (message.metadata as {ts?: string})?.ts;
     const startedAt = new Date();
 
     logger.info(
       `Executing agent run for group ${group.name}, trigger: "${message.content.substring(0, 80)}"`
     );
 
+    // React with 👀 to acknowledge we're processing
+    if (messageTs) {
+      await this.channelManager.addReaction(channelId, group.externalId, messageTs, "eyes");
+    }
+
+    // Build the prompt from conversation context
     const {prompt, messageIds} = await buildPromptForGroup(group, message);
     const session = await getOrCreateSession(groupId);
     const groupFolder = await ensureGroupDirectory(group.folder);
@@ -177,6 +185,17 @@ export class GroupQueue {
         resume: session.messageCount > 0,
         resumeSessionAt: session.resumeSessionAt,
       });
+
+      // Swap 👀 → ✅ to indicate completion
+      if (messageTs) {
+        await this.channelManager.removeReaction(channelId, group.externalId, messageTs, "eyes");
+        await this.channelManager.addReaction(
+          channelId,
+          group.externalId,
+          messageTs,
+          "white_check_mark"
+        );
+      }
 
       logger.info(
         `Agent completed for group ${group.name}: status=${result.status}, duration=${result.durationMs}ms`

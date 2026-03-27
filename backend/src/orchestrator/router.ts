@@ -37,74 +37,66 @@ export const formatMessagesAsXml = (messages: MessageDocument[], assistantName: 
   return lines.join("\n");
 };
 
+const CONVERSATION_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 export const buildPromptForGroup = async (
   group: GroupDocument,
   triggeringMessage: MessageDocument
 ): Promise<FormattedPrompt> => {
   const assistantName = config.assistantName;
   const groupName = group.name;
+  const windowStart = new Date(Date.now() - CONVERSATION_WINDOW_MS);
 
   logger.debug(`Building prompt for group ${groupName}, trigger from ${triggeringMessage.sender}`);
 
-  // Always fetch the last 10 messages in the channel for context (regardless of processed state)
-  let recentMessages: MessageDocument[];
-  try {
-    recentMessages = await Message.find({groupId: group._id}).sort({created: -1}).limit(10);
-    recentMessages.reverse(); // Sort chronologically
-  } catch (err) {
-    logger.error(`Failed to fetch recent messages for group ${groupName}: ${err}`);
-    throw err;
-  }
+  // Get all messages (user + bot) from the last 4 hours for conversation context
+  const conversationMessages = await Message.find({
+    groupId: group._id,
+    created: {$gte: windowStart},
+  })
+    .sort({created: 1})
+    .limit(100);
 
-  // Also fetch any unprocessed messages that may fall outside the last 10
-  let unprocessedMessages: MessageDocument[];
-  try {
-    unprocessedMessages = await Message.find({
-      groupId: group._id,
-      processedAt: {$exists: false},
-      isFromBot: false,
-    }).sort({created: 1});
-  } catch (err) {
-    logger.error(`Failed to fetch unprocessed messages for group ${groupName}: ${err}`);
-    throw err;
-  }
+  // Also get any unprocessed messages that might be older than 4h (edge case)
+  const unprocessedMessages = await Message.find({
+    groupId: group._id,
+    processedAt: {$exists: false},
+    isFromBot: false,
+  }).sort({created: 1});
 
-  // Merge and deduplicate: combine recent context with any unprocessed messages
-  const messageMap = new Map<string, MessageDocument>();
-  for (const msg of recentMessages) {
-    messageMap.set(msg._id.toString(), msg);
-  }
+  // Merge: use conversation window as base, add any unprocessed not already included
+  const seenIds = new Set(conversationMessages.map((m) => m._id.toString()));
+  const allMessages = [...conversationMessages];
   for (const msg of unprocessedMessages) {
-    messageMap.set(msg._id.toString(), msg);
+    if (!seenIds.has(msg._id.toString())) {
+      allMessages.push(msg);
+    }
   }
+  allMessages.sort((a, b) => a.created.getTime() - b.created.getTime());
 
-  // Sort chronologically
-  let contextMessages = Array.from(messageMap.values()).sort(
-    (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime()
-  );
+  // Cap at 100 messages, keep the most recent
+  const contextMessages = allMessages.length > 100 ? allMessages.slice(-100) : allMessages;
 
-  // Limit to last 50 messages for context
-  if (contextMessages.length > 50) {
-    contextMessages = contextMessages.slice(-50);
-  }
+  // Track which unprocessed messages are included (for marking as processed later)
+  const messageIds = contextMessages.filter((m) => !m.isFromBot).map((m) => m._id.toString());
 
   logger.debug(
-    `Prompt context for group ${groupName}: ${contextMessages.length} messages (${recentMessages.length} recent, ${unprocessedMessages.length} unprocessed)`
+    `Prompt context for group ${groupName}: ${contextMessages.length} messages (${conversationMessages.length} from window, ${unprocessedMessages.length} unprocessed)`
   );
 
   const xmlConversation = formatMessagesAsXml(contextMessages, assistantName);
-  const messageIds = contextMessages.map((m) => m._id.toString());
 
   const prompt = [
     `You are ${assistantName}, responding in a group chat called "${group.name}".`,
     "",
-    "Here is the recent conversation (last 10 messages plus any unprocessed messages):",
+    "Here is the conversation from the last few hours:",
     xmlConversation,
     "",
     `The latest message requiring your response is from ${triggeringMessage.sender}:`,
     triggeringMessage.content,
     "",
     "Respond naturally and helpfully. Keep responses concise unless detail is needed.",
+    "You have context from the conversation above — reference it when relevant.",
     "If you need more conversation history for context, use the get_channel_history tool.",
   ].join("\n");
 
