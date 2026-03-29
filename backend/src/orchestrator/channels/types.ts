@@ -21,6 +21,9 @@ export interface ChannelConnector {
   addReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void>;
   removeReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void>;
 
+  createChannel(name: string): Promise<{id: string}>;
+  inviteToChannel(channelId: string, userId: string): Promise<void>;
+
   onMessage(handler: (message: InboundMessage) => Promise<void>): void;
 }
 

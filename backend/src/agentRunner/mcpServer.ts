@@ -10,6 +10,9 @@ interface McpContext {
   groupId: string;
   channelId: string;
   ipcDir: string;
+  groupFolder: string;
+  messageTs?: string;
+  senderExternalId?: string;
 }
 
 const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Promise<string> => {
@@ -46,6 +49,40 @@ const buildTools = (ctx: McpContext) => {
       });
       return {
         content: [{type: "text" as const, text: `Message queued (${fileId})`}],
+      };
+    }
+  );
+
+  const addReactionTool = tool(
+    "add_reaction",
+    "Add an emoji reaction to a message. If no messageTs is provided, reacts to the message that triggered this agent run.",
+    {
+      emoji: z
+        .string()
+        .describe("Emoji name without colons (e.g., 'eyes', 'thumbsup', 'white_check_mark')"),
+      messageTs: z
+        .string()
+        .optional()
+        .describe("Message timestamp to react to. Omit to react to the triggering message."),
+    },
+    async (args) => {
+      const ts = args.messageTs ?? ctx.messageTs;
+      if (!ts) {
+        return {
+          content: [
+            {type: "text" as const, text: "Error: No message timestamp available to react to."},
+          ],
+        };
+      }
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "add_reaction",
+        groupId: ctx.groupId,
+        channelId: ctx.channelId,
+        messageTs: ts,
+        emoji: args.emoji,
+      });
+      return {
+        content: [{type: "text" as const, text: `Reaction queued (${fileId})`}],
       };
     }
   );
@@ -307,8 +344,146 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
+  const STORE_DIR = "store";
+
+  const getStorePath = (key: string): string => {
+    const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return path.join(ctx.groupFolder, STORE_DIR, `${safeKey}.json`);
+  };
+
+  const saveDataTool = tool(
+    "save_data",
+    "Save a named piece of data to persistent storage for this group. Data persists across sessions. Use for RSS feed lists, preferences, configuration, etc.",
+    {
+      key: z.string().describe("A unique name for this data (alphanumeric, hyphens, underscores)"),
+      data: z.string().describe("The data to store (use JSON for structured data)"),
+    },
+    async (args) => {
+      const storePath = getStorePath(args.key);
+      await fs.mkdir(path.dirname(storePath), {recursive: true});
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({key: args.key, data: args.data, updatedAt: new Date().toISOString()}),
+        "utf-8"
+      );
+      return {
+        content: [{type: "text" as const, text: `Data saved with key "${args.key}".`}],
+      };
+    }
+  );
+
+  const loadDataTool = tool(
+    "load_data",
+    "Load a previously saved piece of data by key.",
+    {
+      key: z.string().describe("The key of the data to load"),
+    },
+    async (args) => {
+      const storePath = getStorePath(args.key);
+      try {
+        const content = await fs.readFile(storePath, "utf-8");
+        const parsed = JSON.parse(content);
+        return {
+          content: [{type: "text" as const, text: parsed.data}],
+        };
+      } catch {
+        return {
+          content: [{type: "text" as const, text: `No data found for key "${args.key}".`}],
+        };
+      }
+    }
+  );
+
+  const listDataTool = tool(
+    "list_data",
+    "List all saved data keys for this group.",
+    {},
+    async () => {
+      const storeDir = path.join(ctx.groupFolder, STORE_DIR);
+      try {
+        const files = await fs.readdir(storeDir);
+        const keys = files.filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+        if (keys.length === 0) {
+          return {content: [{type: "text" as const, text: "No saved data found."}]};
+        }
+        return {content: [{type: "text" as const, text: keys.join("\n")}]};
+      } catch {
+        return {content: [{type: "text" as const, text: "No saved data found."}]};
+      }
+    }
+  );
+
+  const deleteDataTool = tool(
+    "delete_data",
+    "Delete a saved piece of data by key.",
+    {
+      key: z.string().describe("The key of the data to delete"),
+    },
+    async (args) => {
+      const storePath = getStorePath(args.key);
+      try {
+        await fs.unlink(storePath);
+        return {content: [{type: "text" as const, text: `Data "${args.key}" deleted.`}]};
+      } catch {
+        return {
+          content: [{type: "text" as const, text: `No data found for key "${args.key}".`}],
+        };
+      }
+    }
+  );
+
+  const createFeatureTool = tool(
+    "create_feature",
+    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group for it. Use this when someone wants to start working on a new feature.",
+    {
+      name: z
+        .string()
+        .describe(
+          "Short feature name in kebab-case (e.g., 'zoom-integration', 'rss-reader'). Used as the Slack channel name with a 'feat-' prefix."
+        ),
+      description: z
+        .string()
+        .optional()
+        .describe("Brief description of the feature for the channel topic"),
+    },
+    async (args) => {
+      if (!ctx.senderExternalId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: No sender information available to invite to the channel.",
+            },
+          ],
+        };
+      }
+      const channelName = `feat-${args.name}`
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .slice(0, 80);
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "create_feature",
+        groupId: ctx.groupId,
+        channelId: ctx.channelId,
+        name: channelName,
+        description: args.description,
+        senderExternalId: ctx.senderExternalId,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Feature channel creation queued (${fileId}). Creating #${channelName} and inviting you...`,
+          },
+        ],
+      };
+    }
+  );
+
   return [
     sendMessageTool,
+    addReactionTool,
+    createFeatureTool,
     scheduleTaskTool,
     listTasksTool,
     pauseTaskTool,
@@ -316,6 +491,10 @@ const buildTools = (ctx: McpContext) => {
     cancelTaskTool,
     getWeatherTool,
     getChannelHistoryTool,
+    saveDataTool,
+    loadDataTool,
+    listDataTool,
+    deleteDataTool,
   ];
 };
 

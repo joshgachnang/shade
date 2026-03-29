@@ -224,6 +224,8 @@ export class GroupQueue {
         },
         timeout: group.executionConfig.timeout || 300000,
         idleTimeout: group.executionConfig.idleTimeout || 60000,
+        messageTs,
+        senderExternalId: message.senderExternalId,
         resume: shouldResume,
         resumeSessionAt: resumeAt,
         onProgress,

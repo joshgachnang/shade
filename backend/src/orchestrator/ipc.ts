@@ -20,7 +20,24 @@ export interface IpcTaskAction {
   data?: Record<string, unknown>;
 }
 
-type IpcFile = IpcMessage | IpcTaskAction;
+export interface IpcReaction {
+  type: "add_reaction";
+  groupId: string;
+  channelId: string;
+  messageTs: string;
+  emoji: string;
+}
+
+export interface IpcCreateFeature {
+  type: "create_feature";
+  groupId: string;
+  channelId: string;
+  name: string;
+  description?: string;
+  senderExternalId: string;
+}
+
+type IpcFile = IpcMessage | IpcTaskAction | IpcReaction | IpcCreateFeature;
 
 type SendMessageFn = (
   channelId: string,
@@ -28,12 +45,31 @@ type SendMessageFn = (
   content: string
 ) => Promise<void>;
 
+type AddReactionFn = (
+  channelId: string,
+  groupExternalId: string,
+  messageTs: string,
+  emoji: string
+) => Promise<void>;
+
+type CreateFeatureFn = (data: IpcCreateFeature) => Promise<void>;
+
 export class IpcWatcher {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private sendMessage: SendMessageFn | null = null;
+  private addReaction: AddReactionFn | null = null;
+  private createFeature: CreateFeatureFn | null = null;
 
   setSendMessage(fn: SendMessageFn): void {
     this.sendMessage = fn;
+  }
+
+  setAddReaction(fn: AddReactionFn): void {
+    this.addReaction = fn;
+  }
+
+  setCreateFeature(fn: CreateFeatureFn): void {
+    this.createFeature = fn;
   }
 
   start(): void {
@@ -77,24 +113,33 @@ export class IpcWatcher {
     for (const file of jsonFiles) {
       const filePath = path.join(ipcDir, file);
       try {
-        const content = await fs.readFile(filePath, "utf-8");
+        // Move file to .processing to prevent double-execution from concurrent polls
+        const processingPath = `${filePath}.processing`;
+        try {
+          await fs.rename(filePath, processingPath);
+        } catch {
+          // File already picked up by another poll cycle
+          continue;
+        }
+
+        const content = await fs.readFile(processingPath, "utf-8");
         const ipcData = JSON.parse(content) as IpcFile;
 
         const isAuthorized = await this.checkAuthorization(ipcData);
         if (!isAuthorized) {
           logger.warn(`IPC authorization denied for ${file}`);
-          await fs.unlink(filePath);
+          await fs.unlink(processingPath);
           continue;
         }
 
         await this.processIpcFile(ipcData);
-        await fs.unlink(filePath);
+        await fs.unlink(processingPath);
         logger.debug(`Processed IPC file: ${file}`);
       } catch (err) {
         logger.error(`Failed to process IPC file ${file}: ${err}`);
-        // Move failed files to avoid reprocessing
+        // Clean up processing file if it exists
         try {
-          await fs.rename(filePath, `${filePath}.failed`);
+          await fs.rename(`${filePath}.processing`, `${filePath}.failed`);
         } catch {
           // ignore cleanup errors
         }
@@ -119,7 +164,17 @@ export class IpcWatcher {
       return targetGroupId === ipcData.groupId;
     }
 
-    if (ipcData.taskId) {
+    // Feature channel creation requires main group
+    if (ipcData.type === "create_feature") {
+      return false;
+    }
+
+    // Reactions are always scoped to the agent's own channel
+    if (ipcData.type === "add_reaction") {
+      return true;
+    }
+
+    if ("taskId" in ipcData && ipcData.taskId) {
       const task = await ScheduledTask.findById(ipcData.taskId);
       if (task && task.groupId.toString() !== ipcData.groupId) {
         return false;
@@ -133,6 +188,12 @@ export class IpcWatcher {
     switch (ipcData.type) {
       case "send_message":
         await this.handleSendMessage(ipcData);
+        break;
+      case "add_reaction":
+        await this.handleAddReaction(ipcData);
+        break;
+      case "create_feature":
+        await this.handleCreateFeature(ipcData);
         break;
       case "create_task":
         await this.handleCreateTask(ipcData);
@@ -152,6 +213,36 @@ export class IpcWatcher {
       default:
         logger.warn(`Unknown IPC type: ${(ipcData as {type: string}).type}`);
     }
+  }
+
+  private async handleCreateFeature(data: IpcCreateFeature): Promise<void> {
+    if (!this.createFeature) {
+      logger.warn("No createFeature handler registered for IPC");
+      return;
+    }
+
+    try {
+      await this.createFeature(data);
+      logger.info(`IPC: created feature channel "${data.name}" for group ${data.groupId}`);
+    } catch (err) {
+      logger.error(`IPC: failed to create feature channel "${data.name}": ${err}`);
+    }
+  }
+
+  private async handleAddReaction(data: IpcReaction): Promise<void> {
+    if (!this.addReaction) {
+      logger.warn("No addReaction handler registered for IPC");
+      return;
+    }
+
+    const group = await Group.findById(data.groupId);
+    if (!group) {
+      logger.error(`Group ${data.groupId} not found for IPC reaction`);
+      return;
+    }
+
+    await this.addReaction(data.channelId, group.externalId, data.messageTs, data.emoji);
+    logger.info(`IPC: added reaction ${data.emoji} in group ${data.groupId}`);
   }
 
   private async handleSendMessage(data: IpcMessage): Promise<void> {
