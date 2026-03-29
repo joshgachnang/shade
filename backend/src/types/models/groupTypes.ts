@@ -2,10 +2,10 @@ import type mongoose from "mongoose";
 import type {DefaultDoc, DefaultModel, DefaultStatics} from "./userTypes";
 
 export interface GroupModelConfig {
-  defaultBackend?: "claude" | "ollama" | "codex";
+  defaultBackend?: "claude" | "ollama" | "codex" | "gemini";
   defaultModel?: string;
   endpoint?: string;
-  fallbackBackend?: "claude" | "ollama" | "codex";
+  fallbackBackend?: "claude" | "ollama" | "codex" | "gemini";
 }
 
 export interface GroupExecutionConfig {

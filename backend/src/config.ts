@@ -9,6 +9,7 @@ export const config = {
     message: Number(process.env.SHADE_POLL_MESSAGE_MS) || 2000,
     task: Number(process.env.SHADE_POLL_TASK_MS) || 60000,
     ipc: Number(process.env.SHADE_POLL_IPC_MS) || 1000,
+    imessage: Number(process.env.SHADE_POLL_IMESSAGE_MS) || 5000,
   },
 
   concurrency: {
