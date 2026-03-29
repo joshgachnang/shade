@@ -14,6 +14,9 @@ interface ActiveAgent {
   startedAt: number;
 }
 
+/** Minimum interval between progress callbacks (ms) */
+const PROGRESS_INTERVAL_MS = 30_000;
+
 export class DirectAgentRunner implements AgentRunner {
   private activeAgents = new Map<string, ActiveAgent>();
 
@@ -27,6 +30,11 @@ export class DirectAgentRunner implements AgentRunner {
       logger.warn(`Agent ${config.sessionId} timed out after ${config.timeout}ms`);
       abortController.abort();
     }, config.timeout);
+
+    // Tracked across try/catch so the catch block can return resume info on timeout
+    let sdkSessionId = config.sessionId;
+    let lastMessageUuid: string | undefined;
+    let partialOutput = "";
 
     try {
       const env = buildAgentEnv({
@@ -63,8 +71,8 @@ export class DirectAgentRunner implements AgentRunner {
       }
 
       let result = "";
-      let sessionId = config.sessionId;
       let costUsd: number | undefined;
+      let lastProgressAt = 0;
 
       const queryOptions: Parameters<typeof query>[0] = {
         prompt: config.prompt,
@@ -99,9 +107,35 @@ export class DirectAgentRunner implements AgentRunner {
           `Agent SDK message: type=${message.type} subtype=${"subtype" in message ? message.subtype : "none"}`
         );
 
+        // Track UUID from every message for resume
+        if ("uuid" in message && message.uuid) {
+          lastMessageUuid = message.uuid as string;
+        }
+
         if (message.type === "system" && message.subtype === "init") {
-          sessionId = message.session_id;
-          logger.debug(`Agent session initialized: ${sessionId}`);
+          sdkSessionId = message.session_id;
+          logger.debug(`Agent session initialized: ${sdkSessionId}`);
+        }
+
+        // Collect partial assistant text for timeout reporting
+        if (message.type === "assistant" && "content" in message) {
+          const content = message.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (typeof block === "object" && block !== null && "text" in block) {
+                partialOutput += (block as {text: string}).text;
+              }
+            }
+          }
+        }
+
+        // Emit progress callbacks at throttled intervals
+        if (config.onProgress && partialOutput.length > 0) {
+          const now = Date.now();
+          if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
+            lastProgressAt = now;
+            config.onProgress(partialOutput);
+          }
         }
 
         if (message.type === "result") {
@@ -115,11 +149,13 @@ export class DirectAgentRunner implements AgentRunner {
             const errorMsg = message.errors?.join("; ") ?? "Unknown error";
             logger.error(`Agent failed: ${message.subtype} - ${errorMsg}`);
             return {
-              output: "",
-              sessionId,
+              output: partialOutput ? redactSecrets(partialOutput) : "",
+              sessionId: sdkSessionId,
               durationMs: Date.now() - startedAt,
               status: message.subtype === "error_max_turns" ? "timeout" : "failed",
               error: errorMsg,
+              resumeSessionId: sdkSessionId,
+              lastMessageUuid,
             };
           }
         }
@@ -127,7 +163,7 @@ export class DirectAgentRunner implements AgentRunner {
 
       return {
         output: redactSecrets(result),
-        sessionId,
+        sessionId: sdkSessionId,
         durationMs: Date.now() - startedAt,
         status: "completed",
         costUsd,
@@ -137,13 +173,17 @@ export class DirectAgentRunner implements AgentRunner {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (isAbort) {
-        logger.warn(`Agent ${config.sessionId} was aborted`);
+        logger.warn(
+          `Agent ${config.sessionId} was aborted (timeout), sdkSession=${sdkSessionId}, lastUuid=${lastMessageUuid ?? "none"}`
+        );
         return {
-          output: "",
-          sessionId: config.sessionId,
+          output: partialOutput ? redactSecrets(partialOutput) : "",
+          sessionId: sdkSessionId,
           durationMs: Date.now() - startedAt,
           status: "timeout",
-          error: "Agent execution timed out or was aborted",
+          error: "Agent execution timed out",
+          resumeSessionId: sdkSessionId,
+          lastMessageUuid,
         };
       }
 

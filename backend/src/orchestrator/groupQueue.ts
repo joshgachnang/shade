@@ -9,16 +9,28 @@ import {logError} from "./errors";
 import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
-import {appendToTranscript, getOrCreateSession, updateSessionActivity} from "./sessions";
+import {
+  appendToTranscript,
+  getOrCreateSession,
+  updateResumeCheckpoint,
+  updateSessionActivity,
+} from "./sessions";
 
 interface QueuedItem {
   group: GroupDocument;
   message: MessageDocument;
   retryCount: number;
+  /** Set when resuming after a timeout */
+  resumeSessionId?: string;
+  resumeSessionAt?: string;
+  resumeCount?: number;
 }
 
 const BASE_RETRY_DELAY_MS = 5000;
 const MAX_RETRIES = 5;
+const MAX_RESUMES = 3;
+/** Minimum interval between progress messages sent to the channel (ms) */
+const PROGRESS_MESSAGE_INTERVAL_MS = 60_000;
 
 export class GroupQueue {
   private queues = new Map<string, QueuedItem[]>();
@@ -129,13 +141,14 @@ export class GroupQueue {
     const channelId = group.channelId.toString();
     const messageTs = (message.metadata as {ts?: string})?.ts;
     const startedAt = new Date();
+    const isResume = (item.resumeCount ?? 0) > 0;
 
     logger.info(
-      `Executing agent run for group ${group.name}, trigger: "${message.content.substring(0, 80)}"`
+      `Executing agent run for group ${group.name}${isResume ? ` (resume #${item.resumeCount})` : ""}, trigger: "${message.content.substring(0, 80)}"`
     );
 
-    // React with 👀 to acknowledge we're processing
-    if (messageTs) {
+    // React with 👀 to acknowledge we're processing (only on first run)
+    if (messageTs && !isResume) {
       await this.channelManager.addReaction(channelId, group.externalId, messageTs, "eyes");
     }
 
@@ -155,24 +168,53 @@ export class GroupQueue {
       modelBackend: group.modelConfig.defaultBackend || "claude",
       modelName: group.modelConfig.defaultModel,
       status: "running",
-      prompt: message.content,
+      prompt: isResume ? `[resume #${item.resumeCount}] ${message.content}` : message.content,
       startedAt,
     });
 
-    await this.safeAppendTranscript(session.transcriptPath, group.name, {
-      type: "user_message",
-      sender: message.sender,
-      content: message.content,
-      messageIds,
-    });
+    if (!isResume) {
+      await this.safeAppendTranscript(session.transcriptPath, group.name, {
+        type: "user_message",
+        sender: message.sender,
+        content: message.content,
+        messageIds,
+      });
+    }
+
+    // Progress reporting: send periodic updates to the channel
+    let lastProgressSentAt = 0;
+    const onProgress = async (text: string) => {
+      const now = Date.now();
+      if (now - lastProgressSentAt < PROGRESS_MESSAGE_INTERVAL_MS) {
+        return;
+      }
+      lastProgressSentAt = now;
+      const elapsed = Math.round((now - startedAt.getTime()) / 1000);
+      const preview = text.length > 200 ? `${text.slice(-200)}...` : text;
+      try {
+        await this.channelManager.sendMessageToGroup(
+          groupId,
+          `_Working on it (${elapsed}s)..._\n> ${preview}`
+        );
+      } catch (err) {
+        logger.debug(`Failed to send progress update: ${err}`);
+      }
+    };
 
     try {
       logger.info(`Invoking agent runner for group ${group.name}...`);
+
+      // Use resume checkpoint if this is a resumed run
+      const shouldResume = isResume || session.messageCount > 0;
+      const resumeAt = isResume ? item.resumeSessionAt : session.resumeSessionAt;
+
       const result = await this.runner.run({
         groupId,
         groupFolder,
         sessionId: session.sessionId,
-        prompt,
+        prompt: isResume
+          ? "Continue where you left off. You were interrupted by a timeout — pick up your work and finish the task."
+          : prompt,
         systemPrompt,
         modelBackend: group.modelConfig.defaultBackend || "claude",
         modelName: group.modelConfig.defaultModel,
@@ -182,13 +224,117 @@ export class GroupQueue {
         },
         timeout: group.executionConfig.timeout || 300000,
         idleTimeout: group.executionConfig.idleTimeout || 60000,
-        resume: session.messageCount > 0,
-        resumeSessionAt: session.resumeSessionAt,
+        resume: shouldResume,
+        resumeSessionAt: resumeAt,
+        onProgress,
       });
 
-      // Swap 👀 → ✅ to indicate completion
+      // Handle timeout → save checkpoint and auto-resume
+      if (result.status === "timeout" && result.resumeSessionId && result.lastMessageUuid) {
+        const resumeCount = (item.resumeCount ?? 0) + 1;
+
+        logger.info(
+          `Agent timed out for group ${group.name}, saving checkpoint for resume #${resumeCount}`
+        );
+
+        // Save the resume checkpoint on the session
+        await updateResumeCheckpoint(session.sessionId, result.lastMessageUuid);
+
+        await this.safeAppendTranscript(session.transcriptPath, group.name, {
+          type: "agent_timeout",
+          output: result.output,
+          durationMs: result.durationMs,
+          resumeSessionId: result.resumeSessionId,
+          lastMessageUuid: result.lastMessageUuid,
+          resumeCount,
+        });
+
+        // Send partial output if any, plus a "continuing" notice
+        if (result.output) {
+          const partial = formatOutboundMessage(result.output, config.assistantName);
+          if (partial) {
+            await this.channelManager.sendMessageToGroup(groupId, partial);
+          }
+        }
+
+        if (resumeCount <= MAX_RESUMES) {
+          // Swap 👀 → ⏳ to show we're resuming
+          if (messageTs) {
+            await this.channelManager.removeReaction(
+              channelId,
+              group.externalId,
+              messageTs,
+              "eyes"
+            );
+            await this.channelManager.addReaction(
+              channelId,
+              group.externalId,
+              messageTs,
+              "hourglass_flowing_sand"
+            );
+          }
+
+          await this.channelManager.sendMessageToGroup(
+            groupId,
+            `_Taking longer than expected — resuming automatically (${resumeCount}/${MAX_RESUMES})..._`
+          );
+
+          // Re-enqueue with resume info
+          const resumeItem: QueuedItem = {
+            group: item.group,
+            message: item.message,
+            retryCount: item.retryCount,
+            resumeSessionId: result.resumeSessionId,
+            resumeSessionAt: result.lastMessageUuid,
+            resumeCount,
+          };
+
+          const queueGroupId = group._id.toString();
+          if (!this.queues.has(queueGroupId)) {
+            this.queues.set(queueGroupId, []);
+          }
+          this.queues.get(queueGroupId)!.unshift(resumeItem);
+
+          await this.updateTaskRunLogStatus(taskRunLog._id, "resumed", {
+            result: result.output,
+            durationMs: result.durationMs,
+            resumeCount,
+          });
+          return;
+        }
+
+        // Max resumes reached — send final notice
+        if (messageTs) {
+          await this.channelManager.removeReaction(
+            channelId,
+            group.externalId,
+            messageTs,
+            "hourglass_flowing_sand"
+          );
+          await this.channelManager.addReaction(channelId, group.externalId, messageTs, "warning");
+        }
+        await this.channelManager.sendMessageToGroup(
+          groupId,
+          `_This task was too complex to finish in ${MAX_RESUMES} attempts. Try breaking it into smaller requests._`
+        );
+
+        await this.updateTaskRunLogStatus(taskRunLog._id, "failed", {
+          result: result.output,
+          error: `Timed out after ${resumeCount} resume attempts`,
+          durationMs: result.durationMs,
+        });
+        return;
+      }
+
+      // Normal completion or non-resumable failure
       if (messageTs) {
         await this.channelManager.removeReaction(channelId, group.externalId, messageTs, "eyes");
+        await this.channelManager.removeReaction(
+          channelId,
+          group.externalId,
+          messageTs,
+          "hourglass_flowing_sand"
+        );
         await this.channelManager.addReaction(
           channelId,
           group.externalId,

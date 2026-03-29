@@ -12,6 +12,8 @@ export interface AgentRunConfig {
   resume?: boolean;
   resumeSessionAt?: string;
   mcpServers?: McpServerConfig[];
+  /** Called periodically with assistant text fragments for progress reporting */
+  onProgress?: (text: string) => void;
 }
 
 export interface McpServerConfig {
@@ -28,6 +30,10 @@ export interface AgentRunResult {
   status: "completed" | "failed" | "timeout";
   error?: string;
   costUsd?: number;
+  /** SDK session ID for resuming (set on timeout) */
+  resumeSessionId?: string;
+  /** Last message UUID seen before timeout — resume point */
+  lastMessageUuid?: string;
 }
 
 export interface AgentRunner {
