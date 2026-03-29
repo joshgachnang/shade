@@ -224,6 +224,14 @@ end tell`;
     // iMessage reactions (tapbacks) are not supported via AppleScript
   }
 
+  async createChannel(_name: string): Promise<{id: string}> {
+    throw new Error("iMessage channels do not support channel creation");
+  }
+
+  async inviteToChannel(_channelId: string, _userId: string): Promise<void> {
+    throw new Error("iMessage channels do not support channel invitations");
+  }
+
   onMessage(handler: (message: InboundMessage) => Promise<void>): void {
     this.messageHandler = handler;
   }
