@@ -10,6 +10,7 @@ See `CLAUDE.md` for IP lifecycle stages and management guidelines.
 |----|-------|--------|--------|----------|
 | IP-001 | Shade Orchestrator | In Progress | Epic (2+ weeks) | High |
 | IP-002 | Shade Claude Fleet | Open | Epic (2+ weeks) | High |
+| IP-003 | Email IMAP Channel Connector | In Progress | Small batch (1-2 days) | High |
 
 ## Completed
 
