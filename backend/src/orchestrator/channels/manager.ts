@@ -5,6 +5,7 @@ import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
+import {createEmailConnector} from "./email";
 import {createIMessageConnector} from "./imessage";
 import {createSlackConnector} from "./slack";
 import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
@@ -17,6 +18,7 @@ const defaultConnectorFactories: Record<string, ConnectorFactory> = {
   slack: createSlackConnector,
   webhook: createWebhookConnector,
   imessage: createIMessageConnector,
+  email: createEmailConnector,
 };
 
 export class ChannelManager {
