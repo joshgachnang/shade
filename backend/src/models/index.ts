@@ -1,5 +1,6 @@
 export * from "./agentSession";
 export * from "./aiRequest";
+export * from "./calendarConfig";
 export * from "./channel";
 export * from "./commandClassification";
 export * from "./group";

@@ -1,6 +1,7 @@
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
 import {aiRequestRoutes} from "./api/aiRequests";
+import {AppleCalendarPlugin, calendarConfigRoutes} from "./api/appleCalendar";
 import {channelRoutes} from "./api/channels";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
@@ -72,6 +73,8 @@ export const start = async (skipListen = false) => {
     .register(commandClassificationRoutes)
     .register(pluginRoutes)
     .register(webhookSourceRoutes)
+    .register(new AppleCalendarPlugin())
+    .register(calendarConfigRoutes)
     .start();
 
   if (!skipListen) {
