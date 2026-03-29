@@ -184,6 +184,40 @@ export class SlackChannelConnector implements ChannelConnector {
     logger.debug(`Message sent to ${groupExternalId} via "${this.channelDoc.name}"`);
   }
 
+  async addReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void> {
+    if (!this.app) {
+      return;
+    }
+    const config = this.channelDoc.config as {botToken?: string};
+    try {
+      await this.app.client.reactions.add({
+        token: config.botToken,
+        channel: groupExternalId,
+        timestamp: messageTs,
+        name: emoji,
+      });
+    } catch (err) {
+      logger.debug(`Could not add reaction: ${err}`);
+    }
+  }
+
+  async removeReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void> {
+    if (!this.app) {
+      return;
+    }
+    const config = this.channelDoc.config as {botToken?: string};
+    try {
+      await this.app.client.reactions.remove({
+        token: config.botToken,
+        channel: groupExternalId,
+        timestamp: messageTs,
+        name: emoji,
+      });
+    } catch (err) {
+      logger.debug(`Could not remove reaction: ${err}`);
+    }
+  }
+
   onMessage(handler: (message: InboundMessage) => Promise<void>): void {
     this.messageHandler = handler;
   }

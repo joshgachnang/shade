@@ -1,0 +1,31 @@
+name: Deploy to Server
+
+on:
+  workflow_run:
+    workflows: ["Build & Release Binary"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Download binary from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download latest --repo ${{ github.repository }} --pattern shade-backend-linux --dir /tmp
+          chmod +x /tmp/shade-backend-linux
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to server
+        run: |
+          tailscale ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'cat > /tmp/shade-backend-new' < /tmp/shade-backend-linux
+          tailscale ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'set -euo pipefail && mv /tmp/shade-backend-new /opt/shade/shade-backend && chmod +x /opt/shade/shade-backend && sudo systemctl restart shade-backend && sleep 3 && systemctl is-active shade-backend && echo "Deploy complete"'

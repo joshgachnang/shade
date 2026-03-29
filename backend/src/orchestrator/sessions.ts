@@ -82,6 +82,22 @@ export const updateSessionActivity = async (
   }
 };
 
+export const updateResumeCheckpoint = async (
+  sessionId: string,
+  resumeSessionAt: string
+): Promise<void> => {
+  try {
+    await AgentSession.findOneAndUpdate(
+      {sessionId},
+      {$set: {resumeSessionAt, lastActivityAt: new Date()}}
+    );
+    logger.info(`Session ${sessionId} resume checkpoint saved: ${resumeSessionAt}`);
+  } catch (err) {
+    logger.error(`Failed to save resume checkpoint for ${sessionId}: ${err}`);
+    throw err;
+  }
+};
+
 export const closeSession = async (sessionId: string): Promise<void> => {
   try {
     await AgentSession.findOneAndUpdate(

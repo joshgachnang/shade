@@ -1,0 +1,27 @@
+[Unit]
+Description=Shade Backend
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=shade
+Group=shade
+WorkingDirectory=/opt/shade
+ExecStart=/opt/shade/shade-backend
+EnvironmentFile=/opt/shade/.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shade-backend
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/shade /var/log/shade /opt/shade
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
