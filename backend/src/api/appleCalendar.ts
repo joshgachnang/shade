@@ -135,5 +135,4 @@ export const calendarConfigRoutes = modelRouter("/calendar-configs", CalendarCon
   },
   queryFields: ["name", "owner"],
   sort: "name",
-  ownerField: "owner",
 });
