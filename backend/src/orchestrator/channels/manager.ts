@@ -5,13 +5,18 @@ import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
+import {createIMessageConnector} from "./imessage";
 import {createSlackConnector} from "./slack";
 import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
 import {createWebhookConnector} from "./webhook";
 
+/** Model backends allowed to send through privileged channels (e.g. iMessage) */
+const PRIVILEGED_ALLOWED_BACKENDS = new Set(["ollama", "gemini"]);
+
 const defaultConnectorFactories: Record<string, ConnectorFactory> = {
   slack: createSlackConnector,
   webhook: createWebhookConnector,
+  imessage: createIMessageConnector,
 };
 
 export class ChannelManager {
@@ -88,7 +93,7 @@ export class ChannelManager {
     await connector.connect();
     this.connectors.set(channelDoc._id.toString(), connector);
 
-    // Announce only in the main group's channel
+    // Announce only in the main group's Slack channel (skip iMessage — don't text people on connect)
     if (channelDoc.type === "slack") {
       const mainGroup = await Group.findOne({channelId: channelDoc._id, isMain: true});
       if (mainGroup) {
@@ -182,6 +187,20 @@ export class ChannelManager {
     }
 
     const channelId = group.channelId.toString();
+
+    // Enforce privilege: privileged channels only allow sends from local/gemini backends
+    const connector = this.connectors.get(channelId);
+    if (connector?.channelDoc.privileged) {
+      const backend = group.modelConfig?.defaultBackend || "claude";
+      if (!PRIVILEGED_ALLOWED_BACKENDS.has(backend)) {
+        logger.error(
+          `Blocked send to privileged channel "${connector.channelDoc.name}" — ` +
+            `group "${group.name}" uses backend "${backend}" (allowed: ${[...PRIVILEGED_ALLOWED_BACKENDS].join(", ")})`
+        );
+        return;
+      }
+    }
+
     logger.debug(
       `Sending message to group ${group.name} via channel ${channelId} (${content.length} chars)`
     );
