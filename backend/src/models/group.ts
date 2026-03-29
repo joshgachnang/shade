@@ -12,10 +12,14 @@ const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
     requiresTrigger: {type: Boolean, default: true},
     isMain: {type: Boolean, default: false},
     modelConfig: {
-      defaultBackend: {type: String, enum: ["claude", "ollama", "codex"], default: "claude"},
+      defaultBackend: {
+        type: String,
+        enum: ["claude", "ollama", "codex", "gemini"],
+        default: "claude",
+      },
       defaultModel: {type: String},
       endpoint: {type: String},
-      fallbackBackend: {type: String, enum: ["claude", "ollama", "codex"]},
+      fallbackBackend: {type: String, enum: ["claude", "ollama", "codex", "gemini"]},
     },
     executionConfig: {
       mode: {type: String, enum: ["direct", "container"], default: "direct"},

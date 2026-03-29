@@ -3,8 +3,9 @@ import type {DefaultDoc, DefaultModel, DefaultStatics} from "./userTypes";
 
 export interface ChannelFields {
   name: string;
-  type: "slack" | "webhook";
+  type: "slack" | "webhook" | "imessage";
   status: "connected" | "disconnected" | "error";
+  privileged: boolean;
   config: Record<string, unknown>;
   lastConnectedAt?: Date;
 }
