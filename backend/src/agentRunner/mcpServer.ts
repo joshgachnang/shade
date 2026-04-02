@@ -7,6 +7,15 @@ import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {z} from "zod";
 import {Message} from "../models/message";
 import {ScheduledTask} from "../models/scheduledTask";
+import {
+  addShadeContext,
+  createContact,
+  getContactById,
+  matchContactByEmail,
+  matchContactByPhone,
+  searchContacts,
+  updateContact,
+} from "../utils/appleContacts";
 
 const execFileAsync = promisify(execFile);
 
@@ -501,6 +510,228 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
+  // --- Apple Contacts tools ---
+
+  const searchContactsTool = tool(
+    "search_contacts",
+    "Search Apple Contacts by name, email, phone number, company, or notes. Use this to find contacts when processing messages — match senders to known contacts for context.",
+    {
+      query: z
+        .string()
+        .describe(
+          "Search query: a name, email address, phone number, company name, or keyword from notes"
+        ),
+    },
+    async (args) => {
+      try {
+        const contacts = await searchContacts(args.query);
+        if (contacts.length === 0) {
+          return {
+            content: [{type: "text" as const, text: `No contacts found matching "${args.query}"`}],
+          };
+        }
+        return {content: [{type: "text" as const, text: JSON.stringify(contacts, null, 2)}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error searching contacts: ${msg}`}]};
+      }
+    }
+  );
+
+  const getContactTool = tool(
+    "get_contact",
+    "Get full details for a specific Apple Contact by ID, including all emails, phones, addresses, and Shade context notes.",
+    {
+      id: z.string().describe("The Apple Contacts ID of the person"),
+    },
+    async (args) => {
+      try {
+        const contact = await getContactById(args.id);
+        if (!contact) {
+          return {content: [{type: "text" as const, text: "Contact not found"}]};
+        }
+        return {content: [{type: "text" as const, text: JSON.stringify(contact, null, 2)}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error getting contact: ${msg}`}]};
+      }
+    }
+  );
+
+  const matchContactTool = tool(
+    "match_contact",
+    "Match an incoming message sender to an Apple Contact using their email address or phone number. Returns the full contact if found, or null. Use this when processing emails or texts to identify who is messaging.",
+    {
+      email: z.string().optional().describe("Email address to match"),
+      phone: z.string().optional().describe("Phone number to match (any format)"),
+    },
+    async (args) => {
+      try {
+        let contact = null;
+        if (args.email) {
+          contact = await matchContactByEmail(args.email);
+        }
+        if (!contact && args.phone) {
+          contact = await matchContactByPhone(args.phone);
+        }
+        if (!contact) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No contact found for ${args.email ? `email: ${args.email}` : ""}${args.email && args.phone ? ", " : ""}${args.phone ? `phone: ${args.phone}` : ""}`,
+              },
+            ],
+          };
+        }
+        return {content: [{type: "text" as const, text: JSON.stringify(contact, null, 2)}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error matching contact: ${msg}`}]};
+      }
+    }
+  );
+
+  const createContactTool = tool(
+    "create_contact",
+    "Create a new contact in Apple Contacts. Use when you encounter a new person who should be tracked.",
+    {
+      firstName: z.string().describe("First name"),
+      lastName: z.string().optional().describe("Last name"),
+      company: z.string().optional().describe("Company/organization name"),
+      jobTitle: z.string().optional().describe("Job title"),
+      emails: z
+        .array(z.object({label: z.string(), value: z.string()}))
+        .optional()
+        .describe('Email addresses with labels (e.g., [{label: "work", value: "j@co.com"}])'),
+      phones: z
+        .array(z.object({label: z.string(), value: z.string()}))
+        .optional()
+        .describe('Phone numbers with labels (e.g., [{label: "mobile", value: "+15551234567"}])'),
+      note: z.string().optional().describe("Free-form notes about this person"),
+    },
+    async (args) => {
+      try {
+        const contact = await createContact({
+          firstName: args.firstName,
+          lastName: args.lastName,
+          company: args.company,
+          jobTitle: args.jobTitle,
+          emails: args.emails,
+          phones: args.phones,
+          note: args.note,
+        });
+        return {
+          content: [
+            {type: "text" as const, text: `Contact created: ${JSON.stringify(contact, null, 2)}`},
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error creating contact: ${msg}`}]};
+      }
+    }
+  );
+
+  const updateContactTool = tool(
+    "update_contact",
+    "Update an existing Apple Contact's basic fields (name, company, job title, or full note text).",
+    {
+      id: z.string().describe("The Apple Contacts ID"),
+      firstName: z.string().optional().describe("Updated first name"),
+      lastName: z.string().optional().describe("Updated last name"),
+      company: z.string().optional().describe("Updated company name"),
+      jobTitle: z.string().optional().describe("Updated job title"),
+      note: z
+        .string()
+        .optional()
+        .describe("Replace the full note text (use add_contact_context for incremental updates)"),
+    },
+    async (args) => {
+      try {
+        const contact = await updateContact({
+          id: args.id,
+          firstName: args.firstName,
+          lastName: args.lastName,
+          company: args.company,
+          jobTitle: args.jobTitle,
+          note: args.note,
+        });
+        return {
+          content: [
+            {type: "text" as const, text: `Contact updated: ${JSON.stringify(contact, null, 2)}`},
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error updating contact: ${msg}`}]};
+      }
+    }
+  );
+
+  const addContactContextTool = tool(
+    "add_contact_context",
+    "Add or update structured Shade context in a contact's notes. This merges new information with existing context — interests, topics, and preferences are additive (won't remove existing ones). Recent updates are appended. Use this to continuously enrich contacts with things you learn from conversations.",
+    {
+      id: z.string().describe("The Apple Contacts ID"),
+      relationship: z
+        .string()
+        .optional()
+        .describe('Relationship type (e.g., "coworker", "friend", "manager", "client")'),
+      metAt: z
+        .string()
+        .optional()
+        .describe('How/where you met (e.g., "2025-03 tech conference in SF")'),
+      interests: z
+        .array(z.string())
+        .optional()
+        .describe('Hobbies and interests (e.g., ["hiking", "photography", "ML"])'),
+      topics: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Current work/life topics (e.g., ["working on search feature", "learning Rust"])'
+        ),
+      preferences: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Communication preferences (e.g., ["prefers morning meetings", "likes concise emails"])'
+        ),
+      recentUpdates: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Recent life/work updates with date context (e.g., ["got promoted to staff engineer (2025-06)"])'
+        ),
+      customFields: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe("Any other key-value pairs to store"),
+    },
+    async (args) => {
+      try {
+        const contact = await addShadeContext(args.id, {
+          relationship: args.relationship,
+          metAt: args.metAt,
+          interests: args.interests,
+          topics: args.topics,
+          preferences: args.preferences,
+          recentUpdates: args.recentUpdates,
+          customFields: args.customFields,
+        });
+        return {
+          content: [
+            {type: "text" as const, text: `Context added to ${contact.fullName}:\n${contact.note}`},
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error adding context: ${msg}`}]};
+      }
+    }
+  );
+
   return [
     sendMessageTool,
     scheduleTaskTool,
@@ -515,6 +746,12 @@ const buildTools = (ctx: McpContext) => {
     createReminderTool,
     completeReminderTool,
     deleteReminderTool,
+    searchContactsTool,
+    getContactTool,
+    matchContactTool,
+    createContactTool,
+    updateContactTool,
+    addContactContextTool,
   ];
 };
 
