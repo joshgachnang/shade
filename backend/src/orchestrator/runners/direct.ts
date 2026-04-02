@@ -56,6 +56,9 @@ export class DirectAgentRunner implements AgentRunner {
         groupId: config.groupId,
         channelId: config.env?.SHADE_CHANNEL_ID ?? "",
         ipcDir: path.join(process.cwd(), "data/ipc"),
+        groupFolder: config.groupFolder,
+        messageTs: config.messageTs,
+        senderExternalId: config.senderExternalId,
       });
       mcpServers["shade-orchestrator"] = shadeMcp;
 

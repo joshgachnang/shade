@@ -124,6 +124,14 @@ export class WebhookChannelConnector implements ChannelConnector {
     logger.debug("Webhook channel does not support outbound messages");
   }
 
+  async createChannel(_name: string): Promise<{id: string}> {
+    throw new Error("Webhook channels do not support channel creation");
+  }
+
+  async inviteToChannel(_channelId: string, _userId: string): Promise<void> {
+    throw new Error("Webhook channels do not support channel invitations");
+  }
+
   async addReaction(_groupExternalId: string, _messageTs: string, _emoji: string): Promise<void> {}
 
   async removeReaction(

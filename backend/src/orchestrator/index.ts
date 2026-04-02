@@ -1,10 +1,12 @@
 import {logger} from "@terreno/api";
 import type express from "express";
+import {Group} from "../models/group";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
+import type {IpcCreateFeature} from "./ipc";
 import {IpcWatcher} from "./ipc";
-import {initGlobalMemory} from "./memory";
+import {ensureGroupDirectory, initGlobalMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
 import type {AgentRunner} from "./runners/types";
@@ -75,6 +77,56 @@ export const startOrchestrator = async (
         `IPC sendMessage failed (channel=${channelId}, group=${targetGroupExternalId}): ${err}`
       );
     }
+  });
+  ipcWatcher.setAddReaction(async (channelId, groupExternalId, messageTs, emoji) => {
+    try {
+      await channelManager.addReaction(channelId, groupExternalId, messageTs, emoji);
+    } catch (err) {
+      logger.error(
+        `IPC addReaction failed (channel=${channelId}, group=${groupExternalId}, emoji=${emoji}): ${err}`
+      );
+    }
+  });
+  ipcWatcher.setCreateFeature(async (data: IpcCreateFeature) => {
+    // Find the source group to get the channelId (MongoDB ObjectId)
+    const sourceGroup = await Group.findById(data.groupId);
+    if (!sourceGroup) {
+      throw new Error(`Source group ${data.groupId} not found`);
+    }
+
+    // Create the Slack channel and invite the user
+    const {slackChannelId} = await channelManager.createFeatureChannel(
+      sourceGroup.channelId.toString(),
+      data.name,
+      data.senderExternalId
+    );
+
+    // Create a Group record so the orchestrator listens to this channel
+    const folder = `features/${data.name}`;
+    const group = await Group.create({
+      name: data.name,
+      folder,
+      channelId: sourceGroup.channelId,
+      externalId: slackChannelId,
+      trigger: "@Shade",
+      requiresTrigger: false,
+      isMain: false,
+      modelConfig: sourceGroup.modelConfig,
+      executionConfig: sourceGroup.executionConfig,
+    });
+
+    // Register in the live cache so messages flow immediately
+    channelManager.registerGroup(group);
+    await ensureGroupDirectory(folder);
+
+    // Send the initial prompt to the new channel
+    await channelManager.sendMessage(
+      sourceGroup.channelId.toString(),
+      slackChannelId,
+      `Feature channel ready! What's the idea for *${data.name}*? Describe what you're thinking and I'll help shape it.`
+    );
+
+    logger.info(`Feature channel created: #${data.name} (${slackChannelId}), group ${group._id}`);
   });
   ipcWatcher.start();
 

@@ -12,6 +12,10 @@ export interface AgentRunConfig {
   resume?: boolean;
   resumeSessionAt?: string;
   mcpServers?: McpServerConfig[];
+  /** Slack timestamp of the triggering message (for reactions) */
+  messageTs?: string;
+  /** External ID of the user who triggered this run (e.g., Slack user ID) */
+  senderExternalId?: string;
   /** Called periodically with assistant text fragments for progress reporting */
   onProgress?: (text: string) => void;
 }

@@ -95,15 +95,15 @@ export class ChannelManager {
     await connector.connect();
     this.connectors.set(channelDoc._id.toString(), connector);
 
-    // Announce in all groups linked to this channel (skip iMessage — don't text people on connect)
+    // Announce only in the main group's Slack channel (skip iMessage — don't text people on connect)
     if (channelDoc.type === "slack") {
-      const groups = await Group.find({channelId: channelDoc._id});
-      for (const group of groups) {
+      const mainGroup = await Group.findOne({channelId: channelDoc._id, isMain: true});
+      if (mainGroup) {
         try {
-          await connector.sendMessage(group.externalId, "Shade is online :wave:");
-          logger.info(`Announced in ${group.name} (${group.externalId})`);
+          await connector.sendMessage(mainGroup.externalId, "Shade is online :wave:");
+          logger.info(`Announced in ${mainGroup.name} (${mainGroup.externalId})`);
         } catch (err) {
-          logger.warn(`Could not announce in ${group.name}: ${err}`);
+          logger.warn(`Could not announce in ${mainGroup.name}: ${err}`);
         }
       }
     }
@@ -227,6 +227,27 @@ export class ChannelManager {
     } catch (err) {
       logger.error(`Failed to store outbound message for group ${group.name}: ${err}`);
     }
+  }
+
+  registerGroup(group: GroupDocument): void {
+    this.groupCache.set(group.externalId, group);
+    this.groupCache.set(group._id.toString(), group);
+    logger.info(`Registered group "${group.name}" (${group.externalId}) in cache`);
+  }
+
+  async createFeatureChannel(
+    sourceChannelId: string,
+    name: string,
+    userId: string
+  ): Promise<{slackChannelId: string}> {
+    const connector = this.connectors.get(sourceChannelId);
+    if (!connector) {
+      throw new Error(`No connector for channel ${sourceChannelId}`);
+    }
+
+    const {id: slackChannelId} = await connector.createChannel(name);
+    await connector.inviteToChannel(slackChannelId, userId);
+    return {slackChannelId};
   }
 
   getConnectedChannelCount(): number {
