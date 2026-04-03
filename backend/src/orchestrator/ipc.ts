@@ -37,7 +37,13 @@ export interface IpcCreateFeature {
   senderExternalId: string;
 }
 
-type IpcFile = IpcMessage | IpcTaskAction | IpcReaction | IpcCreateFeature;
+export interface IpcRadioStream {
+  type: "start_radio_stream" | "stop_radio_stream";
+  groupId: string;
+  radioStreamId: string;
+}
+
+type IpcFile = IpcMessage | IpcTaskAction | IpcReaction | IpcCreateFeature | IpcRadioStream;
 
 type SendMessageFn = (
   channelId: string,
@@ -53,12 +59,14 @@ type AddReactionFn = (
 ) => Promise<void>;
 
 type CreateFeatureFn = (data: IpcCreateFeature) => Promise<void>;
+type RadioStreamFn = (data: IpcRadioStream) => Promise<void>;
 
 export class IpcWatcher {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private sendMessage: SendMessageFn | null = null;
   private addReaction: AddReactionFn | null = null;
   private createFeature: CreateFeatureFn | null = null;
+  private radioStream: RadioStreamFn | null = null;
 
   setSendMessage(fn: SendMessageFn): void {
     this.sendMessage = fn;
@@ -70,6 +78,10 @@ export class IpcWatcher {
 
   setCreateFeature(fn: CreateFeatureFn): void {
     this.createFeature = fn;
+  }
+
+  setRadioStream(fn: RadioStreamFn): void {
+    this.radioStream = fn;
   }
 
   start(): void {
@@ -164,8 +176,12 @@ export class IpcWatcher {
       return targetGroupId === ipcData.groupId;
     }
 
-    // Feature channel creation requires main group
-    if (ipcData.type === "create_feature") {
+    // Feature channel creation and radio stream control require main group
+    if (
+      ipcData.type === "create_feature" ||
+      ipcData.type === "start_radio_stream" ||
+      ipcData.type === "stop_radio_stream"
+    ) {
       return false;
     }
 
@@ -194,6 +210,10 @@ export class IpcWatcher {
         break;
       case "create_feature":
         await this.handleCreateFeature(ipcData);
+        break;
+      case "start_radio_stream":
+      case "stop_radio_stream":
+        await this.handleRadioStream(ipcData);
         break;
       case "create_task":
         await this.handleCreateTask(ipcData);
@@ -277,6 +297,20 @@ export class IpcWatcher {
     }
     await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: data.data ?? {}});
     logger.info(`IPC: updated task ${data.taskId}`);
+  }
+
+  private async handleRadioStream(data: IpcRadioStream): Promise<void> {
+    if (!this.radioStream) {
+      logger.warn("No radioStream handler registered for IPC");
+      return;
+    }
+
+    try {
+      await this.radioStream(data);
+      logger.info(`IPC: ${data.type} for radio stream ${data.radioStreamId}`);
+    } catch (err) {
+      logger.error(`IPC: failed to ${data.type} radio stream ${data.radioStreamId}: ${err}`);
+    }
   }
 
   private async handleTaskStatusChange(data: IpcTaskAction, status: string): Promise<void> {
