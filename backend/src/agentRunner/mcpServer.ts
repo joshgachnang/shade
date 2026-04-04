@@ -5,7 +5,9 @@ import path from "node:path";
 import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {z} from "zod";
+import {Channel} from "../models/channel";
 import {Message} from "../models/message";
+import {RadioStream} from "../models/radioStream";
 import {ScheduledTask} from "../models/scheduledTask";
 import {
   addShadeContext,
@@ -905,6 +907,203 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
+  const setAllowedUsersTool = tool(
+    "set_allowed_users",
+    "Set which Slack users are allowed to interact with Shade in this workspace. Only messages from allowed users will be processed; all others are silently ignored. Pass an empty array to allow everyone. Note: this requires a restart to take effect.",
+    {
+      userIds: z
+        .array(z.string())
+        .describe(
+          "Array of Slack user IDs to allow (e.g., ['U12345ABC']). Pass an empty array to remove the filter and allow all users."
+        ),
+      addSelf: z
+        .boolean()
+        .default(false)
+        .describe(
+          "If true, automatically adds the user who sent this message to the allowed list."
+        ),
+    },
+    async (args) => {
+      try {
+        const userIds = [...args.userIds];
+        if (args.addSelf && ctx.senderExternalId && !userIds.includes(ctx.senderExternalId)) {
+          userIds.push(ctx.senderExternalId);
+        }
+
+        const channelDoc = await Channel.findById(ctx.channelId);
+        if (!channelDoc) {
+          return {
+            content: [{type: "text" as const, text: "Error: Channel not found."}],
+          };
+        }
+
+        const updatedConfig = {
+          ...(channelDoc.config as Record<string, unknown>),
+          allowedUserIds: userIds,
+        };
+        await Channel.findByIdAndUpdate(ctx.channelId, {$set: {config: updatedConfig}});
+
+        const msg =
+          userIds.length === 0
+            ? "Allowed users filter removed — all users can now interact with Shade in this workspace. Restart required to take effect."
+            : `Allowed users set to: ${userIds.join(", ")}. Only these users will be able to interact with Shade in this workspace. Restart required to take effect.`;
+
+        return {
+          content: [{type: "text" as const, text: msg}],
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        return {
+          content: [{type: "text" as const, text: `Error setting allowed users: ${errorMsg}`}],
+        };
+      }
+    }
+  );
+
+  const startRadioStreamTool = tool(
+    "start_radio_stream",
+    "Start a radio stream transcription. Begins streaming audio from the configured URL, transcribing it with Deepgram, and posting transcripts to the configured Slack channel.",
+    {
+      radioStreamId: z.string().describe("The RadioStream document ID to start"),
+    },
+    async (args) => {
+      try {
+        const stream = await RadioStream.findById(args.radioStreamId);
+        if (!stream) {
+          return {content: [{type: "text" as const, text: "Error: Radio stream not found."}]};
+        }
+        if (stream.status === "active") {
+          return {
+            content: [{type: "text" as const, text: `Stream "${stream.name}" is already active.`}],
+          };
+        }
+        const fileId = await writeIpcFile(ctx.ipcDir, {
+          type: "start_radio_stream",
+          groupId: ctx.groupId,
+          radioStreamId: args.radioStreamId,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Stream "${stream.name}" start queued (${fileId}). Transcription will begin shortly.`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error starting stream: ${msg}`}]};
+      }
+    }
+  );
+
+  const stopRadioStreamTool = tool(
+    "stop_radio_stream",
+    "Stop a running radio stream transcription. Stops the audio capture and transcription pipeline.",
+    {
+      radioStreamId: z.string().describe("The RadioStream document ID to stop"),
+    },
+    async (args) => {
+      try {
+        const stream = await RadioStream.findById(args.radioStreamId);
+        if (!stream) {
+          return {content: [{type: "text" as const, text: "Error: Radio stream not found."}]};
+        }
+        if (stream.status !== "active") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Stream "${stream.name}" is not currently active (status: ${stream.status}).`,
+              },
+            ],
+          };
+        }
+        const fileId = await writeIpcFile(ctx.ipcDir, {
+          type: "stop_radio_stream",
+          groupId: ctx.groupId,
+          radioStreamId: args.radioStreamId,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Stream "${stream.name}" stop queued (${fileId}). Transcription will stop shortly.`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error stopping stream: ${msg}`}]};
+      }
+    }
+  );
+
+  const listRadioStreamsTool = tool(
+    "list_radio_streams",
+    "List all configured radio streams with their status, stream URL, and last transcript time.",
+    {},
+    async () => {
+      try {
+        const streams = await RadioStream.find({}).sort({created: -1}).limit(50).lean();
+        if (streams.length === 0) {
+          return {content: [{type: "text" as const, text: "No radio streams configured."}]};
+        }
+        const list = streams.map((s) => ({
+          id: s._id.toString(),
+          name: s.name,
+          status: s.status,
+          streamUrl: s.streamUrl,
+          lastTranscriptAt: s.lastTranscriptAt?.toISOString() ?? null,
+          reconnectCount: s.reconnectCount,
+          transcriptionEnabled: s.transcriptionEnabled,
+          errorMessage: s.errorMessage ?? null,
+        }));
+        return {content: [{type: "text" as const, text: JSON.stringify(list, null, 2)}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error listing streams: ${msg}`}]};
+      }
+    }
+  );
+
+  const toggleTranscriptionTool = tool(
+    "toggle_transcription",
+    "Enable or disable radio stream transcription. When enabled, the stream transcribes speech to Slack and identifies songs via ACRCloud. When disabled, the stream stops entirely. Requires a restart to take effect.",
+    {
+      radioStreamId: z.string().describe("The RadioStream document ID"),
+      enabled: z.boolean().describe("true to enable transcription, false to disable"),
+    },
+    async (args) => {
+      try {
+        const stream = await RadioStream.findById(args.radioStreamId);
+        if (!stream) {
+          return {content: [{type: "text" as const, text: "Error: Radio stream not found."}]};
+        }
+        await RadioStream.findByIdAndUpdate(args.radioStreamId, {
+          $set: {transcriptionEnabled: args.enabled},
+        });
+        // Queue IPC to start or stop the stream immediately
+        const fileId = await writeIpcFile(ctx.ipcDir, {
+          type: args.enabled ? "start_radio_stream" : "stop_radio_stream",
+          groupId: ctx.groupId,
+          radioStreamId: args.radioStreamId,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Transcription ${args.enabled ? "enabled" : "disabled"} for "${stream.name}". Stream ${args.enabled ? "starting" : "stopping"} now (${fileId}).`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error toggling transcription: ${msg}`}]};
+      }
+    }
+  );
+
   return [
     sendMessageTool,
     addReactionTool,
@@ -931,6 +1130,11 @@ const buildTools = (ctx: McpContext) => {
     createContactTool,
     updateContactTool,
     addContactContextTool,
+    setAllowedUsersTool,
+    startRadioStreamTool,
+    stopRadioStreamTool,
+    listRadioStreamsTool,
+    toggleTranscriptionTool,
   ];
 };
 

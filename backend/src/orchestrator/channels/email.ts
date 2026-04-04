@@ -367,6 +367,14 @@ export class EmailChannelConnector implements ChannelConnector {
     // Email does not support reactions
   }
 
+  async createChannel(_name: string): Promise<{id: string}> {
+    throw new Error("Email channels do not support creating sub-channels");
+  }
+
+  async inviteToChannel(_channelId: string, _userId: string): Promise<void> {
+    throw new Error("Email channels do not support inviting users");
+  }
+
   onMessage(handler: (message: InboundMessage) => Promise<void>): void {
     this.messageHandler = handler;
   }

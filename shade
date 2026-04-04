@@ -45,7 +45,7 @@ service_after() {
 # Packages that fail to bundle (CJS interop issues) and must resolve from node_modules at runtime
 service_externals() {
   case "$1" in
-    backend) echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk" ;;
+    backend) echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk ws" ;;
     *)       echo "" ;;
   esac
 }
