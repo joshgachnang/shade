@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
-import {config} from "../config";
+import {paths} from "../config";
+import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
 import {ScheduledTask} from "../models/scheduledTask";
 
@@ -84,18 +85,21 @@ export class IpcWatcher {
     this.radioStream = fn;
   }
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.intervalId) {
       return;
     }
+
+    const appConfig = await loadAppConfig();
+    const interval = appConfig.pollIntervals.ipc;
 
     this.intervalId = setInterval(() => {
       this.poll().catch((err) => {
         logger.error(`IPC poll error: ${err}`);
       });
-    }, config.pollIntervals.ipc);
+    }, interval);
 
-    logger.info(`IPC watcher started (interval: ${config.pollIntervals.ipc}ms)`);
+    logger.info(`IPC watcher started (interval: ${interval}ms)`);
   }
 
   stop(): void {
@@ -107,7 +111,7 @@ export class IpcWatcher {
   }
 
   private async poll(): Promise<void> {
-    const ipcDir = config.paths.ipc;
+    const ipcDir = paths.ipc;
 
     let files: string[];
     try {

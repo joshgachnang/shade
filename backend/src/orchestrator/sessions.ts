@@ -2,12 +2,12 @@ import {randomUUID} from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
-import {config} from "../config";
+import {paths} from "../config";
 import {AgentSession} from "../models/agentSession";
 import type {AgentSessionDocument} from "../types";
 
 export const getSessionDir = (groupId: string): string => {
-  return path.join(config.paths.sessions, groupId);
+  return path.join(paths.sessions, groupId);
 };
 
 export const getTranscriptPath = (groupId: string, sessionId: string): string => {

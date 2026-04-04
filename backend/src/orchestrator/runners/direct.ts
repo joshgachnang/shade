@@ -6,6 +6,7 @@ import path from "node:path";
 import {query} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
 import {createShadeMcpServer} from "../../agentRunner/mcpServer";
+import {loadAppConfig} from "../../models/appConfig";
 import {buildAgentEnv, redactSecrets} from "../security";
 import type {AgentRunConfig, AgentRunner, AgentRunResult} from "./types";
 
@@ -14,13 +15,11 @@ interface ActiveAgent {
   startedAt: number;
 }
 
-/** Minimum interval between progress callbacks (ms) */
-const PROGRESS_INTERVAL_MS = 30_000;
-
 export class DirectAgentRunner implements AgentRunner {
   private activeAgents = new Map<string, ActiveAgent>();
 
   async run(config: AgentRunConfig): Promise<AgentRunResult> {
+    const appConfig = await loadAppConfig();
     const startedAt = Date.now();
     const abortController = new AbortController();
 
@@ -85,9 +84,9 @@ export class DirectAgentRunner implements AgentRunner {
           systemPrompt: config.systemPrompt,
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
-          allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+          allowedTools: appConfig.agent.allowedTools,
           abortController,
-          maxTurns: 50,
+          maxTurns: appConfig.agent.maxTurns,
           mcpServers,
           ...(config.resume && config.resumeSessionAt ? {resume: config.resumeSessionAt} : {}),
         },
@@ -135,7 +134,7 @@ export class DirectAgentRunner implements AgentRunner {
         // Emit progress callbacks at throttled intervals
         if (config.onProgress && partialOutput.length > 0) {
           const now = Date.now();
-          if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
+          if (now - lastProgressAt >= appConfig.agent.progressIntervalMs) {
             lastProgressAt = now;
             config.onProgress(partialOutput);
           }

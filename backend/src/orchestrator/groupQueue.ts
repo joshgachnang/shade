@@ -1,7 +1,7 @@
 import {logger} from "@terreno/api";
 import type {Types} from "mongoose";
-import {config} from "../config";
 import {AIRequest} from "../models/aiRequest";
+import {loadAppConfig} from "../models/appConfig";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
@@ -25,12 +25,6 @@ interface QueuedItem {
   resumeSessionAt?: string;
   resumeCount?: number;
 }
-
-const BASE_RETRY_DELAY_MS = 5000;
-const MAX_RETRIES = 5;
-const MAX_RESUMES = 3;
-/** Minimum interval between progress messages sent to the channel (ms) */
-const PROGRESS_MESSAGE_INTERVAL_MS = 60_000;
 
 export class GroupQueue {
   private queues = new Map<string, QueuedItem[]>();
@@ -94,9 +88,10 @@ export class GroupQueue {
     }
 
     // Check global concurrency
-    if (this.globalActiveCount >= config.concurrency.maxGlobal) {
+    const appConfig = await loadAppConfig();
+    if (this.globalActiveCount >= appConfig.concurrency.maxGlobal) {
       logger.debug(
-        `Global concurrency limit reached (${this.globalActiveCount}/${config.concurrency.maxGlobal}), deferring group ${groupId}`
+        `Global concurrency limit reached (${this.globalActiveCount}/${appConfig.concurrency.maxGlobal}), deferring group ${groupId}`
       );
       return;
     }
@@ -155,10 +150,11 @@ export class GroupQueue {
     // Build the prompt from conversation context
     const {prompt, messageIds} = await buildPromptForGroup(group, message);
     const session = await getOrCreateSession(groupId);
+    const appConfig = await loadAppConfig();
     const groupFolder = await ensureGroupDirectory(group.folder);
     const systemPrompt = await buildSystemPrompt(
       group.folder,
-      `You are ${config.assistantName}, an AI assistant in the "${group.name}" group.`
+      `You are ${appConfig.assistantName}, an AI assistant in the "${group.name}" group.`
     );
 
     const taskRunLog = await TaskRunLog.create({
@@ -185,7 +181,7 @@ export class GroupQueue {
     let lastProgressSentAt = 0;
     const onProgress = async (text: string) => {
       const now = Date.now();
-      if (now - lastProgressSentAt < PROGRESS_MESSAGE_INTERVAL_MS) {
+      if (now - lastProgressSentAt < appConfig.orchestrator.progressMessageIntervalMs) {
         return;
       }
       lastProgressSentAt = now;
@@ -253,13 +249,13 @@ export class GroupQueue {
 
         // Send partial output if any, plus a "continuing" notice
         if (result.output) {
-          const partial = formatOutboundMessage(result.output, config.assistantName);
+          const partial = formatOutboundMessage(result.output, appConfig.assistantName);
           if (partial) {
             await this.channelManager.sendMessageToGroup(groupId, partial);
           }
         }
 
-        if (resumeCount <= MAX_RESUMES) {
+        if (resumeCount <= appConfig.orchestrator.maxResumes) {
           // Swap 👀 → ⏳ to show we're resuming
           if (messageTs) {
             await this.channelManager.removeReaction(
@@ -278,7 +274,7 @@ export class GroupQueue {
 
           await this.channelManager.sendMessageToGroup(
             groupId,
-            `_Taking longer than expected — resuming automatically (${resumeCount}/${MAX_RESUMES})..._`
+            `_Taking longer than expected — resuming automatically (${resumeCount}/${appConfig.orchestrator.maxResumes})..._`
           );
 
           // Re-enqueue with resume info
@@ -317,7 +313,7 @@ export class GroupQueue {
         }
         await this.channelManager.sendMessageToGroup(
           groupId,
-          `_This task was too complex to finish in ${MAX_RESUMES} attempts. Try breaking it into smaller requests._`
+          `_This task was too complex to finish in ${appConfig.orchestrator.maxResumes} attempts. Try breaking it into smaller requests._`
         );
 
         await this.updateTaskRunLogStatus(taskRunLog._id, "failed", {
@@ -377,7 +373,8 @@ export class GroupQueue {
     message: MessageDocument,
     messageIds: string[]
   ): Promise<void> {
-    const outbound = formatOutboundMessage(result.output, config.assistantName);
+    const appConfig = await loadAppConfig();
+    const outbound = formatOutboundMessage(result.output, appConfig.assistantName);
 
     if (outbound) {
       try {
@@ -466,16 +463,19 @@ export class GroupQueue {
   }
 
   private async handleFailure(item: QueuedItem, error: string): Promise<void> {
-    if (item.retryCount >= MAX_RETRIES) {
+    const appConfig = await loadAppConfig();
+    const {maxRetries, baseRetryDelayMs} = appConfig.orchestrator;
+
+    if (item.retryCount >= maxRetries) {
       logger.error(
-        `Max retries (${MAX_RETRIES}) reached for group ${item.group.name}, dropping message: "${item.message.content.substring(0, 80)}"`
+        `Max retries (${maxRetries}) reached for group ${item.group.name}, dropping message: "${item.message.content.substring(0, 80)}"`
       );
       return;
     }
 
-    const delay = BASE_RETRY_DELAY_MS * 2 ** item.retryCount;
+    const delay = baseRetryDelayMs * 2 ** item.retryCount;
     logger.warn(
-      `Retrying group ${item.group.name} in ${delay}ms (attempt ${item.retryCount + 1}/${MAX_RETRIES}, error: ${error.substring(0, 200)})`
+      `Retrying group ${item.group.name} in ${delay}ms (attempt ${item.retryCount + 1}/${maxRetries}, error: ${error.substring(0, 200)})`
     );
 
     item.retryCount++;

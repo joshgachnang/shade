@@ -1,21 +1,21 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
-import {config} from "../config";
+import {paths} from "../config";
 
 const MEMORY_FILENAME = "CLAUDE.md";
 const SOUL_FILENAME = "SOUL.md";
 
 export const getSoulPath = (): string => {
-  return path.join(config.paths.groups, SOUL_FILENAME);
+  return path.join(paths.groups, SOUL_FILENAME);
 };
 
 export const getGlobalMemoryPath = (): string => {
-  return path.join(config.paths.groups, MEMORY_FILENAME);
+  return path.join(paths.groups, MEMORY_FILENAME);
 };
 
 export const getGroupMemoryPath = (groupFolder: string): string => {
-  return path.join(config.paths.groups, groupFolder, MEMORY_FILENAME);
+  return path.join(paths.groups, groupFolder, MEMORY_FILENAME);
 };
 
 export const readMemory = async (filePath: string): Promise<string | null> => {
@@ -41,7 +41,7 @@ export const writeMemory = async (filePath: string, content: string): Promise<vo
 };
 
 export const ensureGroupDirectory = async (groupFolder: string): Promise<string> => {
-  const groupDir = path.join(config.paths.groups, groupFolder);
+  const groupDir = path.join(paths.groups, groupFolder);
   try {
     await fs.mkdir(groupDir, {recursive: true});
     logger.debug(`Group directory ensured: ${groupDir}`);
