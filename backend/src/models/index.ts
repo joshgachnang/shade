@@ -11,5 +11,6 @@ export * from "./remoteAgent";
 export * from "./scheduledTask";
 export * from "./taskRunLog";
 export * from "./transcript";
+export * from "./triviaQuestion";
 export * from "./user";
 export * from "./webhookSource";
