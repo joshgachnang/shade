@@ -10,9 +10,11 @@ import {groupRoutes} from "./api/groups";
 import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
 import {pluginRoutes} from "./api/plugins";
+import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
+import {transcriptRoutes} from "./api/transcripts";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
 import {User} from "./models/user";
@@ -73,6 +75,8 @@ export const start = async (skipListen = false) => {
     .register(remoteAgentRoutes)
     .register(commandClassificationRoutes)
     .register(pluginRoutes)
+    .register(radioStreamRoutes)
+    .register(transcriptRoutes)
     .register(webhookSourceRoutes)
     .register(new AppleCalendarPlugin())
     .register(calendarConfigRoutes)

@@ -25,4 +25,10 @@ export const config = {
   },
 
   triggerPattern: process.env.SHADE_TRIGGER_PATTERN || "@Shade",
+
+  radioTranscriber: {
+    defaultBatchIntervalMs: Number(process.env.SHADE_RADIO_BATCH_MS) || 15000,
+    maxReconnectAttempts: Number(process.env.SHADE_RADIO_MAX_RECONNECTS) || 50,
+    reconnectDelayMs: Number(process.env.SHADE_RADIO_RECONNECT_DELAY_MS) || 5000,
+  },
 };

@@ -16,6 +16,14 @@ export class SlackChannelConnector implements ChannelConnector {
     this.channelDoc = channelDoc;
   }
 
+  private isUserAllowed(userId: string): boolean {
+    const config = this.channelDoc.config as {allowedUserIds?: string[]};
+    if (!config.allowedUserIds || config.allowedUserIds.length === 0) {
+      return true;
+    }
+    return config.allowedUserIds.includes(userId);
+  }
+
   async connect(): Promise<void> {
     const config = this.channelDoc.config as {
       botToken?: string;
@@ -52,6 +60,13 @@ export class SlackChannelConnector implements ChannelConnector {
           return;
         }
 
+        if (!this.isUserAllowed(msg.user || "")) {
+          logger.debug(
+            `Slack message in "${this.channelDoc.name}" from non-allowed user ${msg.user}, skipping`
+          );
+          return;
+        }
+
         if (!this.messageHandler) {
           logger.debug("No message handler registered, skipping Slack message");
           return;
@@ -78,6 +93,13 @@ export class SlackChannelConnector implements ChannelConnector {
         logger.debug(
           `Slack app_mention in "${this.channelDoc.name}": channel=${event.channel} user=${event.user} text="${event.text?.substring(0, 80)}"`
         );
+
+        if (!this.isUserAllowed(event.user || "")) {
+          logger.debug(
+            `Slack mention in "${this.channelDoc.name}" from non-allowed user ${event.user}, skipping`
+          );
+          return;
+        }
 
         if (!this.messageHandler) {
           logger.debug("No message handler registered, skipping Slack mention");

@@ -4,12 +4,13 @@ import {Group} from "../models/group";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
-import type {IpcCreateFeature} from "./ipc";
+import type {IpcCreateFeature, IpcRadioStream} from "./ipc";
 import {IpcWatcher} from "./ipc";
 import {ensureGroupDirectory, initGlobalMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
 import type {AgentRunner} from "./runners/types";
+import {RadioTranscriber} from "./services/radioTranscriber";
 
 export interface OrchestratorState {
   runner: AgentRunner;
@@ -17,6 +18,7 @@ export interface OrchestratorState {
   groupQueue: GroupQueue;
   messageLoop: MessageLoop;
   ipcWatcher: IpcWatcher;
+  radioTranscriber: RadioTranscriber;
   isRunning: boolean;
 }
 
@@ -128,6 +130,35 @@ export const startOrchestrator = async (
 
     logger.info(`Feature channel created: #${data.name} (${slackChannelId}), group ${group._id}`);
   });
+
+  // Start radio transcriber (non-fatal if it fails)
+  const radioTranscriber = new RadioTranscriber(channelManager);
+  try {
+    await radioTranscriber.start();
+  } catch (err) {
+    logError("Radio transcriber start error (non-fatal)", err);
+  }
+
+  ipcWatcher.setRadioStream(async (data: IpcRadioStream) => {
+    const {RadioStream} = await import("../models/radioStream");
+    const doc = await RadioStream.findById(data.radioStreamId);
+    if (!doc) {
+      throw new Error(`RadioStream ${data.radioStreamId} not found`);
+    }
+
+    if (data.type === "start_radio_stream") {
+      await RadioStream.findByIdAndUpdate(doc._id, {
+        $set: {status: "active", errorMessage: undefined, reconnectCount: 0},
+      });
+      const updated = await RadioStream.findById(doc._id);
+      if (updated) {
+        await radioTranscriber.startStream(updated);
+      }
+    } else {
+      await radioTranscriber.stopStream(data.radioStreamId);
+      await RadioStream.findByIdAndUpdate(doc._id, {$set: {status: "stopped"}});
+    }
+  });
   ipcWatcher.start();
 
   state = {
@@ -136,6 +167,7 @@ export const startOrchestrator = async (
     groupQueue,
     messageLoop,
     ipcWatcher,
+    radioTranscriber,
     isRunning: true,
   };
 
@@ -155,6 +187,12 @@ export const stopOrchestrator = async (): Promise<void> => {
 
   state.messageLoop.stop();
   state.ipcWatcher.stop();
+
+  try {
+    await state.radioTranscriber.stop();
+  } catch (err) {
+    logger.error(`Error stopping radio transcriber: ${err}`);
+  }
 
   try {
     await state.channelManager.disconnectAll();
