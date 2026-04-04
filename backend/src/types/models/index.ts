@@ -9,5 +9,6 @@ export * from "./pluginTypes";
 export * from "./remoteAgentTypes";
 export * from "./scheduledTaskTypes";
 export * from "./taskRunLogTypes";
+export * from "./triviaQuestionTypes";
 export * from "./userTypes";
 export * from "./webhookSourceTypes";

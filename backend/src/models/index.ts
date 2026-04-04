@@ -9,5 +9,6 @@ export * from "./plugin";
 export * from "./remoteAgent";
 export * from "./scheduledTask";
 export * from "./taskRunLog";
+export * from "./triviaQuestion";
 export * from "./user";
 export * from "./webhookSource";
