@@ -1,6 +1,7 @@
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
 import {aiRequestRoutes} from "./api/aiRequests";
+import {appConfigRoutes} from "./api/appConfig";
 import {AppleCalendarPlugin, calendarConfigRoutes} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
 import {channelRoutes} from "./api/channels";
@@ -17,6 +18,7 @@ import {taskRunLogRoutes} from "./api/taskRunLogs";
 import {transcriptRoutes} from "./api/transcripts";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
+import {loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
@@ -41,7 +43,10 @@ export const start = async (skipListen = false) => {
   logger.info("MongoDB connected, initializing directories...");
 
   await initDirectories();
-  logger.info("Directories initialized, configuring server...");
+  logger.info("Directories initialized, loading app config...");
+
+  await loadAppConfig();
+  logger.info("App config loaded, configuring server...");
 
   logger.info(`Starting Shade server on port ${process.env.PORT || 4020}`);
 
@@ -81,6 +86,7 @@ export const start = async (skipListen = false) => {
     .register(new AppleCalendarPlugin())
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())
+    .register(appConfigRoutes)
     .start();
 
   if (!skipListen) {

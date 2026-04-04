@@ -1,5 +1,5 @@
 import {logger} from "@terreno/api";
-import {config} from "../config";
+import {loadAppConfig} from "../models/appConfig";
 import {Message} from "../models/message";
 import type {GroupDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
@@ -17,18 +17,21 @@ export class MessageLoop {
     this.groupQueue = groupQueue;
   }
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.intervalId) {
       return;
     }
+
+    const appConfig = await loadAppConfig();
+    const interval = appConfig.pollIntervals.message;
 
     this.intervalId = setInterval(() => {
       this.poll().catch((err) => {
         logger.error(`Message loop poll error: ${err}`);
       });
-    }, config.pollIntervals.message);
+    }, interval);
 
-    logger.info(`Message loop started (interval: ${config.pollIntervals.message}ms)`);
+    logger.info(`Message loop started (interval: ${interval}ms)`);
   }
 
   stop(): void {

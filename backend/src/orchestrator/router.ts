@@ -1,5 +1,5 @@
 import {logger} from "@terreno/api";
-import {config} from "../config";
+import {loadAppConfig} from "../models/appConfig";
 import {Message} from "../models/message";
 import type {GroupDocument, MessageDocument} from "../types";
 
@@ -37,15 +37,14 @@ export const formatMessagesAsXml = (messages: MessageDocument[], assistantName: 
   return lines.join("\n");
 };
 
-const CONVERSATION_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
-
 export const buildPromptForGroup = async (
   group: GroupDocument,
   triggeringMessage: MessageDocument
 ): Promise<FormattedPrompt> => {
-  const assistantName = config.assistantName;
+  const appConfig = await loadAppConfig();
+  const assistantName = appConfig.assistantName;
   const groupName = group.name;
-  const windowStart = new Date(Date.now() - CONVERSATION_WINDOW_MS);
+  const windowStart = new Date(Date.now() - appConfig.orchestrator.conversationWindowMs);
 
   logger.debug(`Building prompt for group ${groupName}, trigger from ${triggeringMessage.sender}`);
 

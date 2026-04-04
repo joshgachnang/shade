@@ -4,7 +4,8 @@ import {createHmac} from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
-import {config} from "../../config";
+import {paths} from "../../config";
+import {loadAppConfig} from "../../models/appConfig";
 // Using native WebSocket with Deepgram's token subprotocol auth
 import {RadioStream} from "../../models/radioStream";
 import {Transcript} from "../../models/transcript";
@@ -158,8 +159,9 @@ export class RadioTranscriber {
     this.launchPipeline(active);
 
     // Set up periodic flush to Slack
+    const appConfig = await loadAppConfig();
     const batchInterval =
-      doc.transcriptBatchIntervalMs || config.radioTranscriber.defaultBatchIntervalMs;
+      doc.transcriptBatchIntervalMs || appConfig.radioTranscriber.defaultBatchIntervalMs;
     active.flushTimer = setInterval(() => {
       this.flushTranscript(active).catch((err) => {
         logger.error(`Flush error for stream "${doc.name}": ${err}`);
@@ -370,7 +372,8 @@ export class RadioTranscriber {
       return;
     }
 
-    const maxReconnects = config.radioTranscriber.maxReconnectAttempts;
+    const appConfig = await loadAppConfig();
+    const maxReconnects = appConfig.radioTranscriber.maxReconnectAttempts;
     if (doc.reconnectCount >= maxReconnects) {
       logger.error(
         `Stream "${active.doc.name}" exceeded max reconnects (${maxReconnects}), marking as error`
@@ -384,7 +387,7 @@ export class RadioTranscriber {
 
     await RadioStream.findByIdAndUpdate(doc._id, {$inc: {reconnectCount: 1}});
 
-    const delay = config.radioTranscriber.reconnectDelayMs;
+    const delay = appConfig.radioTranscriber.reconnectDelayMs;
     logger.info(
       `Reconnecting ${component} for "${active.doc.name}" in ${delay}ms (attempt ${doc.reconnectCount + 1}/${maxReconnects})`
     );
@@ -618,7 +621,7 @@ export class RadioTranscriber {
     // Save MP3 to disk
     if (mp3Buffer) {
       try {
-        const mp3Dir = path.join(config.paths.data, "recordings", active.streamId);
+        const mp3Dir = path.join(paths.data, "recordings", active.streamId);
         await fs.mkdir(mp3Dir, {recursive: true});
         const mp3Filename = `${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`;
         await fs.writeFile(path.join(mp3Dir, mp3Filename), mp3Buffer);

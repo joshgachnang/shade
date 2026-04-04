@@ -13,18 +13,18 @@ import {
 
 const tmpDir = path.join(process.cwd(), `tmp-test-memory-${Date.now()}`);
 
-// Override config.paths.groups for testing
-import {config} from "../config";
+// Override paths.groups for testing
+import {paths} from "../config";
 
-const originalGroupsPath = config.paths.groups;
+const originalGroupsPath = paths.groups;
 
 beforeEach(async () => {
   await fs.mkdir(tmpDir, {recursive: true});
-  config.paths.groups = tmpDir;
+  paths.groups = tmpDir;
 });
 
 afterEach(async () => {
-  config.paths.groups = originalGroupsPath;
+  paths.groups = originalGroupsPath;
   await fs.rm(tmpDir, {recursive: true, force: true});
 });
 

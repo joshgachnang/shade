@@ -67,7 +67,7 @@ export const startOrchestrator = async (
 
   // Create and start message polling loop
   const messageLoop = new MessageLoop(channelManager, groupQueue);
-  messageLoop.start();
+  await messageLoop.start();
 
   // Create and start IPC watcher with send message handler
   const ipcWatcher = new IpcWatcher();
@@ -159,7 +159,7 @@ export const startOrchestrator = async (
       await RadioStream.findByIdAndUpdate(doc._id, {$set: {status: "stopped"}});
     }
   });
-  ipcWatcher.start();
+  await ipcWatcher.start();
 
   state = {
     runner,
