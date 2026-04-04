@@ -1,6 +1,6 @@
 export * from "./agentSessionTypes";
-export * from "./appConfigTypes";
 export * from "./aiRequestTypes";
+export * from "./appConfigTypes";
 export * from "./calendarConfigTypes";
 export * from "./channelTypes";
 export * from "./commandClassificationTypes";

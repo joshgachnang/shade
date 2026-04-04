@@ -1,7 +1,7 @@
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
-import {appConfigRoutes} from "./api/appConfig";
 import {aiRequestRoutes} from "./api/aiRequests";
+import {appConfigRoutes} from "./api/appConfig";
 import {AppleCalendarPlugin, calendarConfigRoutes} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
 import {channelRoutes} from "./api/channels";
