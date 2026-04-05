@@ -10,6 +10,7 @@
     "@slack/web-api": "^7.14.1",
     "@terreno/api": "0.3.1",
     "@types/ws": "^8.18.1",
+    "cheerio": "^1.2.0",
     "dotenv": "^16.4.7",
     "imapflow": "^1.2.18",
     "luxon": "^3.7.2",
@@ -46,6 +47,10 @@
     "lint:fix": "biome check --write .",
     "lint:unsafefix": "biome check --write . --unsafe",
     "start": "bun run src/index.ts",
+    "trivia:answer": "bun run scripts/triviaAnswerer.ts",
+    "scrape:scores": "bun run scripts/scrapeScores.ts",
+    "scrape:scores:loop": "bun run scripts/scrapeScores.ts --loop",
+    "scrape:vault": "bun run scripts/scrapeVaultScores.ts",
     "test": "bun test"
   },
   "type": "module",

@@ -32,6 +32,10 @@ export interface AppConfigAgent {
   allowedTools: string[];
 }
 
+export interface AppConfigApiKeys {
+  braveSearch: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -40,6 +44,7 @@ export interface AppConfigFields {
   radioTranscriber: AppConfigRadioTranscriber;
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
+  apiKeys: AppConfigApiKeys;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;
