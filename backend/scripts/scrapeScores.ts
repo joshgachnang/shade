@@ -1,0 +1,215 @@
+/**
+ * Scrape live trivia scores from 90fmtrivia.org during the contest.
+ *
+ * Usage:
+ *   bun run scripts/scrapeScores.ts              # Scrape once
+ *   bun run scripts/scrapeScores.ts --loop        # Scrape every 5 minutes during contest hours
+ *   bun run scripts/scrapeScores.ts --url <url>   # Override scores URL
+ *
+ * Contest hours for 2026: April 17 6PM CT — April 20 5PM CT
+ */
+
+import {join} from "node:path";
+import * as cheerio from "cheerio";
+import {TriviaScore} from "../src/models/triviaScore";
+import {triviaConnection} from "../src/models/triviaQuestion";
+import {loadEnvFiles} from "../src/utils/envLoader";
+import {
+  type ParsedScore,
+  extractHour,
+  extractYear,
+  resolveIframeUrl,
+  parsePage,
+} from "../src/utils/scoreParsing";
+
+await loadEnvFiles(join(import.meta.dir, ".."));
+
+const DEFAULT_URL = "https://90fmtrivia.org/scores.html";
+const SCRAPE_INTERVAL_MS = 5 * 60 * 1000;
+const CONTEST_YEAR = 2026;
+const SLACK_WEBHOOK = process.env.TRIVIA_STATS_SLACK_WEBHOOK;
+
+const CONTEST_START = new Date("2026-04-17T18:00:00-05:00");
+const CONTEST_END = new Date("2026-04-20T17:00:00-05:00");
+
+interface ParseResult {
+  hour: number;
+  year: number;
+  scores: ParsedScore[];
+}
+
+const postToSlack = async (text: string): Promise<void> => {
+  if (!SLACK_WEBHOOK) {
+    return;
+  }
+  try {
+    const response = await fetch(SLACK_WEBHOOK, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text}),
+    });
+    if (!response.ok) {
+      console.warn(`Slack webhook returned ${response.status}`);
+    }
+  } catch (err) {
+    console.warn("Slack webhook error:", err);
+  }
+};
+
+const fetchAndParse = async (url: string, defaultYear?: number): Promise<ParseResult> => {
+  const response = await fetch(url, {signal: AbortSignal.timeout(30000)});
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+  }
+
+  let html = await response.text();
+  let $ = cheerio.load(html);
+
+  const iframeUrl = resolveIframeUrl($, url);
+  if (iframeUrl) {
+    console.info(`  Found iframe, following: ${iframeUrl}`);
+    const iframeResponse = await fetch(iframeUrl, {signal: AbortSignal.timeout(30000)});
+    if (iframeResponse.ok) {
+      html = await iframeResponse.text();
+      $ = cheerio.load(html);
+    }
+  }
+
+  const title = $("title").text() || $("h1").first().text() || $("h2").first().text() || "";
+  console.info(`  Page title: "${title}"`);
+
+  const {hour, scores} = parsePage($);
+  const year = defaultYear || extractYear(title) || CONTEST_YEAR;
+
+  return {hour, year, scores};
+};
+
+const saveScores = async (result: ParseResult): Promise<{inserted: number; updated: number}> => {
+  let inserted = 0;
+  let updated = 0;
+
+  for (const s of result.scores) {
+    const filter = {year: result.year, hour: result.hour, teamName: s.teamName};
+
+    const existing = await TriviaScore.findOne(filter);
+    if (existing) {
+      let changed = false;
+      if (existing.place !== s.place) {
+        existing.place = s.place;
+        changed = true;
+      }
+      if (existing.score !== s.score) {
+        existing.score = s.score;
+        changed = true;
+      }
+      if (changed) {
+        existing.scrapedAt = new Date();
+        await existing.save();
+        updated++;
+      }
+    } else {
+      await TriviaScore.create({
+        year: result.year,
+        hour: result.hour,
+        place: s.place,
+        teamName: s.teamName,
+        score: s.score,
+        scrapedAt: new Date(),
+      });
+      inserted++;
+    }
+  }
+
+  return {inserted, updated};
+};
+
+const isWithinContestWindow = (): boolean => {
+  const now = new Date();
+  return now >= CONTEST_START && now <= CONTEST_END;
+};
+
+const formatTopScores = (scores: ParsedScore[], count = 10): string => {
+  const top = scores.slice(0, count);
+  return top.map((s) => `  ${s.place}. ${s.teamName} — ${s.score.toLocaleString()} pts`).join("\n");
+};
+
+const scrapeOnce = async (url: string): Promise<void> => {
+  console.info(`Scraping ${url}...`);
+  const result = await fetchAndParse(url);
+  console.info(`  Year: ${result.year}, Hour: ${result.hour}, Teams: ${result.scores.length}`);
+
+  if (result.scores.length === 0) {
+    console.warn("  No scores found on page");
+    return;
+  }
+
+  const {inserted, updated} = await saveScores(result);
+  console.info(`  DB: ${inserted} inserted, ${updated} updated`);
+
+  const hourLabel = result.hour > 0 ? `Hour ${result.hour}` : "Final";
+  const slackMessage = [
+    `*Trivia ${result.year} — ${hourLabel} Scores*`,
+    `${result.scores.length} teams scraped (${inserted} new, ${updated} updated)`,
+    "",
+    "*Top 10:*",
+    formatTopScores(result.scores),
+  ].join("\n");
+
+  await postToSlack(slackMessage);
+};
+
+const runLoop = async (url: string): Promise<void> => {
+  console.info("Starting scrape loop (every 5 minutes during contest hours)");
+  console.info(`Contest window: ${CONTEST_START.toISOString()} — ${CONTEST_END.toISOString()}`);
+
+  const tick = async () => {
+    if (!isWithinContestWindow()) {
+      console.info(`[${new Date().toISOString()}] Outside contest window, skipping`);
+      return;
+    }
+
+    try {
+      await scrapeOnce(url);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] Scrape failed:`, err);
+    }
+  };
+
+  await tick();
+  setInterval(tick, SCRAPE_INTERVAL_MS);
+  await new Promise(() => {});
+};
+
+const waitForConnection = async (): Promise<void> => {
+  if (triviaConnection.readyState === 1) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    triviaConnection.once("connected", resolve);
+    triviaConnection.once("error", reject);
+  });
+};
+
+const main = async (): Promise<void> => {
+  const args = process.argv.slice(2);
+  const loopMode = args.includes("--loop");
+  const urlIdx = args.indexOf("--url");
+  const url = urlIdx !== -1 && args[urlIdx + 1] ? args[urlIdx + 1] : DEFAULT_URL;
+
+  console.info("Connecting to trivia database...");
+  await waitForConnection();
+  console.info("Connected");
+
+  if (loopMode) {
+    await runLoop(url);
+  } else {
+    await scrapeOnce(url);
+    await triviaConnection.close();
+    console.info("Done.");
+  }
+};
+
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  process.exit(1);
+});

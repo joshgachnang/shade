@@ -38,6 +38,10 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       progressIntervalMs: {type: Number, default: 30000},
       allowedTools: {type: [String], default: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]},
     },
+
+    apiKeys: {
+      braveSearch: {type: String, default: ""},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

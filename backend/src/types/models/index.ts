@@ -13,5 +13,6 @@ export * from "./scheduledTaskTypes";
 export * from "./taskRunLogTypes";
 export * from "./transcriptTypes";
 export * from "./triviaQuestionTypes";
+export * from "./triviaScoreTypes";
 export * from "./userTypes";
 export * from "./webhookSourceTypes";
