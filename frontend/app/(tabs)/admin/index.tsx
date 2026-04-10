@@ -5,7 +5,9 @@ import type React from "react";
 import {terrenoApi} from "@/store/sdk";
 
 const AdminIndexScreen: React.FC = () => {
-  return <AdminModelList api={terrenoApi as Api<any, any, any, any>} baseUrl={`${baseUrl}/admin`} />;
+  return (
+    <AdminModelList api={terrenoApi as Api<any, any, any, any>} baseUrl={`${baseUrl}/admin`} />
+  );
 };
 
 // Expo Router requires default export for route files
