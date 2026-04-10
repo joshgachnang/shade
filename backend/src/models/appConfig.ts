@@ -41,6 +41,8 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
 
     apiKeys: {
       braveSearch: {type: String, default: ""},
+      exa: {type: String, default: ""},
+      tavily: {type: String, default: ""},
     },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}

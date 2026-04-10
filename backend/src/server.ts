@@ -1,3 +1,4 @@
+import {AdminApp} from "@terreno/admin-backend";
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
 import {aiRequestRoutes} from "./api/aiRequests";
@@ -18,7 +19,7 @@ import {taskRunLogRoutes} from "./api/taskRunLogs";
 import {transcriptRoutes} from "./api/transcripts";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
-import {loadAppConfig} from "./models/appConfig";
+import {AppConfig, loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
@@ -58,6 +59,17 @@ export const start = async (skipListen = false) => {
     }
   }
 
+  const adminApp = new AdminApp({
+    models: [
+      {
+        model: AppConfig,
+        routePath: "/app-configs",
+        displayName: "App Config",
+        listFields: ["assistantName", "triggerPattern", "created"],
+      },
+    ],
+  });
+
   const app = new TerrenoApp({
     userModel: User as any,
     loggingOptions: {
@@ -87,6 +99,7 @@ export const start = async (skipListen = false) => {
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())
     .register(appConfigRoutes)
+    .register(adminApp)
     .start();
 
   if (!skipListen) {

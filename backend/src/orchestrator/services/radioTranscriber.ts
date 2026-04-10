@@ -330,7 +330,7 @@ export class RadioTranscriber {
         if (data.type === "Results" && data.is_final) {
           const transcript = data.channel?.alternatives?.[0]?.transcript;
           if (transcript && transcript.trim().length > 0) {
-            active.transcriptBuffer += transcript + " ";
+            active.transcriptBuffer += `${transcript} `;
           }
         }
       } catch (err) {
@@ -660,7 +660,7 @@ export class RadioTranscriber {
       );
     } catch (err) {
       logger.error(`Failed to send transcript for "${active.doc.name}": ${err}`);
-      active.transcriptBuffer = text + " " + active.transcriptBuffer;
+      active.transcriptBuffer = `${text} ${active.transcriptBuffer}`;
     }
   }
 
