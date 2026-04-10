@@ -34,6 +34,8 @@ export interface AppConfigAgent {
 
 export interface AppConfigApiKeys {
   braveSearch: string;
+  exa: string;
+  tavily: string;
 }
 
 export interface AppConfigFields {

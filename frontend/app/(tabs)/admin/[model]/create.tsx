@@ -1,3 +1,4 @@
+import type {Api} from "@reduxjs/toolkit/query/react";
 import {AdminModelForm} from "@terreno/admin-frontend";
 import {baseUrl} from "@terreno/rtk";
 import {useLocalSearchParams} from "expo-router";
@@ -9,7 +10,7 @@ const AdminCreateScreen: React.FC = () => {
 
   return (
     <AdminModelForm
-      api={terrenoApi}
+      api={terrenoApi as unknown as Api<any, any, any, any>}
       baseUrl={`${baseUrl}/admin`}
       mode="create"
       modelName={model!}
