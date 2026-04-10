@@ -6,7 +6,10 @@ import {terrenoApi} from "@/store/sdk";
 
 const AdminIndexScreen: React.FC = () => {
   return (
-    <AdminModelList api={terrenoApi as Api<any, any, any, any>} baseUrl={`${baseUrl}/admin`} />
+    <AdminModelList
+      api={terrenoApi as unknown as Api<any, any, any, any>}
+      baseUrl={`${baseUrl}/admin`}
+    />
   );
 };
 

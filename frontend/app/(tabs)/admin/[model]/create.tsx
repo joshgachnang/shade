@@ -10,7 +10,7 @@ const AdminCreateScreen: React.FC = () => {
 
   return (
     <AdminModelForm
-      api={terrenoApi as Api<any, any, any, any>}
+      api={terrenoApi as unknown as Api<any, any, any, any>}
       baseUrl={`${baseUrl}/admin`}
       mode="create"
       modelName={model!}

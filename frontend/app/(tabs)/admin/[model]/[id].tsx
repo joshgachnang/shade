@@ -10,7 +10,7 @@ const AdminEditScreen: React.FC = () => {
 
   return (
     <AdminModelForm
-      api={terrenoApi as Api<any, any, any, any>}
+      api={terrenoApi as unknown as Api<any, any, any, any>}
       baseUrl={`${baseUrl}/admin`}
       itemId={id}
       mode="edit"

@@ -10,7 +10,7 @@ const AdminModelScreen: React.FC = () => {
 
   return (
     <AdminModelTable
-      api={terrenoApi as Api<any, any, any, any>}
+      api={terrenoApi as unknown as Api<any, any, any, any>}
       baseUrl={`${baseUrl}/admin`}
       modelName={model!}
     />
