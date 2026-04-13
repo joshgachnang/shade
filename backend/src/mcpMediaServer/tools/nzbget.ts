@@ -45,7 +45,7 @@ export const registerNzbgetTools = (server: McpServer, config: NzbgetConfig) => 
 
   server.tool(
     "nzbget_history",
-    "Get NZBGet download history.",
+    "Get NZBGet download history with success/failure details. Shows par-check, unpack status, and failure reasons.",
     {
       limit: z.number().default(20).describe("Number of history entries to return (default: 20)"),
     },
@@ -62,8 +62,41 @@ export const registerNzbgetTools = (server: McpServer, config: NzbgetConfig) => 
         deleteStatus: h.DeleteStatus,
         markStatus: h.MarkStatus,
         downloadTimeSec: h.DownloadTimeSec,
+        postTotalTimeSec: h.PostTotalTimeSec,
+        totalArticles: h.TotalArticles,
+        successArticles: h.SuccessArticles,
+        failedArticles: h.FailedArticles,
+        health: h.Health,
+        // Diagnostic: why did it fail?
+        moveStatus: h.MoveStatus,
+        scriptStatuses: h.ScriptStatuses,
+        failMessage: h.FailMessage ?? null,
+        urlStatus: h.UrlStatus,
+        dupStatus: h.DupStatus,
       }));
       return {content: [{type: "text", text: JSON.stringify(history, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "nzbget_log",
+    "Get NZBGet server log entries. Useful for diagnosing connection issues, download failures, and post-processing errors.",
+    {
+      limit: z.number().default(50).describe("Number of log entries (default: 50)"),
+      idFrom: z
+        .number()
+        .default(0)
+        .describe("Return entries starting from this ID (0 = most recent)"),
+    },
+    async ({limit, idFrom}) => {
+      const results = await rpc("log", [idFrom, limit]);
+      const entries = (results as Array<Record<string, unknown>>).map((e) => ({
+        id: e.ID,
+        kind: e.Kind,
+        time: e.Time,
+        text: e.Text,
+      }));
+      return {content: [{type: "text", text: JSON.stringify(entries, null, 2)}]};
     }
   );
 

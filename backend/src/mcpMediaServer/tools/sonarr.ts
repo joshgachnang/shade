@@ -9,20 +9,28 @@ export const registerSonarrTools = (server: McpServer, config: ServiceConfig) =>
 
   server.tool(
     "sonarr_search",
-    "Search for TV series by name on Sonarr. Returns matching results from TheTVDB/TMDB.",
+    "Search for TV series by name. Returns numbered results you can reference when adding.",
     {term: z.string().describe("Search term (e.g. 'Breaking Bad')")},
     async ({term}) => {
       const results = await api("/series/lookup", {params: {term}});
-      const series = (results as Array<Record<string, unknown>>).slice(0, 10).map((s) => ({
+      const series = (results as Array<Record<string, unknown>>).slice(0, 15).map((s, i) => ({
+        "#": i + 1,
         title: s.title,
         year: s.year,
         tvdbId: s.tvdbId,
         imdbId: s.imdbId,
-        overview: typeof s.overview === "string" ? s.overview.slice(0, 200) : "",
+        overview: typeof s.overview === "string" ? s.overview.slice(0, 300) : "",
         seasonCount: s.seasonCount,
         status: s.status,
+        network: s.network,
+        genres: (s.genres as string[] | undefined)?.join(", ") ?? "",
+        ratings: (s.ratings as Record<string, unknown>)?.value ?? null,
       }));
-      return {content: [{type: "text", text: JSON.stringify(series, null, 2)}]};
+      if (!series.length) {
+        return {content: [{type: "text", text: `No results found for "${term}".`}]};
+      }
+      const header = `Found ${series.length} results for "${term}". Use the tvdbId to add a series.\n\n`;
+      return {content: [{type: "text", text: header + JSON.stringify(series, null, 2)}]};
     }
   );
 
@@ -72,7 +80,6 @@ export const registerSonarrTools = (server: McpServer, config: ServiceConfig) =>
         .describe("Search for existing episodes immediately"),
     },
     async ({tvdbId, qualityProfileId, rootFolderPath, monitored, searchForMissingEpisodes}) => {
-      // Lookup the series first to get full details
       const lookup = (await api("/series/lookup", {
         params: {term: `tvdb:${tvdbId}`},
       })) as Array<Record<string, unknown>>;
@@ -138,9 +145,30 @@ export const registerSonarrTools = (server: McpServer, config: ServiceConfig) =>
       estimatedCompletionTime: q.estimatedCompletionTime,
       downloadClient: q.downloadClient,
       indexer: q.indexer,
+      trackedDownloadStatus: q.trackedDownloadStatus,
+      trackedDownloadState: q.trackedDownloadState,
+      statusMessages: q.statusMessages,
+      errorMessage: q.errorMessage,
     }));
     return {content: [{type: "text", text: JSON.stringify(queue, null, 2)}]};
   });
+
+  server.tool(
+    "sonarr_queue_details",
+    "Get detailed info about a specific queue item, including status messages and error reasons.",
+    {queueId: z.number().describe("Queue item ID (get from sonarr_queue)")},
+    async ({queueId}) => {
+      const result = (await api("/queue", {
+        params: {pageSize: "100", includeUnknownSeriesItems: "true"},
+      })) as Record<string, unknown>;
+      const records = (result.records as Array<Record<string, unknown>> | undefined) ?? [];
+      const item = records.find((q) => q.id === queueId);
+      if (!item) {
+        return {content: [{type: "text", text: `Queue item ${queueId} not found.`}]};
+      }
+      return {content: [{type: "text", text: JSON.stringify(item, null, 2)}]};
+    }
+  );
 
   server.tool(
     "sonarr_episode_search",
@@ -172,6 +200,142 @@ export const registerSonarrTools = (server: McpServer, config: ServiceConfig) =>
         body: {name: "SeriesSearch", seriesId},
       });
       return {content: [{type: "text", text: JSON.stringify(result, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "sonarr_manual_search",
+    "Get a list of available releases for an episode so you can pick one manually. Returns numbered options with quality, size, indexer, and seeders.",
+    {episodeId: z.number().describe("Episode ID to search releases for")},
+    async ({episodeId}) => {
+      const results = await api("/release", {params: {episodeId: String(episodeId)}});
+      const releases = (results as Array<Record<string, unknown>>).map((r, i) => ({
+        "#": i + 1,
+        guid: r.guid,
+        title: r.title,
+        quality: (r.quality as Record<string, unknown>)?.quality
+          ? ((r.quality as Record<string, unknown>).quality as Record<string, unknown>)?.name
+          : r.quality,
+        size: `${(((r.size as number) ?? 0) / 1024 / 1024 / 1024).toFixed(2)} GB`,
+        indexer: r.indexer,
+        seeders: r.seeders,
+        leechers: r.leechers,
+        age: `${r.ageMinutes ? Math.round((r.ageMinutes as number) / 60 / 24) : "?"} days`,
+        rejected: (r.rejections as unknown[])?.length ? true : false,
+        rejectionReasons: (r.rejections as string[] | undefined) ?? [],
+        downloadAllowed: r.downloadAllowed,
+        indexerId: r.indexerId,
+        protocol: r.protocol,
+      }));
+      if (!releases.length) {
+        return {content: [{type: "text", text: "No releases found for this episode."}]};
+      }
+      const header = `Found ${releases.length} releases. Use sonarr_grab_release with the guid to download one.\n\n`;
+      return {content: [{type: "text", text: header + JSON.stringify(releases, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "sonarr_grab_release",
+    "Grab (download) a specific release from a manual search.",
+    {
+      guid: z.string().describe("Release GUID from sonarr_manual_search"),
+      indexerId: z.number().describe("Indexer ID from sonarr_manual_search"),
+    },
+    async ({guid, indexerId}) => {
+      const result = await api("/release", {
+        method: "POST",
+        body: {guid, indexerId},
+      });
+      return {
+        content: [{type: "text", text: `Release grabbed.\n${JSON.stringify(result, null, 2)}`}],
+      };
+    }
+  );
+
+  server.tool(
+    "sonarr_history",
+    "Get download history for a series or episode. Shows what was grabbed, imported, failed, and why.",
+    {
+      seriesId: z.number().optional().describe("Filter by series ID"),
+      episodeId: z.number().optional().describe("Filter by episode ID"),
+      limit: z.number().default(20).describe("Number of history entries (default: 20)"),
+      eventType: z
+        .enum([
+          "grabbed",
+          "downloadFolderImported",
+          "downloadFailed",
+          "episodeFileDeleted",
+          "episodeFileRenamed",
+        ])
+        .optional()
+        .describe("Filter by event type"),
+    },
+    async ({seriesId, episodeId, limit, eventType}) => {
+      const params: Record<string, string> = {
+        pageSize: String(limit),
+        sortKey: "date",
+        sortDirection: "descending",
+      };
+      if (seriesId) {
+        params.seriesId = String(seriesId);
+      }
+      if (episodeId) {
+        params.episodeId = String(episodeId);
+      }
+      if (eventType) {
+        params.eventType = eventType;
+      }
+      const result = (await api("/history", {params})) as Record<string, unknown>;
+      const records = (result.records as Array<Record<string, unknown>> | undefined) ?? [];
+      const history = records.map((h) => {
+        const data = (h.data as Record<string, unknown>) ?? {};
+        return {
+          id: h.id,
+          eventType: h.eventType,
+          date: h.date,
+          sourceTitle: h.sourceTitle,
+          quality: (h.quality as Record<string, unknown>)?.quality
+            ? ((h.quality as Record<string, unknown>).quality as Record<string, unknown>)?.name
+            : null,
+          seriesTitle: (h.series as Record<string, unknown>)?.title,
+          episodeTitle: (h.episode as Record<string, unknown>)?.title,
+          seasonNumber: (h.episode as Record<string, unknown>)?.seasonNumber,
+          episodeNumber: (h.episode as Record<string, unknown>)?.episodeNumber,
+          // Diagnostic fields — why things failed or succeeded
+          downloadClient: data.downloadClient ?? null,
+          indexer: data.indexer ?? null,
+          message: data.message ?? null,
+          reason: data.reason ?? null,
+          droppedPath: data.droppedPath ?? null,
+          importedPath: data.importedPath ?? null,
+        };
+      });
+      return {content: [{type: "text", text: JSON.stringify(history, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "sonarr_blocklist",
+    "Get blocked releases — releases that Sonarr tried to download but failed and won't retry.",
+    {limit: z.number().default(20).describe("Number of entries (default: 20)")},
+    async ({limit}) => {
+      const result = (await api("/blocklist", {
+        params: {pageSize: String(limit), sortKey: "date", sortDirection: "descending"},
+      })) as Record<string, unknown>;
+      const records = (result.records as Array<Record<string, unknown>> | undefined) ?? [];
+      const items = records.map((b) => ({
+        id: b.id,
+        seriesId: b.seriesId,
+        sourceTitle: b.sourceTitle,
+        date: b.date,
+        quality: (b.quality as Record<string, unknown>)?.quality
+          ? ((b.quality as Record<string, unknown>).quality as Record<string, unknown>)?.name
+          : null,
+        message: b.message,
+        indexer: (b.data as Record<string, unknown>)?.indexer ?? null,
+      }));
+      return {content: [{type: "text", text: JSON.stringify(items, null, 2)}]};
     }
   );
 

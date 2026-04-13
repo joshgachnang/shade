@@ -9,21 +9,32 @@ export const registerRadarrTools = (server: McpServer, config: ServiceConfig) =>
 
   server.tool(
     "radarr_search",
-    "Search for movies by name on Radarr. Returns matching results from TMDB.",
+    "Search for movies by name. Returns numbered results you can reference when adding.",
     {term: z.string().describe("Search term (e.g. 'The Matrix')")},
     async ({term}) => {
       const results = await api("/movie/lookup", {params: {term}});
-      const movies = (results as Array<Record<string, unknown>>).slice(0, 10).map((m) => ({
+      const movies = (results as Array<Record<string, unknown>>).slice(0, 15).map((m, i) => ({
+        "#": i + 1,
         title: m.title,
         year: m.year,
         tmdbId: m.tmdbId,
         imdbId: m.imdbId,
-        overview: typeof m.overview === "string" ? m.overview.slice(0, 200) : "",
+        overview: typeof m.overview === "string" ? m.overview.slice(0, 300) : "",
         runtime: m.runtime,
         status: m.status,
         isAvailable: m.isAvailable,
+        genres: (m.genres as string[] | undefined)?.join(", ") ?? "",
+        ratings:
+          (m.ratings as Record<string, unknown>)?.imdb ??
+          (m.ratings as Record<string, unknown>)?.value ??
+          null,
+        studio: m.studio,
       }));
-      return {content: [{type: "text", text: JSON.stringify(movies, null, 2)}]};
+      if (!movies.length) {
+        return {content: [{type: "text", text: `No results found for "${term}".`}]};
+      }
+      const header = `Found ${movies.length} results for "${term}". Use the tmdbId to add a movie.\n\n`;
+      return {content: [{type: "text", text: header + JSON.stringify(movies, null, 2)}]};
     }
   );
 
@@ -133,9 +144,30 @@ export const registerRadarrTools = (server: McpServer, config: ServiceConfig) =>
       estimatedCompletionTime: q.estimatedCompletionTime,
       downloadClient: q.downloadClient,
       indexer: q.indexer,
+      trackedDownloadStatus: q.trackedDownloadStatus,
+      trackedDownloadState: q.trackedDownloadState,
+      statusMessages: q.statusMessages,
+      errorMessage: q.errorMessage,
     }));
     return {content: [{type: "text", text: JSON.stringify(queue, null, 2)}]};
   });
+
+  server.tool(
+    "radarr_queue_details",
+    "Get detailed info about a specific queue item, including status messages and error reasons.",
+    {queueId: z.number().describe("Queue item ID (get from radarr_queue)")},
+    async ({queueId}) => {
+      const result = (await api("/queue", {
+        params: {pageSize: "100", includeUnknownMovieItems: "true"},
+      })) as Record<string, unknown>;
+      const records = (result.records as Array<Record<string, unknown>> | undefined) ?? [];
+      const item = records.find((q) => q.id === queueId);
+      if (!item) {
+        return {content: [{type: "text", text: `Queue item ${queueId} not found.`}]};
+      }
+      return {content: [{type: "text", text: JSON.stringify(item, null, 2)}]};
+    }
+  );
 
   server.tool(
     "radarr_movie_search",
@@ -147,6 +179,134 @@ export const registerRadarrTools = (server: McpServer, config: ServiceConfig) =>
         body: {name: "MoviesSearch", movieIds},
       });
       return {content: [{type: "text", text: JSON.stringify(result, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "radarr_manual_search",
+    "Get a list of available releases for a movie so you can pick one manually. Returns numbered options with quality, size, indexer, and seeders.",
+    {movieId: z.number().describe("Movie ID to search releases for")},
+    async ({movieId}) => {
+      const results = await api("/release", {params: {movieId: String(movieId)}});
+      const releases = (results as Array<Record<string, unknown>>).map((r, i) => ({
+        "#": i + 1,
+        guid: r.guid,
+        title: r.title,
+        quality: (r.quality as Record<string, unknown>)?.quality
+          ? ((r.quality as Record<string, unknown>).quality as Record<string, unknown>)?.name
+          : r.quality,
+        size: `${(((r.size as number) ?? 0) / 1024 / 1024 / 1024).toFixed(2)} GB`,
+        indexer: r.indexer,
+        seeders: r.seeders,
+        leechers: r.leechers,
+        age: `${r.ageMinutes ? Math.round((r.ageMinutes as number) / 60 / 24) : "?"} days`,
+        rejected: (r.rejections as unknown[])?.length ? true : false,
+        rejectionReasons: (r.rejections as string[] | undefined) ?? [],
+        downloadAllowed: r.downloadAllowed,
+        indexerId: r.indexerId,
+        protocol: r.protocol,
+      }));
+      if (!releases.length) {
+        return {content: [{type: "text", text: "No releases found for this movie."}]};
+      }
+      const header = `Found ${releases.length} releases. Use radarr_grab_release with the guid to download one.\n\n`;
+      return {content: [{type: "text", text: header + JSON.stringify(releases, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "radarr_grab_release",
+    "Grab (download) a specific release from a manual search.",
+    {
+      guid: z.string().describe("Release GUID from radarr_manual_search"),
+      indexerId: z.number().describe("Indexer ID from radarr_manual_search"),
+    },
+    async ({guid, indexerId}) => {
+      const result = await api("/release", {
+        method: "POST",
+        body: {guid, indexerId},
+      });
+      return {
+        content: [{type: "text", text: `Release grabbed.\n${JSON.stringify(result, null, 2)}`}],
+      };
+    }
+  );
+
+  server.tool(
+    "radarr_history",
+    "Get download history for a movie. Shows what was grabbed, imported, failed, and why.",
+    {
+      movieId: z.number().optional().describe("Filter by movie ID"),
+      limit: z.number().default(20).describe("Number of history entries (default: 20)"),
+      eventType: z
+        .enum([
+          "grabbed",
+          "downloadFolderImported",
+          "downloadFailed",
+          "movieFileDeleted",
+          "movieFileRenamed",
+        ])
+        .optional()
+        .describe("Filter by event type"),
+    },
+    async ({movieId, limit, eventType}) => {
+      const params: Record<string, string> = {
+        pageSize: String(limit),
+        sortKey: "date",
+        sortDirection: "descending",
+      };
+      if (movieId) {
+        params.movieId = String(movieId);
+      }
+      if (eventType) {
+        params.eventType = eventType;
+      }
+      const result = (await api("/history", {params})) as Record<string, unknown>;
+      const records = (result.records as Array<Record<string, unknown>> | undefined) ?? [];
+      const history = records.map((h) => {
+        const data = (h.data as Record<string, unknown>) ?? {};
+        return {
+          id: h.id,
+          eventType: h.eventType,
+          date: h.date,
+          sourceTitle: h.sourceTitle,
+          quality: (h.quality as Record<string, unknown>)?.quality
+            ? ((h.quality as Record<string, unknown>).quality as Record<string, unknown>)?.name
+            : null,
+          movieTitle: (h.movie as Record<string, unknown>)?.title,
+          downloadClient: data.downloadClient ?? null,
+          indexer: data.indexer ?? null,
+          message: data.message ?? null,
+          reason: data.reason ?? null,
+          droppedPath: data.droppedPath ?? null,
+          importedPath: data.importedPath ?? null,
+        };
+      });
+      return {content: [{type: "text", text: JSON.stringify(history, null, 2)}]};
+    }
+  );
+
+  server.tool(
+    "radarr_blocklist",
+    "Get blocked releases — releases that Radarr tried to download but failed and won't retry.",
+    {limit: z.number().default(20).describe("Number of entries (default: 20)")},
+    async ({limit}) => {
+      const result = (await api("/blocklist", {
+        params: {pageSize: String(limit), sortKey: "date", sortDirection: "descending"},
+      })) as Record<string, unknown>;
+      const records = (result.records as Array<Record<string, unknown>> | undefined) ?? [];
+      const items = records.map((b) => ({
+        id: b.id,
+        movieId: b.movieId,
+        sourceTitle: b.sourceTitle,
+        date: b.date,
+        quality: (b.quality as Record<string, unknown>)?.quality
+          ? ((b.quality as Record<string, unknown>).quality as Record<string, unknown>)?.name
+          : null,
+        message: b.message,
+        indexer: (b.data as Record<string, unknown>)?.indexer ?? null,
+      }));
+      return {content: [{type: "text", text: JSON.stringify(items, null, 2)}]};
     }
   );
 
