@@ -89,7 +89,6 @@ export class MessageLoop {
           );
           if (handled) {
             await Message.findByIdAndUpdate(msg._id, {$set: {processedAt: new Date()}});
-            continue;
           }
         }
       }

@@ -435,7 +435,7 @@ export class TriviaAutoSearch {
 
   // ── Process manual question ────────────────────────────────────────────
 
-  private async processManualQuestion(questionText: string, groupId: string): Promise<void> {
+  private async processManualQuestion(questionText: string, _groupId: string): Promise<void> {
     await this.postToGroup(`*[Manual]* Researching: ${questionText}`);
     await this.answerAndPost("Manual", questionText);
   }
@@ -655,7 +655,7 @@ export class TriviaAutoSearch {
 
   private async postAnswer(
     key: string,
-    questionText: string,
+    _questionText: string,
     result: SearchAnswerResult | QuickAnswerResult,
     quickResult: QuickAnswerResult | null
   ): Promise<void> {

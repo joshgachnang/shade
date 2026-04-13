@@ -88,7 +88,7 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
     app.get(
       "/trivia/status",
       authenticateMiddleware(),
-      asyncHandler(async (req: Request, res: Response) => {
+      asyncHandler(async (_req: Request, res: Response) => {
         const config = await AppConfig.findOneOrNone({});
         res.json({
           enabled: config?.triviaAutoSearch?.enabled ?? false,
