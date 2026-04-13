@@ -41,7 +41,6 @@ const MovieDetailScreen: React.FC = () => {
   const frames = framesData?.results || [];
   const characters = charactersData?.results || [];
 
-  // Refresh movie data when progress updates
   useEffect(() => {
     if (progress && (movie?.status === "extracting" || movie?.status === "analyzing")) {
       refetch();
@@ -60,7 +59,7 @@ const MovieDetailScreen: React.FC = () => {
 
   const handleFramePress = useCallback(
     (frame: Frame) => {
-      router.push(`/movies/${id}/frames/${frame._id}`);
+      router.push(`/movies/${id}/frames/${frame._id}` as any);
     },
     [router, id]
   );
@@ -68,7 +67,7 @@ const MovieDetailScreen: React.FC = () => {
   const renderFrame = useCallback(
     ({item}: {item: Frame}) => (
       <Pressable onPress={() => handleFramePress(item)} testID={`movie-detail-frame-${item._id}`}>
-        <Box width={120} gap={1}>
+        <Box gap={1}>
           <Image
             source={{
               uri: `${API_URL}/static/movies/${id}/frames/frame_${String(item.frameNumber + 1).padStart(6, "0")}.jpg`,
@@ -76,7 +75,7 @@ const MovieDetailScreen: React.FC = () => {
             style={{width: 120, height: 68, borderRadius: 4}}
             resizeMode="cover"
           />
-          <Text size="xs" color="secondaryLight">
+          <Text size="sm" color="secondaryLight">
             {formatTimestamp(item.timestamp)}
           </Text>
         </Box>
@@ -89,7 +88,7 @@ const MovieDetailScreen: React.FC = () => {
     ({item}: {item: Character}) => (
       <Card testID={`movie-detail-character-${item._id}`}>
         <Box padding={3} gap={1}>
-          <Box flexDirection="row" justifyContent="space-between">
+          <Box direction="row" justifyContent="between">
             <Text bold>{item.actorName || item.name}</Text>
             <Text size="sm" color="secondaryLight">
               {item.totalAppearances} scenes
@@ -100,7 +99,7 @@ const MovieDetailScreen: React.FC = () => {
               as {item.name}
             </Text>
           )}
-          <Text size="xs" color="secondaryLight">
+          <Text size="sm" color="secondaryLight">
             {formatTimestamp(item.firstSeen)} - {formatTimestamp(item.lastSeen)}
           </Text>
         </Box>
@@ -113,7 +112,9 @@ const MovieDetailScreen: React.FC = () => {
     return (
       <Page navigation={undefined} title="Movie">
         <Box padding={4} alignItems="center" testID="movie-detail-screen">
-          <Spinner testID="movie-detail-loading-spinner" />
+          <Box testID="movie-detail-loading-spinner">
+            <Spinner />
+          </Box>
         </Box>
       </Page>
     );
@@ -127,18 +128,22 @@ const MovieDetailScreen: React.FC = () => {
       <Box padding={4} gap={4} testID="movie-detail-screen">
         {/* Header */}
         <Box gap={2}>
-          <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+          <Box direction="row" justifyContent="between" alignItems="center">
             <Heading testID="movie-detail-title">{movie.title}</Heading>
             <Badge
               testID="movie-detail-status"
-              color={
-                movie.status === "complete" ? "green" : movie.status === "error" ? "red" : "blue"
+              status={
+                movie.status === "complete"
+                  ? "success"
+                  : movie.status === "error"
+                    ? "error"
+                    : "info"
               }
-              text={movie.status}
+              value={movie.status}
             />
           </Box>
 
-          <Box flexDirection="row" gap={4}>
+          <Box direction="row" gap={4}>
             {movie.duration > 0 && (
               <Text testID="movie-detail-duration" size="sm" color="secondaryLight">
                 {Math.floor(movie.duration / 60)}m {Math.floor(movie.duration % 60)}s
@@ -167,16 +172,11 @@ const MovieDetailScreen: React.FC = () => {
           {isProcessing && (
             <>
               <Box testID="movie-detail-progress-bar">
-                <Box height={8} backgroundColor="gray.200" borderRadius={4} overflow="hidden">
-                  <Box
-                    height="100%"
-                    width={`${progressPct}%`}
-                    backgroundColor="blue.500"
-                    borderRadius={4}
-                  />
+                <Box height={8} borderRadius={4} overflow="hidden" color="neutralLight">
+                  <Box height="100%" width={`${progressPct}%`} color="primary" borderRadius={4} />
                 </Box>
               </Box>
-              <Text testID="movie-detail-progress-text" size="sm" textAlign="center">
+              <Text testID="movie-detail-progress-text" size="sm" align="center">
                 {progress?.processedFrames || 0} / {progress?.totalFrames || 0} frames (
                 {progressPct}%)
               </Text>
@@ -191,17 +191,17 @@ const MovieDetailScreen: React.FC = () => {
         </Box>
 
         {/* Tabs */}
-        <Box flexDirection="row" gap={2}>
+        <Box direction="row" gap={2}>
           <Button
             testID="movie-detail-tab-frames"
             text={`Frames (${frames.length})`}
-            variant={activeTab === "frames" ? "solid" : "outline"}
+            variant={activeTab === "frames" ? "primary" : "outline"}
             onClick={() => setActiveTab("frames")}
           />
           <Button
             testID="movie-detail-tab-characters"
             text={`Characters (${characters.length})`}
-            variant={activeTab === "characters" ? "solid" : "outline"}
+            variant={activeTab === "characters" ? "primary" : "outline"}
             onClick={() => setActiveTab("characters")}
           />
         </Box>

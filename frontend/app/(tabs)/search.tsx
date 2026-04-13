@@ -51,20 +51,13 @@ const SearchScreen: React.FC = () => {
     setShowSuggestions(false);
   }, []);
 
-  const handleFilterChange = useCallback(
-    (filter: FilterType) => {
-      setActiveFilter(filter);
-      if (submittedQuery) {
-        // Re-trigger search with new filter
-        setSubmittedQuery(submittedQuery);
-      }
-    },
-    [submittedQuery]
-  );
+  const handleFilterChange = useCallback((filter: FilterType) => {
+    setActiveFilter(filter);
+  }, []);
 
   const handleResultPress = useCallback(
     (result: FrameAnalysis & {score: number}) => {
-      router.push(`/movies/${result.movieId}/frames/${result.frameId}`);
+      router.push(`/movies/${result.movieId}/frames/${result.frameId}` as any);
     },
     [router]
   );
@@ -73,7 +66,7 @@ const SearchScreen: React.FC = () => {
     ({item, index}: {item: FrameAnalysis & {score: number}; index: number}) => (
       <Pressable onPress={() => handleResultPress(item)} testID={`search-result-${index}`}>
         <Card>
-          <Box padding={3} flexDirection="row" gap={3}>
+          <Box padding={3} direction="row" gap={3}>
             <Image
               testID={`search-result-${index}-thumbnail`}
               source={{
@@ -83,16 +76,16 @@ const SearchScreen: React.FC = () => {
               }}
               style={{width: 120, height: 68, borderRadius: 4}}
             />
-            <Box flex={1} gap={1} testID={`search-result-${index}-context`}>
-              <Text size="xs" color="secondaryLight">
+            <Box flex="grow" gap={1} testID={`search-result-${index}-context`}>
+              <Text size="sm" color="secondaryLight">
                 {formatTimestamp(item.timestamp)}
               </Text>
               <Text size="sm" numberOfLines={2}>
                 {item.sceneDescription}
               </Text>
-              <Box flexDirection="row" flexWrap="wrap" gap={1}>
+              <Box direction="row" wrap gap={1}>
                 {item.tags.slice(0, 3).map((tag) => (
-                  <Text key={tag} size="xs" color="blue.500">
+                  <Text key={tag} size="sm" color="link">
                     #{tag}
                   </Text>
                 ))}
@@ -123,22 +116,10 @@ const SearchScreen: React.FC = () => {
 
           {/* Suggestions */}
           {showSuggestions && suggestions?.suggestions && suggestions.suggestions.length > 0 && (
-            <Box
-              testID="search-suggestions-list"
-              backgroundColor="white"
-              borderRadius={4}
-              borderWidth={1}
-              borderColor="gray.200"
-              marginTop={1}
-            >
+            <Box testID="search-suggestions-list" color="base" borderRadius={4} marginTop={1}>
               {suggestions.suggestions.map((s, i) => (
                 <Pressable key={s} onPress={() => handleSuggestionPress(s)}>
-                  <Box
-                    testID={`search-suggestion-${i}`}
-                    padding={2}
-                    borderBottomWidth={i < suggestions.suggestions.length - 1 ? 1 : 0}
-                    borderColor="gray.100"
-                  >
+                  <Box testID={`search-suggestion-${i}`} padding={2}>
                     <Text size="sm">{s}</Text>
                   </Box>
                 </Pressable>
@@ -148,7 +129,7 @@ const SearchScreen: React.FC = () => {
         </Box>
 
         {/* Filter tabs */}
-        <Box flexDirection="row" gap={2} flexWrap="wrap">
+        <Box direction="row" gap={2} wrap>
           {filterOptions.map(({key, label}) => (
             <Pressable
               key={key}
@@ -156,12 +137,12 @@ const SearchScreen: React.FC = () => {
               onPress={() => handleFilterChange(key)}
             >
               <Box
-                paddingHorizontal={3}
-                paddingVertical={1}
+                paddingX={3}
+                paddingY={1}
                 borderRadius={16}
-                backgroundColor={activeFilter === key ? "blue.500" : "gray.100"}
+                color={activeFilter === key ? "primary" : "neutralLight"}
               >
-                <Text size="sm" color={activeFilter === key ? "white" : "black"}>
+                <Text size="sm" color={activeFilter === key ? "inverted" : "primary"}>
                   {label}
                 </Text>
               </Box>
@@ -170,7 +151,11 @@ const SearchScreen: React.FC = () => {
         </Box>
 
         {/* Results */}
-        {isLoading && <Spinner testID="search-loading-spinner" />}
+        {isLoading && (
+          <Box testID="search-loading-spinner">
+            <Spinner />
+          </Box>
+        )}
 
         {searchResults && searchResults.count === 0 && (
           <Box testID="search-empty-state" padding={8} alignItems="center">

@@ -5,12 +5,12 @@ import {useCallback} from "react";
 import {FlatList, Pressable} from "react-native";
 import {type Movie, useCreateMovieMutation, useListMoviesQuery} from "@/store/sdk";
 
-const statusColors: Record<string, string> = {
-  pending: "gray",
-  extracting: "blue",
-  analyzing: "orange",
-  complete: "green",
-  error: "red",
+const statusToStatus: Record<string, "info" | "success" | "error" | "warning" | "neutral"> = {
+  pending: "neutral",
+  extracting: "info",
+  analyzing: "warning",
+  complete: "success",
+  error: "error",
 };
 
 const MovieListScreen: React.FC = () => {
@@ -41,7 +41,7 @@ const MovieListScreen: React.FC = () => {
 
   const handleMoviePress = useCallback(
     (movie: Movie) => {
-      router.push(`/movies/${movie._id}`);
+      router.push(`/movies/${movie._id}` as any);
     },
     [router]
   );
@@ -55,31 +55,26 @@ const MovieListScreen: React.FC = () => {
         <Pressable onPress={() => handleMoviePress(item)} testID={`movies-item-${item._id}`}>
           <Card>
             <Box padding={3} gap={2}>
-              <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+              <Box direction="row" justifyContent="between" alignItems="center">
                 <Heading size="sm">{item.title}</Heading>
                 <Badge
                   testID={`movies-item-${item._id}-status`}
-                  color={statusColors[item.status] || "gray"}
-                  text={item.status}
+                  status={statusToStatus[item.status] || "neutral"}
+                  value={item.status}
                 />
               </Box>
               {item.duration > 0 && (
-                <Text color="secondaryLight">
+                <Text color="secondaryLight" size="sm">
                   {Math.floor(item.duration / 60)}m {Math.floor(item.duration % 60)}s{" | "}
                   {item.frameCount} frames
                 </Text>
               )}
               {(item.status === "extracting" || item.status === "analyzing") && (
-                <Box testID={`movies-item-${item._id}-progress`}>
-                  <Box height={4} backgroundColor="gray.200" borderRadius={2} overflow="hidden">
-                    <Box
-                      height="100%"
-                      width={`${progress}%`}
-                      backgroundColor="blue.500"
-                      borderRadius={2}
-                    />
+                <Box testID={`movies-item-${item._id}-progress`} gap={1}>
+                  <Box height={4} borderRadius={2} overflow="hidden" color="neutralLight">
+                    <Box height="100%" width={`${progress}%`} color="primary" borderRadius={2} />
                   </Box>
-                  <Text size="xs" color="secondaryLight">
+                  <Text size="sm" color="secondaryLight">
                     {item.processedFrameCount} / {item.frameCount} frames ({progress}%)
                   </Text>
                 </Box>
@@ -96,7 +91,9 @@ const MovieListScreen: React.FC = () => {
     return (
       <Page navigation={undefined} title="Movies">
         <Box padding={4} alignItems="center" testID="movies-screen">
-          <Spinner testID="movies-loading-spinner" />
+          <Box testID="movies-loading-spinner">
+            <Spinner />
+          </Box>
         </Box>
       </Page>
     );
@@ -105,7 +102,7 @@ const MovieListScreen: React.FC = () => {
   return (
     <Page navigation={undefined} title="Movies">
       <Box padding={4} gap={4} testID="movies-screen">
-        <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+        <Box direction="row" justifyContent="between" alignItems="center">
           <Heading>Movies</Heading>
           <Button testID="movies-upload-button" text="Add Movie" onClick={handleAddMovie} />
         </Box>

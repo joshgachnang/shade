@@ -25,7 +25,9 @@ const FrameDetailScreen: React.FC = () => {
     return (
       <Page navigation={undefined} title="Frame">
         <Box padding={4} alignItems="center" testID="frame-detail-screen">
-          <Spinner testID="frame-detail-loading-spinner" />
+          <Box testID="frame-detail-loading-spinner">
+            <Spinner />
+          </Box>
         </Box>
       </Page>
     );
@@ -37,7 +39,7 @@ const FrameDetailScreen: React.FC = () => {
         <Box padding={4} gap={4} testID="frame-detail-screen">
           {/* Frame Image */}
           {frame && (
-            <Box>
+            <Box gap={1}>
               <Image
                 testID="frame-detail-image"
                 source={{
@@ -46,7 +48,7 @@ const FrameDetailScreen: React.FC = () => {
                 style={{width: "100%", aspectRatio: 16 / 9, borderRadius: 8}}
                 resizeMode="contain"
               />
-              <Text testID="frame-detail-timestamp" size="sm" color="secondaryLight" marginTop={1}>
+              <Text testID="frame-detail-timestamp" size="sm" color="secondaryLight">
                 {formatTimestamp(frame.timestamp)}
               </Text>
             </Box>
@@ -60,7 +62,7 @@ const FrameDetailScreen: React.FC = () => {
                   <Heading size="sm">Scene</Heading>
                   <Text testID="frame-detail-scene-description">{analysis.sceneDescription}</Text>
                   {analysis.mood && (
-                    <Box flexDirection="row" alignItems="center" gap={2}>
+                    <Box direction="row" alignItems="center" gap={2}>
                       <Text size="sm" bold>
                         Mood:
                       </Text>
@@ -77,18 +79,13 @@ const FrameDetailScreen: React.FC = () => {
                 <Card>
                   <Box padding={3} gap={2}>
                     <Heading size="sm">Objects</Heading>
-                    <Box
-                      testID="frame-detail-objects-list"
-                      flexDirection="row"
-                      flexWrap="wrap"
-                      gap={2}
-                    >
+                    <Box testID="frame-detail-objects-list" direction="row" wrap gap={2}>
                       {analysis.objects.map((obj, i) => (
                         <Badge
                           key={`obj-${obj.label}-${i}`}
                           testID={`frame-detail-object-${i}`}
-                          text={`${obj.label} (${Math.round(obj.confidence * 100)}%)`}
-                          color="blue"
+                          value={`${obj.label} (${Math.round(obj.confidence * 100)}%)`}
+                          status="info"
                         />
                       ))}
                     </Box>
@@ -108,9 +105,9 @@ const FrameDetailScreen: React.FC = () => {
                           testID={`frame-detail-character-${i}`}
                           gap={1}
                         >
-                          <Box flexDirection="row" justifyContent="space-between">
+                          <Box direction="row" justifyContent="between">
                             <Text bold>{char.name}</Text>
-                            <Text size="xs" color="secondaryLight">
+                            <Text size="sm" color="secondaryLight">
                               {Math.round(char.confidence * 100)}%
                             </Text>
                           </Box>
@@ -133,7 +130,7 @@ const FrameDetailScreen: React.FC = () => {
                       {analysis.text.map((t, i) => (
                         <Box key={`text-${i}`} testID={`frame-detail-text-${i}`} gap={1}>
                           <Text>{t.content}</Text>
-                          <Text size="xs" color="secondaryLight">
+                          <Text size="sm" color="secondaryLight">
                             Source: {t.context}
                           </Text>
                         </Box>
@@ -148,18 +145,13 @@ const FrameDetailScreen: React.FC = () => {
                 <Card>
                   <Box padding={3} gap={2}>
                     <Heading size="sm">Tags</Heading>
-                    <Box
-                      testID="frame-detail-tags-list"
-                      flexDirection="row"
-                      flexWrap="wrap"
-                      gap={2}
-                    >
+                    <Box testID="frame-detail-tags-list" direction="row" wrap gap={2}>
                       {analysis.tags.map((tag, i) => (
                         <Badge
                           key={`tag-${tag}-${i}`}
                           testID={`frame-detail-tag-${i}`}
-                          text={tag}
-                          color="gray"
+                          value={tag}
+                          status="neutral"
                         />
                       ))}
                     </Box>
