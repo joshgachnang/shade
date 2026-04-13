@@ -11,6 +11,7 @@ import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
 import type {AgentRunner} from "./runners/types";
 import {RadioTranscriber} from "./services/radioTranscriber";
+import {TriviaAutoSearch} from "./services/triviaAutoSearch";
 
 export interface OrchestratorState {
   runner: AgentRunner;
@@ -19,6 +20,7 @@ export interface OrchestratorState {
   messageLoop: MessageLoop;
   ipcWatcher: IpcWatcher;
   radioTranscriber: RadioTranscriber;
+  triviaAutoSearch: TriviaAutoSearch;
   isRunning: boolean;
 }
 
@@ -139,6 +141,15 @@ export const startOrchestrator = async (
     logError("Radio transcriber start error (non-fatal)", err);
   }
 
+  // Start trivia auto-search (non-fatal if it fails)
+  const triviaAutoSearch = new TriviaAutoSearch(channelManager);
+  messageLoop.setTriviaAutoSearch(triviaAutoSearch);
+  try {
+    await triviaAutoSearch.start();
+  } catch (err) {
+    logError("Trivia auto-search start error (non-fatal)", err);
+  }
+
   ipcWatcher.setRadioStream(async (data: IpcRadioStream) => {
     const {RadioStream} = await import("../models/radioStream");
     const doc = await RadioStream.findById(data.radioStreamId);
@@ -168,6 +179,7 @@ export const startOrchestrator = async (
     messageLoop,
     ipcWatcher,
     radioTranscriber,
+    triviaAutoSearch,
     isRunning: true,
   };
 
@@ -187,6 +199,7 @@ export const stopOrchestrator = async (): Promise<void> => {
 
   state.messageLoop.stop();
   state.ipcWatcher.stop();
+  state.triviaAutoSearch.stop();
 
   try {
     await state.radioTranscriber.stop();
