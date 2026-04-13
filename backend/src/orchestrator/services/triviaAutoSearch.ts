@@ -215,7 +215,10 @@ export class TriviaAutoSearch {
     if (triviaConnection.readyState !== 1) {
       try {
         await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error("Trivia DB connection timeout")), 10000);
+          const timeout = setTimeout(
+            () => reject(new Error("Trivia DB connection timeout")),
+            10000
+          );
           triviaConnection.on("connected", () => {
             clearTimeout(timeout);
             resolve();
@@ -226,7 +229,9 @@ export class TriviaAutoSearch {
           });
         });
       } catch (err) {
-        logger.warn(`Trivia DB not available, auto-search will work without past questions: ${err}`);
+        logger.warn(
+          `Trivia DB not available, auto-search will work without past questions: ${err}`
+        );
       }
     }
 
@@ -291,7 +296,9 @@ export class TriviaAutoSearch {
     }
 
     const questionText = match[1].trim();
-    logger.info(`Manual trivia question from ${senderExternalId}: ${questionText.substring(0, 80)}`);
+    logger.info(
+      `Manual trivia question from ${senderExternalId}: ${questionText.substring(0, 80)}`
+    );
 
     // Process in background so we don't block the message loop
     this.processManualQuestion(questionText, groupId).catch((err) => {
@@ -417,7 +424,12 @@ export class TriviaAutoSearch {
     try {
       await TriviaQuestion.findOneAndUpdate(
         {year, hour: question.hour, questionNumber: question.questionNumber},
-        {year, hour: question.hour, questionNumber: question.questionNumber, questionText: question.questionText},
+        {
+          year,
+          hour: question.hour,
+          questionNumber: question.questionNumber,
+          questionText: question.questionText,
+        },
         {upsert: true, new: true}
       );
     } catch (err) {
@@ -426,7 +438,9 @@ export class TriviaAutoSearch {
 
     if (question.skipReason) {
       logger.info(`[${key}] Skipping: ${question.skipReason}`);
-      await this.postToGroup(`*[${key}]* ${question.questionText}\n_Skipped: ${question.skipReason}_`);
+      await this.postToGroup(
+        `*[${key}]* ${question.questionText}\n_Skipped: ${question.skipReason}_`
+      );
       return;
     }
 
@@ -660,9 +674,15 @@ export class TriviaAutoSearch {
     quickResult: QuickAnswerResult | null
   ): Promise<void> {
     const confidenceEmoji =
-      result.confidence === "high" ? ":white_check_mark:" : result.confidence === "medium" ? ":thinking_face:" : ":question:";
+      result.confidence === "high"
+        ? ":white_check_mark:"
+        : result.confidence === "medium"
+          ? ":thinking_face:"
+          : ":question:";
 
-    const parts = [`${confidenceEmoji} *[${key}]* Answer: *${result.answer || "Unknown"}* (${result.confidence})`];
+    const parts = [
+      `${confidenceEmoji} *[${key}]* Answer: *${result.answer || "Unknown"}* (${result.confidence})`,
+    ];
 
     if (result.sourceIdentified) {
       parts.push(`Source: ${result.sourceIdentified}`);
@@ -675,7 +695,7 @@ export class TriviaAutoSearch {
     }
 
     // If we had a quick answer that differs from the search answer, note it
-    if (quickResult && quickResult.answer && quickResult.answer !== result.answer) {
+    if (quickResult?.answer && quickResult.answer !== result.answer) {
       parts.push(`_LLM first guess was: ${quickResult.answer} (${quickResult.confidence})_`);
     }
 
@@ -728,7 +748,9 @@ export class TriviaAutoSearch {
             `Confidence: ${result.confidence}`,
             `Source: ${result.sourceIdentified}`,
             result.reasoning,
-            result.alternateAnswers.length > 0 ? `Alternates: ${result.alternateAnswers.join(", ")}` : "",
+            result.alternateAnswers.length > 0
+              ? `Alternates: ${result.alternateAnswers.join(", ")}`
+              : "",
           ]
             .filter(Boolean)
             .join("\n"),

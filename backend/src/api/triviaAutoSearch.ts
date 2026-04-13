@@ -58,7 +58,10 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
 
         const {question} = req.body as {question?: string};
         if (!question || typeof question !== "string" || question.trim().length === 0) {
-          throw new APIError({status: 400, title: "question is required and must be a non-empty string"});
+          throw new APIError({
+            status: 400,
+            title: "question is required and must be a non-empty string",
+          });
         }
 
         const orchestrator = getOrchestrator();
@@ -76,7 +79,8 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
         if (!handled) {
           throw new APIError({
             status: 403,
-            title: "User not allowed to submit trivia questions. Add your user ID to triviaAutoSearch.allowedUserIds.",
+            title:
+              "User not allowed to submit trivia questions. Add your user ID to triviaAutoSearch.allowedUserIds.",
           });
         }
 
