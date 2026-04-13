@@ -38,6 +38,12 @@ export interface AppConfigApiKeys {
   tavily: string;
 }
 
+export interface AppConfigTriviaAutoSearch {
+  enabled: boolean;
+  groupId: string;
+  allowedUserIds: string[];
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -47,6 +53,7 @@ export interface AppConfigFields {
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
+  triviaAutoSearch: AppConfigTriviaAutoSearch;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;

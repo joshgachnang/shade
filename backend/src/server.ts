@@ -17,6 +17,7 @@ import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
 import {transcriptRoutes} from "./api/transcripts";
+import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
 import {AppConfig, loadAppConfig} from "./models/appConfig";
@@ -98,6 +99,7 @@ export const start = async (skipListen = false) => {
     .register(new AppleCalendarPlugin())
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())
+    .register(new TriviaAutoSearchPlugin())
     .register(appConfigRoutes)
     .register(adminApp)
     .start();

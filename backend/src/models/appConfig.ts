@@ -44,6 +44,12 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       exa: {type: String, default: ""},
       tavily: {type: String, default: ""},
     },
+
+    triviaAutoSearch: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      allowedUserIds: {type: [String], default: []},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );
