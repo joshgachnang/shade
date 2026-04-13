@@ -2,7 +2,7 @@ import {Badge, Box, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
 import {useLocalSearchParams} from "expo-router";
 import type React from "react";
 import {Image, ScrollView} from "react-native";
-import {useGetFrameQuery, useGetFrameAnalysisQuery} from "@/store/sdk";
+import {useGetFrameAnalysisQuery, useGetFrameQuery} from "@/store/sdk";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4020";
 
@@ -61,8 +61,12 @@ const FrameDetailScreen: React.FC = () => {
                   <Text testID="frame-detail-scene-description">{analysis.sceneDescription}</Text>
                   {analysis.mood && (
                     <Box flexDirection="row" alignItems="center" gap={2}>
-                      <Text size="sm" bold>Mood:</Text>
-                      <Text testID="frame-detail-mood" size="sm">{analysis.mood}</Text>
+                      <Text size="sm" bold>
+                        Mood:
+                      </Text>
+                      <Text testID="frame-detail-mood" size="sm">
+                        {analysis.mood}
+                      </Text>
                     </Box>
                   )}
                 </Box>
@@ -73,7 +77,12 @@ const FrameDetailScreen: React.FC = () => {
                 <Card>
                   <Box padding={3} gap={2}>
                     <Heading size="sm">Objects</Heading>
-                    <Box testID="frame-detail-objects-list" flexDirection="row" flexWrap="wrap" gap={2}>
+                    <Box
+                      testID="frame-detail-objects-list"
+                      flexDirection="row"
+                      flexWrap="wrap"
+                      gap={2}
+                    >
                       {analysis.objects.map((obj, i) => (
                         <Badge
                           key={`obj-${obj.label}-${i}`}
@@ -94,14 +103,20 @@ const FrameDetailScreen: React.FC = () => {
                     <Heading size="sm">Characters</Heading>
                     <Box testID="frame-detail-characters-list" gap={2}>
                       {analysis.characters.map((char, i) => (
-                        <Box key={`char-${char.name}-${i}`} testID={`frame-detail-character-${i}`} gap={1}>
+                        <Box
+                          key={`char-${char.name}-${i}`}
+                          testID={`frame-detail-character-${i}`}
+                          gap={1}
+                        >
                           <Box flexDirection="row" justifyContent="space-between">
                             <Text bold>{char.name}</Text>
                             <Text size="xs" color="secondaryLight">
                               {Math.round(char.confidence * 100)}%
                             </Text>
                           </Box>
-                          <Text size="sm" color="secondaryLight">{char.description}</Text>
+                          <Text size="sm" color="secondaryLight">
+                            {char.description}
+                          </Text>
                         </Box>
                       ))}
                     </Box>
@@ -118,7 +133,9 @@ const FrameDetailScreen: React.FC = () => {
                       {analysis.text.map((t, i) => (
                         <Box key={`text-${i}`} testID={`frame-detail-text-${i}`} gap={1}>
                           <Text>{t.content}</Text>
-                          <Text size="xs" color="secondaryLight">Source: {t.context}</Text>
+                          <Text size="xs" color="secondaryLight">
+                            Source: {t.context}
+                          </Text>
                         </Box>
                       ))}
                     </Box>
@@ -131,7 +148,12 @@ const FrameDetailScreen: React.FC = () => {
                 <Card>
                   <Box padding={3} gap={2}>
                     <Heading size="sm">Tags</Heading>
-                    <Box testID="frame-detail-tags-list" flexDirection="row" flexWrap="wrap" gap={2}>
+                    <Box
+                      testID="frame-detail-tags-list"
+                      flexDirection="row"
+                      flexWrap="wrap"
+                      gap={2}
+                    >
                       {analysis.tags.map((tag, i) => (
                         <Badge
                           key={`tag-${tag}-${i}`}

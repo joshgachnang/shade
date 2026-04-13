@@ -3,11 +3,7 @@ import {useRouter} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
 import {FlatList, Pressable} from "react-native";
-import {
-  useCreateMovieMutation,
-  useListMoviesQuery,
-  type Movie,
-} from "@/store/sdk";
+import {type Movie, useCreateMovieMutation, useListMoviesQuery} from "@/store/sdk";
 
 const statusColors: Record<string, string> = {
   pending: "gray",
@@ -53,9 +49,7 @@ const MovieListScreen: React.FC = () => {
   const renderMovie = useCallback(
     ({item}: {item: Movie}) => {
       const progress =
-        item.frameCount > 0
-          ? Math.round((item.processedFrameCount / item.frameCount) * 100)
-          : 0;
+        item.frameCount > 0 ? Math.round((item.processedFrameCount / item.frameCount) * 100) : 0;
 
       return (
         <Pressable onPress={() => handleMoviePress(item)} testID={`movies-item-${item._id}`}>
@@ -71,19 +65,13 @@ const MovieListScreen: React.FC = () => {
               </Box>
               {item.duration > 0 && (
                 <Text color="secondaryLight">
-                  {Math.floor(item.duration / 60)}m {Math.floor(item.duration % 60)}s
-                  {" | "}
+                  {Math.floor(item.duration / 60)}m {Math.floor(item.duration % 60)}s{" | "}
                   {item.frameCount} frames
                 </Text>
               )}
               {(item.status === "extracting" || item.status === "analyzing") && (
                 <Box testID={`movies-item-${item._id}-progress`}>
-                  <Box
-                    height={4}
-                    backgroundColor="gray.200"
-                    borderRadius={2}
-                    overflow="hidden"
-                  >
+                  <Box height={4} backgroundColor="gray.200" borderRadius={2} overflow="hidden">
                     <Box
                       height="100%"
                       width={`${progress}%`}
@@ -119,11 +107,7 @@ const MovieListScreen: React.FC = () => {
       <Box padding={4} gap={4} testID="movies-screen">
         <Box flexDirection="row" justifyContent="space-between" alignItems="center">
           <Heading>Movies</Heading>
-          <Button
-            testID="movies-upload-button"
-            text="Add Movie"
-            onClick={handleAddMovie}
-          />
+          <Button testID="movies-upload-button" text="Add Movie" onClick={handleAddMovie} />
         </Box>
 
         {movies.length === 0 ? (

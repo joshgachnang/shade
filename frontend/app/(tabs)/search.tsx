@@ -3,7 +3,7 @@ import {useRouter} from "expo-router";
 import type React from "react";
 import {useCallback, useState} from "react";
 import {FlatList, Image, Pressable} from "react-native";
-import {useSearchQuery, useSearchSuggestQuery, type FrameAnalysis} from "@/store/sdk";
+import {type FrameAnalysis, useSearchQuery, useSearchSuggestQuery} from "@/store/sdk";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4020";
 
@@ -45,14 +45,11 @@ const SearchScreen: React.FC = () => {
     setShowSuggestions(false);
   }, [query]);
 
-  const handleSuggestionPress = useCallback(
-    (suggestion: string) => {
-      setQuery(suggestion);
-      setSubmittedQuery(suggestion);
-      setShowSuggestions(false);
-    },
-    []
-  );
+  const handleSuggestionPress = useCallback((suggestion: string) => {
+    setQuery(suggestion);
+    setSubmittedQuery(suggestion);
+    setShowSuggestions(false);
+  }, []);
 
   const handleFilterChange = useCallback(
     (filter: FilterType) => {
@@ -87,8 +84,12 @@ const SearchScreen: React.FC = () => {
               style={{width: 120, height: 68, borderRadius: 4}}
             />
             <Box flex={1} gap={1} testID={`search-result-${index}-context`}>
-              <Text size="xs" color="secondaryLight">{formatTimestamp(item.timestamp)}</Text>
-              <Text size="sm" numberOfLines={2}>{item.sceneDescription}</Text>
+              <Text size="xs" color="secondaryLight">
+                {formatTimestamp(item.timestamp)}
+              </Text>
+              <Text size="sm" numberOfLines={2}>
+                {item.sceneDescription}
+              </Text>
               <Box flexDirection="row" flexWrap="wrap" gap={1}>
                 {item.tags.slice(0, 3).map((tag) => (
                   <Text key={tag} size="xs" color="blue.500">
@@ -132,7 +133,12 @@ const SearchScreen: React.FC = () => {
             >
               {suggestions.suggestions.map((s, i) => (
                 <Pressable key={s} onPress={() => handleSuggestionPress(s)}>
-                  <Box testID={`search-suggestion-${i}`} padding={2} borderBottomWidth={i < suggestions.suggestions.length - 1 ? 1 : 0} borderColor="gray.100">
+                  <Box
+                    testID={`search-suggestion-${i}`}
+                    padding={2}
+                    borderBottomWidth={i < suggestions.suggestions.length - 1 ? 1 : 0}
+                    borderColor="gray.100"
+                  >
                     <Text size="sm">{s}</Text>
                   </Box>
                 </Pressable>
@@ -155,10 +161,7 @@ const SearchScreen: React.FC = () => {
                 borderRadius={16}
                 backgroundColor={activeFilter === key ? "blue.500" : "gray.100"}
               >
-                <Text
-                  size="sm"
-                  color={activeFilter === key ? "white" : "black"}
-                >
+                <Text size="sm" color={activeFilter === key ? "white" : "black"}>
                   {label}
                 </Text>
               </Box>

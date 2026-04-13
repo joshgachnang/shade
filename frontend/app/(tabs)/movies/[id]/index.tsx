@@ -4,14 +4,14 @@ import type React from "react";
 import {useCallback, useEffect, useState} from "react";
 import {FlatList, Image, Pressable} from "react-native";
 import {
+  type Character,
+  type Frame,
   useCancelMovieMutation,
-  useGetMovieQuery,
   useGetMovieProgressQuery,
+  useGetMovieQuery,
   useListCharactersQuery,
   useListFramesQuery,
   useProcessMovieMutation,
-  type Character,
-  type Frame,
 } from "@/store/sdk";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4020";
@@ -32,8 +32,7 @@ const MovieDetailScreen: React.FC = () => {
   const {data: framesData} = useListFramesQuery({movieId: id});
   const {data: charactersData} = useListCharactersQuery({movieId: id});
   const {data: progress} = useGetMovieProgressQuery(id, {
-    pollingInterval:
-      movie?.status === "extracting" || movie?.status === "analyzing" ? 3000 : 0,
+    pollingInterval: movie?.status === "extracting" || movie?.status === "analyzing" ? 3000 : 0,
   });
   const [processMovie] = useProcessMovieMutation();
   const [cancelMovie] = useCancelMovieMutation();
@@ -71,7 +70,9 @@ const MovieDetailScreen: React.FC = () => {
       <Pressable onPress={() => handleFramePress(item)} testID={`movie-detail-frame-${item._id}`}>
         <Box width={120} gap={1}>
           <Image
-            source={{uri: `${API_URL}/static/movies/${id}/frames/frame_${String(item.frameNumber + 1).padStart(6, "0")}.jpg`}}
+            source={{
+              uri: `${API_URL}/static/movies/${id}/frames/frame_${String(item.frameNumber + 1).padStart(6, "0")}.jpg`,
+            }}
             style={{width: 120, height: 68, borderRadius: 4}}
             resizeMode="cover"
           />
@@ -95,7 +96,9 @@ const MovieDetailScreen: React.FC = () => {
             </Text>
           </Box>
           {item.actorName && item.name !== item.actorName && (
-            <Text size="sm" color="secondaryLight">as {item.name}</Text>
+            <Text size="sm" color="secondaryLight">
+              as {item.name}
+            </Text>
           )}
           <Text size="xs" color="secondaryLight">
             {formatTimestamp(item.firstSeen)} - {formatTimestamp(item.lastSeen)}
@@ -128,7 +131,9 @@ const MovieDetailScreen: React.FC = () => {
             <Heading testID="movie-detail-title">{movie.title}</Heading>
             <Badge
               testID="movie-detail-status"
-              color={movie.status === "complete" ? "green" : movie.status === "error" ? "red" : "blue"}
+              color={
+                movie.status === "complete" ? "green" : movie.status === "error" ? "red" : "blue"
+              }
               text={movie.status}
             />
           </Box>
@@ -172,7 +177,8 @@ const MovieDetailScreen: React.FC = () => {
                 </Box>
               </Box>
               <Text testID="movie-detail-progress-text" size="sm" textAlign="center">
-                {progress?.processedFrames || 0} / {progress?.totalFrames || 0} frames ({progressPct}%)
+                {progress?.processedFrames || 0} / {progress?.totalFrames || 0} frames (
+                {progressPct}%)
               </Text>
               <Button
                 testID="movie-detail-cancel-button"

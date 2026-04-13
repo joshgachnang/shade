@@ -161,7 +161,10 @@ export const terrenoApi = openapi
       getMovieProgress: builder.query<MovieProgress, string>({
         query: (id) => ({url: `/movies/${id}/progress`}),
       }),
-      getMovieTimeline: builder.query<FrameAnalysis[], {id: string; character?: string; object?: string}>({
+      getMovieTimeline: builder.query<
+        FrameAnalysis[],
+        {id: string; character?: string; object?: string}
+      >({
         query: ({id, character, object}) => {
           const params = new URLSearchParams();
           if (character) {
