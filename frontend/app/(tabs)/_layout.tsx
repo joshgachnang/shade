@@ -17,6 +17,16 @@ const TabLayout: React.FC = () => {
     []
   );
 
+  const renderMoviesIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="film" />,
+    []
+  );
+
+  const renderSearchIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="search" />,
+    []
+  );
+
   const renderProfileIcon = useCallback(
     ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="user" />,
     []
@@ -38,6 +48,22 @@ const TabLayout: React.FC = () => {
         options={{
           tabBarIcon: renderHomeIcon,
           title: "Home",
+        }}
+      />
+      <Tabs.Screen
+        name="movies"
+        options={{
+          headerShown: false,
+          tabBarIcon: renderMoviesIcon,
+          title: "Movies",
+        }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          headerShown: false,
+          tabBarIcon: renderSearchIcon,
+          title: "Search",
         }}
       />
       <Tabs.Screen

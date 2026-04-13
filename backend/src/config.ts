@@ -12,4 +12,5 @@ export const paths = {
   sessions: path.join(dataDir, "sessions"),
   ipc: path.join(dataDir, "ipc"),
   plugins: path.join(dataDir, "plugins"),
+  movies: path.join(dataDir, "movies"),
 };

@@ -5,12 +5,17 @@ import {aiRequestRoutes} from "./api/aiRequests";
 import {appConfigRoutes} from "./api/appConfig";
 import {AppleCalendarPlugin, calendarConfigRoutes} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
+import {characterRoutes} from "./api/characters";
 import {channelRoutes} from "./api/channels";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
+import {frameAnalysisRoutes} from "./api/frameAnalyses";
+import {frameRoutes} from "./api/frames";
 import {groupRoutes} from "./api/groups";
 import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
+import {movieRoutes, registerMovieCustomRoutes} from "./api/movies";
+import {registerSearchRoutes} from "./api/search";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
@@ -95,12 +100,20 @@ export const start = async (skipListen = false) => {
     .register(radioStreamRoutes)
     .register(transcriptRoutes)
     .register(webhookSourceRoutes)
+    .register(movieRoutes)
+    .register(frameRoutes)
+    .register(frameAnalysisRoutes)
+    .register(characterRoutes)
     .register(new AppleCalendarPlugin())
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())
     .register(appConfigRoutes)
     .register(adminApp)
     .start();
+
+  registerMovieCustomRoutes(app);
+  registerSearchRoutes(app);
+
 
   if (!skipListen) {
     startOrchestrator(app).catch((err) => {
