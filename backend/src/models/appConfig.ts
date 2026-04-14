@@ -50,6 +50,16 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       groupId: {type: String, default: ""},
       allowedUserIds: {type: [String], default: []},
     },
+
+    prWatch: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      pollIntervalMs: {type: Number, default: 120000},
+      githubUsername: {type: String, default: ""},
+      autoRespondToBots: {type: Boolean, default: true},
+      autoFixConflicts: {type: Boolean, default: true},
+      reposBaseDir: {type: String, default: "data/repos"},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

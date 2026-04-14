@@ -157,6 +157,49 @@ export class ChannelManager {
     }
   }
 
+  async sendMessageWithTs(
+    channelId: string,
+    groupExternalId: string,
+    content: string
+  ): Promise<string> {
+    const connector = this.connectors.get(channelId);
+    if (!connector) {
+      logger.error(`No connector for channel ${channelId}`);
+      return "";
+    }
+    return connector.sendMessageWithTs(groupExternalId, content);
+  }
+
+  async updateMessage(
+    channelId: string,
+    groupExternalId: string,
+    messageTs: string,
+    content: string
+  ): Promise<void> {
+    const connector = this.connectors.get(channelId);
+    if (!connector) {
+      return;
+    }
+    await connector.updateMessage(groupExternalId, messageTs, content);
+  }
+
+  async sendMessageToGroupWithTs(groupId: string, content: string): Promise<string> {
+    const group = this.groupCache.get(groupId);
+    if (!group) {
+      logger.error(`Group ${groupId} not found in cache`);
+      return "";
+    }
+    return this.sendMessageWithTs(group.channelId.toString(), group.externalId, content);
+  }
+
+  async updateMessageInGroup(groupId: string, messageTs: string, content: string): Promise<void> {
+    const group = this.groupCache.get(groupId);
+    if (!group) {
+      return;
+    }
+    await this.updateMessage(group.channelId.toString(), group.externalId, messageTs, content);
+  }
+
   async addReaction(
     channelId: string,
     groupExternalId: string,

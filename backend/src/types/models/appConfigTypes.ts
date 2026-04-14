@@ -44,6 +44,16 @@ export interface AppConfigTriviaAutoSearch {
   allowedUserIds: string[];
 }
 
+export interface AppConfigPrWatch {
+  enabled: boolean;
+  groupId: string;
+  pollIntervalMs: number;
+  githubUsername: string;
+  autoRespondToBots: boolean;
+  autoFixConflicts: boolean;
+  reposBaseDir: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -54,6 +64,7 @@ export interface AppConfigFields {
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
   triviaAutoSearch: AppConfigTriviaAutoSearch;
+  prWatch: AppConfigPrWatch;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;

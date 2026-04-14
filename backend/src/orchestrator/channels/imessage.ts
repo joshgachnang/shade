@@ -212,6 +212,16 @@ end tell`;
     }
   }
 
+  async sendMessageWithTs(_groupExternalId: string, _content: string): Promise<string> {
+    return "";
+  }
+
+  async updateMessage(
+    _groupExternalId: string,
+    _messageTs: string,
+    _content: string
+  ): Promise<void> {}
+
   async addReaction(_groupExternalId: string, _messageTs: string, _emoji: string): Promise<void> {
     // iMessage reactions (tapbacks) are not supported via AppleScript
   }

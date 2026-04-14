@@ -7,6 +7,7 @@ export * from "./commandClassificationTypes";
 export * from "./groupTypes";
 export * from "./messageTypes";
 export * from "./pluginTypes";
+export * from "./prWatchTypes";
 export * from "./radioStreamTypes";
 export * from "./remoteAgentTypes";
 export * from "./scheduledTaskTypes";
