@@ -172,8 +172,8 @@ const MovieDetailScreen: React.FC = () => {
           {isProcessing && (
             <>
               <Box testID="movie-detail-progress-bar">
-                <Box height={8} borderRadius={4} overflow="hidden" color="neutralLight">
-                  <Box height="100%" width={`${progressPct}%`} color="primary" borderRadius={4} />
+                <Box height={8} rounding="sm" overflow="hidden" color="neutralLight">
+                  <Box height="100%" width={`${progressPct}%`} color="primary" rounding="sm" />
                 </Box>
               </Box>
               <Text testID="movie-detail-progress-text" size="sm" align="center">

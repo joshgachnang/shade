@@ -116,7 +116,7 @@ const SearchScreen: React.FC = () => {
 
           {/* Suggestions */}
           {showSuggestions && suggestions?.suggestions && suggestions.suggestions.length > 0 && (
-            <Box testID="search-suggestions-list" color="base" borderRadius={4} marginTop={1}>
+            <Box testID="search-suggestions-list" color="base" rounding="sm" marginTop={1}>
               {suggestions.suggestions.map((s, i) => (
                 <Pressable key={s} onPress={() => handleSuggestionPress(s)}>
                   <Box testID={`search-suggestion-${i}`} padding={2}>
@@ -139,7 +139,7 @@ const SearchScreen: React.FC = () => {
               <Box
                 paddingX={3}
                 paddingY={1}
-                borderRadius={16}
+                rounding="full"
                 color={activeFilter === key ? "primary" : "neutralLight"}
               >
                 <Text size="sm" color={activeFilter === key ? "inverted" : "primary"}>

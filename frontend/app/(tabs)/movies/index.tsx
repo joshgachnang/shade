@@ -71,8 +71,8 @@ const MovieListScreen: React.FC = () => {
               )}
               {(item.status === "extracting" || item.status === "analyzing") && (
                 <Box testID={`movies-item-${item._id}-progress`} gap={1}>
-                  <Box height={4} borderRadius={2} overflow="hidden" color="neutralLight">
-                    <Box height="100%" width={`${progress}%`} color="primary" borderRadius={2} />
+                  <Box height={4} rounding="sm" overflow="hidden" color="neutralLight">
+                    <Box height="100%" width={`${progress}%`} color="primary" rounding="sm" />
                   </Box>
                   <Text size="sm" color="secondaryLight">
                     {item.processedFrameCount} / {item.frameCount} frames ({progress}%)
