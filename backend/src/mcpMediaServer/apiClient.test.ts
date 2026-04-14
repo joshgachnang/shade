@@ -1,34 +1,39 @@
-import {afterEach, beforeEach, describe, expect, mock, test} from "bun:test";
+import {afterEach, describe, expect, mock, test} from "bun:test";
 import {makeRequest, nzbgetRequest, plexRequest} from "./apiClient";
 
-// Mock global fetch
+// Track calls manually since we replace globalThis.fetch
 const originalFetch = globalThis.fetch;
+let lastCalls: Array<[string, RequestInit]> = [];
 
 const mockFetch = (status: number, body: unknown, contentType = "application/json") => {
-  globalThis.fetch = mock(async () => ({
-    ok: status >= 200 && status < 300,
-    status,
-    headers: new Headers({"content-type": contentType}),
-    json: async () => body,
-    text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
-  })) as unknown as typeof fetch;
+  lastCalls = [];
+  const mockFn = mock(async (url: string, init: RequestInit) => {
+    lastCalls.push([url, init]);
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      headers: new Headers({"content-type": contentType}),
+      json: async () => body,
+      text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
+    };
+  });
+  globalThis.fetch = mockFn as unknown as typeof fetch;
+  return mockFn;
 };
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  lastCalls = [];
 });
 
 describe("makeRequest", () => {
   test("sends GET request with correct headers and API key", async () => {
-    mockFetch(200, [{title: "Breaking Bad"}]);
+    const fn = mockFetch(200, [{title: "Breaking Bad"}]);
 
     const result = await makeRequest("http://sonarr:8989", "/api/v3/series", "test-api-key");
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    const [url, options] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    expect(fn).toHaveBeenCalledTimes(1);
+    const [url, options] = lastCalls[0];
     expect(url).toBe("http://sonarr:8989/api/v3/series");
     expect((options.headers as Record<string, string>)["X-Api-Key"]).toBe("test-api-key");
     expect(options.method).toBe("GET");
@@ -43,10 +48,7 @@ describe("makeRequest", () => {
       body: {title: "Test"},
     });
 
-    const [, options] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    const [, options] = lastCalls[0];
     expect(options.method).toBe("POST");
     expect(options.body).toBe(JSON.stringify({title: "Test"}));
   });
@@ -58,7 +60,7 @@ describe("makeRequest", () => {
       params: {term: "Breaking Bad"},
     });
 
-    const [url] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [string];
+    const [url] = lastCalls[0];
     expect(url).toContain("term=Breaking+Bad");
   });
 
@@ -84,10 +86,7 @@ describe("makeRequest", () => {
       headers: {"X-Custom": "value"},
     });
 
-    const [, options] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    const [, options] = lastCalls[0];
     expect((options.headers as Record<string, string>)["X-Custom"]).toBe("value");
     expect((options.headers as Record<string, string>)["X-Api-Key"]).toBe("key");
   });
@@ -99,10 +98,7 @@ describe("nzbgetRequest", () => {
 
     const result = await nzbgetRequest("http://nzbget:6789", "admin", "pass123", "status");
 
-    const [url, options] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    const [url, options] = lastCalls[0];
     expect(url).toBe("http://nzbget:6789/admin:pass123/jsonrpc");
     expect(options.method).toBe("POST");
     const body = JSON.parse(options.body as string);
@@ -120,10 +116,7 @@ describe("nzbgetRequest", () => {
       [42],
     ]);
 
-    const [, options] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    const [, options] = lastCalls[0];
     const body = JSON.parse(options.body as string);
     expect(body.params).toEqual(["GroupPause", "", [42]]);
   });
@@ -149,7 +142,7 @@ describe("nzbgetRequest", () => {
 
     await nzbgetRequest("http://nzbget:6789/", "admin", "pass", "status");
 
-    const [url] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [string];
+    const [url] = lastCalls[0];
     expect(url).toBe("http://nzbget:6789/admin:pass/jsonrpc");
   });
 });
@@ -160,10 +153,7 @@ describe("plexRequest", () => {
 
     const result = await plexRequest("http://plex:32400", "/library/sections", "plex-token-123");
 
-    const [url, options] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
+    const [url, options] = lastCalls[0];
     expect(url).toContain("X-Plex-Token=plex-token-123");
     expect((options.headers as Record<string, string>).Accept).toBe("application/json");
     expect(result).toEqual({MediaContainer: {}});
@@ -176,7 +166,7 @@ describe("plexRequest", () => {
       params: {query: "Matrix", limit: "10"},
     });
 
-    const [url] = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0] as [string];
+    const [url] = lastCalls[0];
     expect(url).toContain("query=Matrix");
     expect(url).toContain("limit=10");
     expect(url).toContain("X-Plex-Token=token");
