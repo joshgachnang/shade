@@ -5,7 +5,7 @@ import {testUsers} from "./helpers/test-data";
 test.describe("Feature: Accessibility - Login Form Keyboard Navigation", () => {
   test.beforeEach(async ({page}) => {
     await page.goto("/login", {timeout: 60000});
-    await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 30000});
+    await page.getByTestId("login-screen").waitFor({state: "visible"});
   });
 
   test("login form is fully navigable by keyboard", async ({page}) => {

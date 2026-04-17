@@ -1,9 +1,7 @@
 import {test as setup, expect} from "@playwright/test";
 
 setup("authenticate", async ({page, request}) => {
-  // Allow up to 5 minutes: Metro bundle compilation (~2 min) +
-  // font loading (~30s) + auth injection + verification
-  setup.setTimeout(300000);
+  setup.setTimeout(90000);
 
   const baseApiUrl = "http://localhost:4020";
 
@@ -37,15 +35,7 @@ setup("authenticate", async ({page, request}) => {
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
-  // Pre-warm the Expo dev server: load /login and wait for full render.
-  // In CI, Metro bundle compilation takes ~2 min and font loading adds ~30s.
-  // This ensures tests that need the login screen don't hit timeout on first load.
-  console.log("[Auth Setup] Pre-warming dev server by loading /login...");
-  await page.goto("/login", {timeout: 180000});
-  await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 120000});
-  console.log("[Auth Setup] Login screen pre-warmed successfully.");
-
-  // Now navigate to root to inject auth state into localStorage
+  // Navigate to the app to set up the browser context
   await page.goto("/", {timeout: 60000});
 
   // Inject auth state into localStorage (matching @terreno/rtk persist format)

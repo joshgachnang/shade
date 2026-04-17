@@ -56,7 +56,10 @@ const RootLayout: React.FC = () => {
     }
   }, [loaded]);
 
-  if (!loaded) {
+  // In E2E tests, skip blocking on font load to avoid CI environment issues
+  // where the dev server is slow to serve font files during initial bundle compilation.
+  const skipFontWait = process.env.EXPO_PUBLIC_SKIP_FONT_WAIT === "true";
+  if (!loaded && !skipFontWait) {
     return null;
   }
 

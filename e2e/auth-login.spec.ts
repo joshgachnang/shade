@@ -5,7 +5,7 @@ import {testUsers} from "./helpers/test-data";
 test.describe("Feature: Login", () => {
   test.beforeEach(async ({page}) => {
     await page.goto("/login", {timeout: 60000});
-    await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 30000});
+    await page.getByTestId("login-screen").waitFor({state: "visible"});
   });
 
   test("user can log in with valid credentials", async ({page}) => {
@@ -60,7 +60,7 @@ test.describe("Feature: Login", () => {
 test.describe("Feature: Signup", () => {
   test.beforeEach(async ({page}) => {
     await page.goto("/login", {timeout: 60000});
-    await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 30000});
+    await page.getByTestId("login-screen").waitFor({state: "visible"});
     await page.getByTestId("login-toggle-button").click();
     await page.getByTestId("login-name-input").waitFor({state: "visible"});
   });
