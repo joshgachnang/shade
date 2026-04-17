@@ -43,6 +43,9 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
+      - name: Build frontend for E2E
+        run: cd frontend && bun run build:web
+
       - name: Start backend
         run: cd backend && nohup bun run start > /tmp/backend.log 2>&1 &
 
@@ -63,6 +66,7 @@ jobs:
         run: bunx playwright test --project=chromium
         env:
           CI: true
+          PLAYWRIGHT_STATIC: true
 
       - name: Print backend logs
         if: ${{ !cancelled() }}
