@@ -34,6 +34,7 @@
     "sdk": "bun scripts/generate-sdk.ts && biome check --write scripts/generate-sdk.ts",
     "start": "bun expo start --port 8082",
     "test": "bun test",
+    "build:web": "bun expo export --platform web",
     "web": "bun expo start --web --port 8082"
   },
   "version": "1.0.0"
