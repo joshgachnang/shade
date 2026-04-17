@@ -42,8 +42,9 @@ export default defineConfig({
 
   webServer: isStatic
     ? {
-        // In CI, serve the pre-built static export to avoid Metro bundling delays.
-        command: "bunx serve frontend/dist -p 8082",
+        // In CI, serve the pre-built static export (SPA mode) to avoid Metro bundling delays.
+        // --single enables SPA routing so all paths fall back to index.html.
+        command: "bunx serve frontend/dist -p 8082 --single",
         port: 8082,
         reuseExistingServer: false,
         timeout: 30000,
