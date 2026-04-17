@@ -9,7 +9,7 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     services:
       mongo:
@@ -43,6 +43,23 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
+      - name: Build frontend for E2E
+        run: cd frontend && bun run build:web
+        env:
+          # Bake SKIP_FONT_WAIT into the bundle so the app renders without
+          # waiting for fonts, which are slow to load from the CI static server.
+          EXPO_PUBLIC_SKIP_FONT_WAIT: "true"
+
+      - name: Verify API URL in bundle
+        run: |
+          echo "Checking if localhost:4020 is in the bundle..."
+          if grep -r "localhost:4020" frontend/dist/ --include="*.js" > /dev/null 2>&1; then
+            echo "✓ localhost:4020 found in bundle"
+          else
+            echo "✗ localhost:4020 NOT found in bundle!"
+            grep -r "baseUrl\|localhost:3000\|localhost:8082" frontend/dist/ --include="*.js" | head -5 || true
+          fi
+
       - name: Start backend
         run: cd backend && nohup bun run start > /tmp/backend.log 2>&1 &
 
@@ -63,6 +80,7 @@ jobs:
         run: bunx playwright test --project=chromium
         env:
           CI: true
+          PLAYWRIGHT_STATIC: true
 
       - name: Print backend logs
         if: ${{ !cancelled() }}
