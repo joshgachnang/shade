@@ -152,14 +152,14 @@ export const terrenoApi = openapi
       }),
       processMovie: builder.mutation<{movieId: string; status: string}, string>({
         invalidatesTags: (_result, _err, id) => [{type: "Movies" as any, id}],
-        query: (id) => ({method: "POST", url: `/movies/${id}/process`}),
+        query: (id) => ({method: "POST", url: `/movie-actions/${id}/process`}),
       }),
       cancelMovie: builder.mutation<{movieId: string; status: string}, string>({
         invalidatesTags: (_result, _err, id) => [{type: "Movies" as any, id}],
-        query: (id) => ({method: "POST", url: `/movies/${id}/cancel`}),
+        query: (id) => ({method: "POST", url: `/movie-actions/${id}/cancel`}),
       }),
       getMovieProgress: builder.query<MovieProgress, string>({
-        query: (id) => ({url: `/movies/${id}/progress`}),
+        query: (id) => ({url: `/movie-actions/${id}/progress`}),
       }),
       getMovieTimeline: builder.query<
         FrameAnalysis[],
@@ -174,7 +174,7 @@ export const terrenoApi = openapi
             params.set("object", object);
           }
           const qs = params.toString();
-          return {url: `/movies/${id}/timeline${qs ? `?${qs}` : ""}`};
+          return {url: `/movie-actions/${id}/timeline${qs ? `?${qs}` : ""}`};
         },
       }),
       // Frame endpoints

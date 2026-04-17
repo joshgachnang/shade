@@ -14,8 +14,8 @@ import {frameRoutes} from "./api/frames";
 import {groupRoutes} from "./api/groups";
 import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
-import {movieRoutes, registerMovieCustomRoutes} from "./api/movies";
-import {registerSearchRoutes} from "./api/search";
+import {MovieActionsPlugin, movieRoutes} from "./api/movies";
+import {SearchPlugin} from "./api/search";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
@@ -104,6 +104,8 @@ export const start = async (skipListen = false) => {
     .register(frameRoutes)
     .register(frameAnalysisRoutes)
     .register(characterRoutes)
+    .register(new MovieActionsPlugin())
+    .register(new SearchPlugin())
     .register(new AppleCalendarPlugin())
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())
@@ -111,8 +113,6 @@ export const start = async (skipListen = false) => {
     .register(adminApp)
     .start();
 
-  registerMovieCustomRoutes(app);
-  registerSearchRoutes(app);
 
 
   if (!skipListen) {

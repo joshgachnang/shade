@@ -219,22 +219,26 @@ export const extractFrames = async (movieId: string): Promise<ExtractionResult> 
 
   logger.info(`Extracted ${frameFiles.length} frames from ${filePath}`);
 
-  // Get timestamps for the extracted frames
-  const timestamps = await getFrameTimestamps(
-    filePath,
-    mode,
-    config?.sceneThreshold || 0.3
-  );
+  // Get timestamps — only run FFmpeg timestamp pass for scene-change mode
+  // For interval/every-frame, timestamps are computed mathematically
+  let timestamps: number[] = [];
+  if (mode === "scene-change") {
+    timestamps = await getFrameTimestamps(filePath, mode, config?.sceneThreshold || 0.3);
+  }
 
   // Create Frame documents
   for (let i = 0; i < frameFiles.length; i++) {
     const framePath = path.join(outputDir, frameFiles[i]);
     const stat = await fs.stat(framePath);
 
-    // Use timestamp from ffmpeg if available, otherwise estimate
-    const timestamp = timestamps[i] ?? (mode === "interval"
-      ? i * (config?.intervalSeconds || 1)
-      : (i / frameFiles.length) * videoInfo.duration);
+    let timestamp: number;
+    if (mode === "interval") {
+      timestamp = i * (config?.intervalSeconds || 1);
+    } else if (mode === "every-frame") {
+      timestamp = videoInfo.fps > 0 ? i / videoInfo.fps : i;
+    } else {
+      timestamp = timestamps[i] ?? (i / frameFiles.length) * videoInfo.duration;
+    }
 
     await Frame.create({
       movieId,

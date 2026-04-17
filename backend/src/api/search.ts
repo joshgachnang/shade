@@ -1,12 +1,12 @@
-import {asyncHandler, authenticateMiddleware} from "@terreno/api";
-import type {Express} from "express";
+import {type TerrenoPlugin, asyncHandler} from "@terreno/api";
+import type express from "express";
 import mongoose from "mongoose";
 import {FrameAnalysis} from "../models";
 
-export const registerSearchRoutes = (app: Express) => {
+export class SearchPlugin implements TerrenoPlugin {
+  register(app: express.Application): void {
   app.get(
     "/search",
-    authenticateMiddleware,
     asyncHandler(async (req, res) => {
       const {q, movieId, type} = req.query;
 
@@ -121,7 +121,6 @@ export const registerSearchRoutes = (app: Express) => {
 
   app.get(
     "/search/suggest",
-    authenticateMiddleware,
     asyncHandler(async (req, res) => {
       const {q} = req.query;
 
@@ -184,4 +183,5 @@ export const registerSearchRoutes = (app: Express) => {
       }
     })
   );
-};
+  }
+}
