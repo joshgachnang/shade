@@ -1,6 +1,9 @@
+import path from "node:path";
 import {logger} from "@terreno/api";
-import {FrameAnalysis} from "../models";
 import {paths} from "../config";
+import {FrameAnalysis} from "../models";
+
+const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://api.shade.nang.io";
 
 const formatTimestamp = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600);
@@ -82,7 +85,9 @@ export const handleMovieSearch = async (query: string): Promise<string> => {
       entry += `\n    _Tags:_ ${tags}`;
     }
     if (imgPath) {
-      entry += `\n    _Image:_ \`${imgPath}\``;
+      const relativePath = imgPath.replace(path.resolve(paths.movies), "").replace(/^\//, "");
+      const imageUrl = `${BASE_URL}/static/movies/${relativePath}`;
+      entry += `\n    ${imageUrl}`;
     }
 
     lines.push(entry);
