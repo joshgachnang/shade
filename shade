@@ -536,6 +536,8 @@ cmd_remote_setup() {
 }
 
 # --- Deploy Frontend to Netlify ---
+NETLIFY_SITE_ID="01085989-7706-4876-95b4-dd2854c19244"
+
 cmd_deploy_frontend() {
   local prod_flag=""
   if [[ "${1:-}" == "--prod" ]]; then
@@ -546,9 +548,9 @@ cmd_deploy_frontend() {
   echo "=== Shade Frontend Deploy (Netlify) ==="
   echo ""
 
-  # Build the static web export
+  # Build the static web export with production API URL
   echo "Building frontend..."
-  (cd "$PROJECT_DIR/frontend" && bun expo export --platform web)
+  (cd "$PROJECT_DIR/frontend" && EXPO_PUBLIC_API_URL="https://api.shade.nang.io" bun expo export --platform web --clear)
   echo "  Built: frontend/dist/"
   echo ""
 
@@ -558,12 +560,30 @@ cmd_deploy_frontend() {
     exit 1
   fi
 
+  # Deploy from a temp copy to avoid the Netlify CLI monorepo detection prompt
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  cp -r "$PROJECT_DIR/frontend/dist/." "$tmp_dir/"
+
+  # Netlify CLI ignores node_modules/ paths and this can't be overridden.
+  # Expo puts font/image assets under assets/node_modules/ so we must
+  # relocate them and rewrite references in the JS bundles.
+  if [[ -d "$tmp_dir/assets/node_modules" ]]; then
+    mv "$tmp_dir/assets/node_modules" "$tmp_dir/assets/vendor"
+    # Rewrite asset paths in all JS bundles
+    find "$tmp_dir/_expo" -name '*.js' -exec \
+      sed -i.bak 's|assets/node_modules/|assets/vendor/|g' {} \;
+    find "$tmp_dir/_expo" -name '*.bak' -delete
+  fi
+
+  trap "rm -rf '$tmp_dir'" EXIT
+
   if [[ -n "$prod_flag" ]]; then
     echo "Deploying to production..."
-    (cd "$PROJECT_DIR/frontend" && netlify deploy --prod --dir=dist)
+    (cd "$tmp_dir" && NETLIFY_SITE_ID="$NETLIFY_SITE_ID" netlify deploy --prod --dir=.)
   else
     echo "Deploying preview..."
-    (cd "$PROJECT_DIR/frontend" && netlify deploy --dir=dist)
+    (cd "$tmp_dir" && NETLIFY_SITE_ID="$NETLIFY_SITE_ID" netlify deploy --dir=.)
   fi
 
   echo ""

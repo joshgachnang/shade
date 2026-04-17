@@ -8,6 +8,6 @@ module.exports = ({config}) => ({
   extra: {
     ...config.extra,
     // Map EXPO_PUBLIC_API_URL to BASE_URL for @terreno/rtk constants.ts compatibility
-    BASE_URL: process.env.EXPO_PUBLIC_API_URL || process.env.BASE_URL || undefined,
+    BASE_URL: process.env.EXPO_PUBLIC_API_URL || process.env.BASE_URL || "https://api.shade.nang.io",
   },
 });
