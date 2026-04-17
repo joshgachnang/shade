@@ -1,7 +1,7 @@
 import {test as setup, expect} from "@playwright/test";
 
 setup("authenticate", async ({page, request}) => {
-  setup.setTimeout(90000);
+  setup.setTimeout(180000);
 
   const baseApiUrl = "http://localhost:4020";
 
@@ -35,7 +35,13 @@ setup("authenticate", async ({page, request}) => {
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
-  // Navigate to the app to set up the browser context
+  // Pre-warm the Expo dev server by loading the login page first.
+  // In CI, the first page visit triggers bundling which can take 60+ seconds.
+  // Loading /login here ensures the bundle is ready before actual tests run.
+  await page.goto("/login", {timeout: 75000});
+  await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 75000});
+
+  // Now navigate to root to inject auth state
   await page.goto("/", {timeout: 60000});
 
   // Inject auth state into localStorage (matching @terreno/rtk persist format)
