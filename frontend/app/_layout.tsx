@@ -18,7 +18,14 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
-SplashScreen.preventAutoHideAsync();
+// In E2E test builds, EXPO_PUBLIC_SKIP_FONT_WAIT is set at build time to skip
+// font loading entirely. This prevents re-renders from font load state changes
+// which cause DOM elements to detach and break Playwright interactions.
+const skipFontLoad = process.env.EXPO_PUBLIC_SKIP_FONT_WAIT === "true";
+
+if (!skipFontLoad) {
+  SplashScreen.preventAutoHideAsync();
+}
 
 const RootLayoutNav: React.FC = () => {
   const userId = useSelectCurrentUserId();
@@ -37,10 +44,16 @@ const RootLayoutNav: React.FC = () => {
 };
 
 const RootLayout: React.FC = () => {
-  const [loaded, error] = useFonts({
-    SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
-    ...FontAwesome.font,
-  });
+  // Skip font loading in E2E test builds to prevent re-renders from interfering
+  // with Playwright element interactions (elements detach during font load re-renders).
+  const [loaded, error] = useFonts(
+    skipFontLoad
+      ? {}
+      : {
+          SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
+          ...FontAwesome.font,
+        }
+  );
 
   // Handle font loading errors
   useEffect(() => {
@@ -51,15 +64,12 @@ const RootLayout: React.FC = () => {
 
   // Hide splash screen when fonts are loaded
   useEffect(() => {
-    if (loaded) {
+    if (loaded && !skipFontLoad) {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
 
-  // In E2E test builds, EXPO_PUBLIC_SKIP_FONT_WAIT is set at build time to prevent
-  // blocking on font load. This avoids hangs in CI when fonts are slow to load.
-  const skipFontWait = process.env.EXPO_PUBLIC_SKIP_FONT_WAIT === "true";
-  if (!loaded && !skipFontWait) {
+  if (!loaded && !skipFontLoad) {
     return null;
   }
 
