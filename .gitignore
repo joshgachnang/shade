@@ -3,3 +3,6 @@ backend/.env.development
 backend/.env.testing
 backend/.env.production
 backend/.env.local
+
+# Local Netlify folder
+.netlify
