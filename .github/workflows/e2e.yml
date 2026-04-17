@@ -23,7 +23,6 @@ jobs:
       TOKEN_SECRET: test-secret-for-ci
       REFRESH_TOKEN_SECRET: test-refresh-secret-for-ci
       EXPO_PUBLIC_API_URL: http://localhost:4020
-      EXPO_PUBLIC_SKIP_FONT_WAIT: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +42,13 @@ jobs:
 
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
+
+      - name: Build frontend for E2E
+        run: cd frontend && bun run build:web
+        env:
+          # Bake SKIP_FONT_WAIT into the bundle so the app renders without
+          # waiting for fonts, which are slow to load from the CI static server.
+          EXPO_PUBLIC_SKIP_FONT_WAIT: "true"
 
       - name: Start backend
         run: cd backend && nohup bun run start > /tmp/backend.log 2>&1 &
@@ -64,6 +70,7 @@ jobs:
         run: bunx playwright test --project=chromium
         env:
           CI: true
+          PLAYWRIGHT_STATIC: true
 
       - name: Print backend logs
         if: ${{ !cancelled() }}
