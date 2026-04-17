@@ -35,10 +35,22 @@ setup("authenticate", async ({page, request}) => {
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
+  // Verify that /login route shows the login screen (no auth state)
+  console.log("[Auth Setup] Verifying /login route renders login-screen...");
+  await page.goto("/login", {timeout: 30000});
+  const loginScreenVisible = await page.getByTestId("login-screen").isVisible();
+  console.log(`[Auth Setup] login-screen visible at /login: ${loginScreenVisible}`);
+  if (!loginScreenVisible) {
+    // Log page content for debugging
+    const content = await page.content();
+    console.log(`[Auth Setup] Page title: ${await page.title()}`);
+    console.log(`[Auth Setup] Page URL: ${page.url()}`);
+    console.log(`[Auth Setup] Page content snippet: ${content.substring(0, 500)}`);
+  }
+
   // Navigate to the app to set up the browser context
-  console.log("[Auth Setup] Navigating to /...");
-  await page.goto("/", {timeout: 60000});
-  console.log("[Auth Setup] Navigation complete, injecting auth state...");
+  console.log("[Auth Setup] Navigating to / to inject auth state...");
+  await page.goto("/", {timeout: 30000});
 
   // Inject auth state into localStorage (matching @terreno/rtk persist format)
   await page.evaluate(
@@ -58,14 +70,11 @@ setup("authenticate", async ({page, request}) => {
     {token, refreshToken, userId}
   );
 
-  console.log("[Auth Setup] Auth state injected, reloading...");
   // Reload to pick up the persisted state
-  await page.reload({timeout: 60000});
-  console.log("[Auth Setup] Reload complete, verifying auth...");
+  await page.reload({timeout: 30000});
 
   // Verify we're authenticated — login screen should not appear
   await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
-  console.log("[Auth Setup] Auth verified, saving storage state...");
 
   // Save browser state for other tests
   await page.context().storageState({path: "./e2e/.auth/user.json"});
