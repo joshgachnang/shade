@@ -50,6 +50,12 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       groupId: {type: String, default: ""},
       allowedUserIds: {type: [String], default: []},
     },
+
+    triviaStats: {
+      slackWebhook: {type: String, default: ""},
+      blueskyIdentifier: {type: String, default: ""},
+      blueskyPassword: {type: String, default: ""},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

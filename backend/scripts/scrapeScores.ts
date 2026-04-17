@@ -10,7 +10,10 @@
  */
 
 import {join} from "node:path";
+import {AtpAgent, RichText} from "@atproto/api";
 import * as cheerio from "cheerio";
+import mongoose from "mongoose";
+import {loadAppConfig} from "../src/models/appConfig";
 import {TriviaScore} from "../src/models/triviaScore";
 import {triviaConnection} from "../src/models/triviaQuestion";
 import {loadEnvFiles} from "../src/utils/envLoader";
@@ -27,10 +30,11 @@ await loadEnvFiles(join(import.meta.dir, ".."));
 const DEFAULT_URL = "https://90fmtrivia.org/scores.html";
 const SCRAPE_INTERVAL_MS = 5 * 60 * 1000;
 const CONTEST_YEAR = 2026;
-const SLACK_WEBHOOK = process.env.TRIVIA_STATS_SLACK_WEBHOOK;
 
 const CONTEST_START = new Date("2026-04-17T18:00:00-05:00");
 const CONTEST_END = new Date("2026-04-20T17:00:00-05:00");
+
+const postedBlueskyHours = new Set<number>();
 
 interface ParseResult {
   hour: number;
@@ -39,11 +43,13 @@ interface ParseResult {
 }
 
 const postToSlack = async (text: string): Promise<void> => {
-  if (!SLACK_WEBHOOK) {
+  const config = await loadAppConfig();
+  const webhook = config.triviaStats.slackWebhook;
+  if (!webhook) {
     return;
   }
   try {
-    const response = await fetch(SLACK_WEBHOOK, {
+    const response = await fetch(webhook, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({text}),
@@ -53,6 +59,35 @@ const postToSlack = async (text: string): Promise<void> => {
     }
   } catch (err) {
     console.warn("Slack webhook error:", err);
+  }
+};
+
+const postToBluesky = async (hour: number): Promise<void> => {
+  const config = await loadAppConfig();
+  const {blueskyIdentifier, blueskyPassword} = config.triviaStats;
+  if (!blueskyIdentifier || !blueskyPassword) {
+    return;
+  }
+  if (postedBlueskyHours.has(hour)) {
+    console.info(`  Bluesky: already posted for hour ${hour}, skipping`);
+    return;
+  }
+  try {
+    const agent = new AtpAgent({service: "https://bsky.social"});
+    await agent.login({identifier: blueskyIdentifier, password: blueskyPassword});
+
+    const text = `Trivia Scores for hour ${hour} are posted! http://www.90fmtrivia.org/TriviaScores2026/`;
+    const rt = new RichText({text});
+    await rt.detectFacets(agent);
+
+    await agent.post({
+      text: rt.text,
+      facets: rt.facets,
+    });
+    postedBlueskyHours.add(hour);
+    console.info("  Posted to Bluesky");
+  } catch (err) {
+    console.warn("Bluesky post error:", err);
   }
 };
 
@@ -156,6 +191,7 @@ const scrapeOnce = async (url: string): Promise<void> => {
   ].join("\n");
 
   await postToSlack(slackMessage);
+  await postToBluesky(result.hour);
 };
 
 const runLoop = async (url: string): Promise<void> => {
@@ -196,8 +232,9 @@ const main = async (): Promise<void> => {
   const urlIdx = args.indexOf("--url");
   const url = urlIdx !== -1 && args[urlIdx + 1] ? args[urlIdx + 1] : DEFAULT_URL;
 
-  console.info("Connecting to trivia database...");
-  await waitForConnection();
+  const mainDbUri = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb://localhost:27017/shade";
+  console.info("Connecting to databases...");
+  await Promise.all([waitForConnection(), mongoose.connect(mainDbUri)]);
   console.info("Connected");
 
   if (loopMode) {
