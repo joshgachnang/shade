@@ -1,7 +1,6 @@
 [build]
-  base = "frontend"
-  command = "bun run build:web"
-  publish = "dist"
+  command = "cd frontend && bun install && bun run build:web"
+  publish = "frontend/dist"
 
 [build.environment]
   NODE_VERSION = "22"
