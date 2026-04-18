@@ -12,7 +12,7 @@ test.describe("Feature: Logout", () => {
     await openProfileTabAndWaitForMe(page);
 
     // Verify profile data is displayed
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    await expect(page.getByTestId("profile-name-text")).toBeVisible();
     await expect(page.getByTestId("profile-email-text")).toBeVisible();
 
     // Logout

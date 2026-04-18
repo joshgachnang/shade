@@ -1,25 +1,13 @@
 import type {Page} from "@playwright/test";
 
 /**
- * Open the Profile tab and wait for either GET /auth/me or cached profile UI.
- * Races network vs RTK cache so Playwright does not hang when /auth/me is skipped.
+ * Open the Profile tab and wait for profile content (lazy tab + RTK; allow CI bundling).
  */
 export const openProfileTabAndWaitForMe = async (page: Page): Promise<void> => {
   const profileTab = page.getByRole("tab", {name: "Profile"});
   await profileTab.waitFor({state: "visible", timeout: 15000});
-
-  const meResponse = page.waitForResponse(
-    (response) =>
-      response.url().includes("/auth/me") &&
-      response.request().method() === "GET" &&
-      response.ok(),
-    {timeout: 30000}
-  );
-
-  const profileReady = page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
-
   await profileTab.click();
-  await Promise.race([meResponse, profileReady]);
+  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 45000});
 };
 
 /**
