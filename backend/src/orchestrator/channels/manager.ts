@@ -126,7 +126,7 @@ export class ChannelManager {
     );
 
     // Intercept !search commands and respond directly
-    const searchMatch = inbound.content.match(/^!search\s+(.+)/i);
+    const searchMatch = inbound.content.match(/^!moviesearch\s+(.+)/i);
     if (searchMatch) {
       const query = searchMatch[1].trim();
       logger.info(`Movie search from ${inbound.sender}: "${query}"`);
