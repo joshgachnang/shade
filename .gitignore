@@ -5,7 +5,7 @@ backend/.env.development
 backend/.env.testing
 backend/.env.production
 backend/.env.local
-shade
+
 
 # Local Netlify folder
 .netlify
