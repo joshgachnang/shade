@@ -35,15 +35,14 @@ setup("authenticate", async ({page, request}) => {
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
-  // Seed localStorage before the SPA loads. Visiting / first lets redux-persist flush
-  // storage; a late write can overwrite injected auth and leave the app logged out after reload.
-  await page.goto("about:blank");
-  await page.evaluate(
-    ({token, refreshToken, userId}) => {
+  // Run before any document scripts so redux-persist never flushes over a late write.
+  // (localStorage on about:blank throws SecurityError in Chromium/Playwright.)
+  await page.addInitScript(
+    ({seedToken, seedRefreshToken, seedUserId}: {seedToken: string; seedRefreshToken: string; seedUserId: string}) => {
       const authState = {
-        token,
-        refreshToken,
-        userId,
+        token: seedToken,
+        refreshToken: seedRefreshToken,
+        userId: seedUserId,
       };
 
       localStorage.setItem("persist:root", JSON.stringify({
@@ -52,7 +51,7 @@ setup("authenticate", async ({page, request}) => {
         _persist: JSON.stringify({version: 1, rehydrated: true}),
       }));
     },
-    {token, refreshToken, userId}
+    {seedToken: token, seedRefreshToken: refreshToken, seedUserId: userId}
   );
 
   await page.goto("/", {timeout: 60000});
