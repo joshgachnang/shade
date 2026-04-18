@@ -22,6 +22,11 @@ const TabLayout: React.FC = () => {
     []
   );
 
+  const renderAdminIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="cog" />,
+    []
+  );
+
   return (
     <Tabs
       screenOptions={{
@@ -41,6 +46,14 @@ const TabLayout: React.FC = () => {
           headerShown: false,
           tabBarIcon: renderProfileIcon,
           title: "Profile",
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          headerShown: false,
+          tabBarIcon: renderAdminIcon,
+          title: "Admin",
         }}
       />
     </Tabs>

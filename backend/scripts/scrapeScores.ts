@@ -12,6 +12,8 @@
 import {join} from "node:path";
 import {AtpAgent, RichText} from "@atproto/api";
 import * as cheerio from "cheerio";
+import mongoose from "mongoose";
+import {loadAppConfig} from "../src/models/appConfig";
 import {TriviaScore} from "../src/models/triviaScore";
 import {triviaConnection} from "../src/models/triviaQuestion";
 import {loadEnvFiles} from "../src/utils/envLoader";
@@ -29,9 +31,6 @@ const DEFAULT_URL =
   "https://www.90fmtrivia.org/TriviaScores2026/Results/TSK_results.html";
 const SCRAPE_INTERVAL_MS = 5 * 60 * 1000;
 const CONTEST_YEAR = 2026;
-const SLACK_WEBHOOK = process.env.TRIVIA_STATS_SLACK_WEBHOOK;
-const BLUESKY_IDENTIFIER = process.env.BLUESKY_IDENTIFIER;
-const BLUESKY_PASSWORD = process.env.BLUESKY_PASSWORD;
 
 const CONTEST_START = new Date("2026-04-17T18:00:00-05:00");
 const CONTEST_END = new Date("2026-04-20T17:00:00-05:00");
@@ -46,28 +45,31 @@ interface ParseResult {
 const postedHours = new Set<number>();
 
 const postToBluesky = async (text: string): Promise<void> => {
-  if (!BLUESKY_IDENTIFIER || !BLUESKY_PASSWORD) {
-    console.warn("Bluesky credentials not set, skipping post");
+  const config = await loadAppConfig();
+  const {blueskyIdentifier, blueskyPassword} = config.triviaStats;
+  if (!blueskyIdentifier || !blueskyPassword) {
     return;
   }
   try {
     const agent = new AtpAgent({service: "https://bsky.social"});
-    await agent.login({identifier: BLUESKY_IDENTIFIER, password: BLUESKY_PASSWORD});
+    await agent.login({identifier: blueskyIdentifier, password: blueskyPassword});
     const rt = new RichText({text});
     await rt.detectFacets(agent);
     await agent.post({text: rt.text, facets: rt.facets});
     console.info("  Posted to Bluesky");
   } catch (err) {
-    console.error("  Bluesky post failed:", err);
+    console.warn("Bluesky post error:", err);
   }
 };
 
 const postToSlack = async (text: string): Promise<void> => {
-  if (!SLACK_WEBHOOK) {
+  const config = await loadAppConfig();
+  const webhook = config.triviaStats.slackWebhook;
+  if (!webhook) {
     return;
   }
   try {
-    const response = await fetch(SLACK_WEBHOOK, {
+    const response = await fetch(webhook, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({text}),
@@ -254,8 +256,9 @@ const main = async (): Promise<void> => {
   const urlIdx = args.indexOf("--url");
   const url = urlIdx !== -1 && args[urlIdx + 1] ? args[urlIdx + 1] : DEFAULT_URL;
 
-  console.info("Connecting to trivia database...");
-  await waitForConnection();
+  const mainDbUri = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb://localhost:27017/shade";
+  console.info("Connecting to databases...");
+  await Promise.all([waitForConnection(), mongoose.connect(mainDbUri)]);
   console.info("Connected");
 
   if (loopMode) {

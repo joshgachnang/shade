@@ -8,6 +8,8 @@
 
 import {join} from "node:path";
 import * as cheerio from "cheerio";
+import mongoose from "mongoose";
+import {loadAppConfig} from "../src/models/appConfig";
 import {TriviaScore} from "../src/models/triviaScore";
 import {triviaConnection} from "../src/models/triviaQuestion";
 import {loadEnvFiles} from "../src/utils/envLoader";
@@ -19,8 +21,6 @@ import {
 } from "../src/utils/scoreParsing";
 
 await loadEnvFiles(join(import.meta.dir, ".."));
-
-const SLACK_WEBHOOK = process.env.TRIVIA_STATS_SLACK_WEBHOOK;
 
 const VAULT_SCORE_URLS: Array<{year: number; url: string}> = [
   {year: 1997, url: "http://www.90fmtrivia.org/scores97.htm"},
@@ -50,11 +50,13 @@ const VAULT_SCORE_URLS: Array<{year: number; url: string}> = [
 ];
 
 const postToSlack = async (text: string): Promise<void> => {
-  if (!SLACK_WEBHOOK) {
+  const config = await loadAppConfig();
+  const webhook = config.triviaStats.slackWebhook;
+  if (!webhook) {
     return;
   }
   try {
-    const response = await fetch(SLACK_WEBHOOK, {
+    const response = await fetch(webhook, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({text}),
@@ -214,8 +216,9 @@ const main = async (): Promise<void> => {
   const yearIdx = args.indexOf("--year");
   const filterYear = yearIdx !== -1 && args[yearIdx + 1] ? Number.parseInt(args[yearIdx + 1], 10) : null;
 
-  console.info("Connecting to trivia database...");
-  await waitForConnection();
+  const mainDbUri = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb://localhost:27017/shade";
+  console.info("Connecting to databases...");
+  await Promise.all([waitForConnection(), mongoose.connect(mainDbUri)]);
   console.info("Connected");
 
   const targets = filterYear

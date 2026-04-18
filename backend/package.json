@@ -9,6 +9,7 @@
     "@slack/bolt": "^4.6.0",
     "@slack/types": "^2.14.0",
     "@slack/web-api": "^7.14.1",
+    "@terreno/admin-backend": "^0.9.2",
     "@terreno/api": "0.3.1",
     "@types/ws": "^8.18.1",
     "cheerio": "^1.2.0",
@@ -52,6 +53,7 @@
     "scrape:scores": "bun run scripts/scrapeScores.ts",
     "scrape:scores:loop": "bun run scripts/scrapeScores.ts --loop",
     "scrape:vault": "bun run scripts/scrapeVaultScores.ts",
+    "mcp:media": "bun run src/mcpMediaServer/index.ts",
     "test": "bun test"
   },
   "type": "module",

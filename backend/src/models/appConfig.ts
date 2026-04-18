@@ -41,6 +41,27 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
 
     apiKeys: {
       braveSearch: {type: String, default: ""},
+      exa: {type: String, default: ""},
+      tavily: {type: String, default: ""},
+    },
+
+    triviaAutoSearch: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      allowedUserIds: {type: [String], default: []},
+    },
+
+    triviaMonitor: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      questionsWebhook: {type: String, default: ""},
+      answersWebhook: {type: String, default: ""},
+    },
+
+    triviaStats: {
+      slackWebhook: {type: String, default: ""},
+      blueskyIdentifier: {type: String, default: ""},
+      blueskyPassword: {type: String, default: ""},
     },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}

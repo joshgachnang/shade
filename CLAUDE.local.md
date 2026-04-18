@@ -47,6 +47,11 @@ cd frontend && bun run sdk   # Regenerate SDK after backend changes
 - Backend: Use `logger.info/warn/error/debug` for permanent logs
 - Use `console.log` only for debugging (to be removed)
 
+### Configuration
+- Store configuration in the `AppConfig` model (via `loadAppConfig()`), not in environment variables
+- Environment variables should only be used for bootstrap-level config required to start the app (e.g., `MONGO_URI`, `PORT`)
+- API keys, webhooks, feature flags, and service credentials all belong in `AppConfig`
+
 ### Development Practices
 - Don't apologize for errors: fix them
 - Prioritize modularity, DRY, performance, and security
