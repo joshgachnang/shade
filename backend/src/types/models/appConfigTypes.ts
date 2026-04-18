@@ -44,6 +44,13 @@ export interface AppConfigTriviaAutoSearch {
   allowedUserIds: string[];
 }
 
+export interface AppConfigTriviaMonitor {
+  enabled: boolean;
+  groupId: string;
+  questionsWebhook: string;
+  answersWebhook: string;
+}
+
 export interface AppConfigTriviaStats {
   slackWebhook: string;
   blueskyIdentifier: string;
@@ -60,6 +67,7 @@ export interface AppConfigFields {
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
   triviaAutoSearch: AppConfigTriviaAutoSearch;
+  triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;
 }
 
