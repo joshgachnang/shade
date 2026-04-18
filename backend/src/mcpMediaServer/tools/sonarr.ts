@@ -221,7 +221,7 @@ export const registerSonarrTools = (server: McpServer, config: ServiceConfig) =>
         seeders: r.seeders,
         leechers: r.leechers,
         age: `${r.ageMinutes ? Math.round((r.ageMinutes as number) / 60 / 24) : "?"} days`,
-        rejected: (r.rejections as unknown[])?.length ? true : false,
+        rejected: !!(r.rejections as unknown[])?.length,
         rejectionReasons: (r.rejections as string[] | undefined) ?? [],
         downloadAllowed: r.downloadAllowed,
         indexerId: r.indexerId,

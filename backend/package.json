@@ -5,6 +5,7 @@
     "@atproto/api": "^0.19.9",
     "@deepgram/sdk": "^5.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@octokit/rest": "^22.0.1",
     "@shade/fleet-types": "workspace:*",
     "@slack/bolt": "^4.6.0",
     "@slack/types": "^2.14.0",

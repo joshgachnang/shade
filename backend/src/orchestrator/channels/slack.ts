@@ -206,6 +206,43 @@ export class SlackChannelConnector implements ChannelConnector {
     logger.debug(`Message sent to ${groupExternalId} via "${this.channelDoc.name}"`);
   }
 
+  async sendMessageWithTs(groupExternalId: string, content: string): Promise<string> {
+    if (!this.app) {
+      throw new Error("Slack channel not connected");
+    }
+
+    const config = this.channelDoc.config as {botToken?: string};
+    if (!config.botToken) {
+      throw new Error("No bot token configured");
+    }
+
+    const result = await this.app.client.chat.postMessage({
+      token: config.botToken,
+      channel: groupExternalId,
+      text: content,
+    });
+
+    return result.ts || "";
+  }
+
+  async updateMessage(groupExternalId: string, messageTs: string, content: string): Promise<void> {
+    if (!this.app) {
+      return;
+    }
+
+    const config = this.channelDoc.config as {botToken?: string};
+    try {
+      await this.app.client.chat.update({
+        token: config.botToken,
+        channel: groupExternalId,
+        ts: messageTs,
+        text: content,
+      });
+    } catch (err) {
+      logger.debug(`Could not update message: ${err}`);
+    }
+  }
+
   async createChannel(name: string): Promise<{id: string}> {
     if (!this.app) {
       throw new Error("Slack channel not connected");

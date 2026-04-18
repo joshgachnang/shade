@@ -44,6 +44,16 @@ export interface AppConfigTriviaAutoSearch {
   allowedUserIds: string[];
 }
 
+export interface AppConfigPrWatch {
+  enabled: boolean;
+  groupId: string;
+  pollIntervalMs: number;
+  githubUsername: string;
+  autoRespondToBots: boolean;
+  autoFixConflicts: boolean;
+  reposBaseDir: string;
+}
+
 export interface AppConfigTriviaMonitor {
   enabled: boolean;
   groupId: string;
@@ -67,6 +77,7 @@ export interface AppConfigFields {
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
   triviaAutoSearch: AppConfigTriviaAutoSearch;
+  prWatch: AppConfigPrWatch;
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;
 }

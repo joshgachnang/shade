@@ -10,6 +10,7 @@ import {ensureGroupDirectory, initGlobalMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
 import type {AgentRunner} from "./runners/types";
+import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
 import {TriviaAutoSearch} from "./services/triviaAutoSearch";
 import {TriviaMonitor} from "./services/triviaMonitor";
@@ -22,6 +23,7 @@ export interface OrchestratorState {
   ipcWatcher: IpcWatcher;
   radioTranscriber: RadioTranscriber;
   triviaAutoSearch: TriviaAutoSearch;
+  prWatcher: PrWatcher;
   triviaMonitor: TriviaMonitor;
   isRunning: boolean;
 }
@@ -152,6 +154,14 @@ export const startOrchestrator = async (
     logError("Trivia auto-search start error (non-fatal)", err);
   }
 
+  // Start PR watcher (non-fatal if it fails)
+  const prWatcher = new PrWatcher(channelManager, runner);
+  try {
+    await prWatcher.start();
+  } catch (err) {
+    logError("PR watcher start error (non-fatal)", err);
+  }
+
   // Start trivia monitor (non-fatal if it fails)
   const triviaMonitor = new TriviaMonitor(channelManager);
   try {
@@ -190,6 +200,7 @@ export const startOrchestrator = async (
     ipcWatcher,
     radioTranscriber,
     triviaAutoSearch,
+    prWatcher,
     triviaMonitor,
     isRunning: true,
   };
@@ -211,6 +222,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.messageLoop.stop();
   state.ipcWatcher.stop();
   state.triviaAutoSearch.stop();
+  state.prWatcher.stop();
   state.triviaMonitor.stop();
 
   try {
