@@ -1,15 +1,21 @@
 import {Box, Button, Heading, Page, Text} from "@terreno/ui";
+import {useRouter} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
 import {logout, useAppDispatch, useGetMeQuery} from "@/store";
 
 const ProfileScreen: React.FC = () => {
+  const router = useRouter();
   const dispatch = useAppDispatch();
   const {data: profile, isLoading} = useGetMeQuery();
 
   const handleLogout = useCallback((): void => {
     dispatch(logout());
   }, [dispatch]);
+
+  const handleOpenAdmin = useCallback((): void => {
+    router.push("/admin");
+  }, [router]);
 
   if (isLoading) {
     return (
@@ -33,6 +39,16 @@ const ProfileScreen: React.FC = () => {
           <Text bold>Email</Text>
           <Text testID="profile-email-text">{profile?.data?.email || "Not set"}</Text>
         </Box>
+        {profile?.data?.admin === true && (
+          <Box marginTop={4}>
+            <Button
+              fullWidth
+              onClick={handleOpenAdmin}
+              testID="profile-admin-button"
+              text="Admin"
+            />
+          </Box>
+        )}
         <Box marginTop={4}>
           <Button
             onClick={handleLogout}

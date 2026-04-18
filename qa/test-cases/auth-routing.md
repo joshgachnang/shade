@@ -1,7 +1,7 @@
 # Test Cases: Auth Routing
 
 **Screen(s):** RootLayout, LoginScreen, HomeScreen
-**Date:** 2026-02-15
+**Date:** 2026-04-18
 **Author:** Claude
 **Related Code:** frontend/app/_layout.tsx
 
@@ -23,7 +23,7 @@
 1. Navigate to the app root URL (http://localhost:8082)
 
 **Expected Result:**
-- The Login screen is displayed with the heading "Welcome Back". The Home and Profile tabs are not visible.
+- The Login screen is displayed with the heading "Welcome Back". The bottom tab bar (Home, Search, Profile) is not visible.
 
 ---
 
@@ -39,7 +39,7 @@
 1. Navigate to the app root URL (http://localhost:8082)
 
 **Expected Result:**
-- The Home screen is displayed with the heading "Welcome to Shade". The bottom tab bar is visible with Home and Profile tabs. The Login screen is not shown.
+- The Home screen is displayed with the heading "Welcome to Shade". The bottom tab bar is visible with Home, Search, and Profile tabs only. The Login screen is not shown.
 
 ---
 
@@ -47,7 +47,7 @@
 
 **Priority:** P1
 **Type:** Error Handling
-**Automation:** [manual-only: Expo Router handles this internally, difficult to force URL navigation in E2E]
+**Automation:** [automated]
 
 **Precondition:** No auth tokens are stored.
 
@@ -55,7 +55,7 @@
 1. Navigate directly to a tab route URL (e.g., http://localhost:8082/profile)
 
 **Expected Result:**
-- The Login screen is shown instead of the Profile screen. The user cannot access authenticated routes without logging in.
+- The app redirects to the Login screen instead of showing the Profile screen. The user cannot access authenticated routes without logging in.
 
 ---
 
