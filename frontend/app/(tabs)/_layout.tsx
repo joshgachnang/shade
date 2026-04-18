@@ -58,6 +58,7 @@ const TabLayout: React.FC = () => {
         name="movies"
         options={{
           headerShown: false,
+          href: null,
           tabBarIcon: renderMoviesIcon,
           title: "Movies",
         }}
