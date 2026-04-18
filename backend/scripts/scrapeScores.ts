@@ -154,9 +154,8 @@ const isWithinContestWindow = (): boolean => {
   return now >= CONTEST_START && now <= CONTEST_END;
 };
 
-const formatTopScores = (scores: ParsedScore[], count = 10): string => {
-  const top = scores.slice(0, count);
-  return top.map((s) => `  ${s.place}. ${s.teamName} — ${s.score.toLocaleString()} pts`).join("\n");
+const findWiiTeam = (scores: ParsedScore[]): ParsedScore | undefined => {
+  return scores.find((s) => /wii/i.test(s.teamName));
 };
 
 const scrapeOnce = async (url: string): Promise<void> => {
@@ -187,19 +186,17 @@ const scrapeOnce = async (url: string): Promise<void> => {
 
   const hourLabel = result.hour > 0 ? `Hour ${result.hour}` : "Final";
 
-  const slackMessage = [
-    `*Trivia ${result.year} — ${hourLabel} Scores*`,
-    `${result.scores.length} teams scraped (${inserted} new, ${updated} updated)`,
-    "",
-    "*Top 10:*",
-    formatTopScores(result.scores),
-  ].join("\n");
+  const wiiTeam = findWiiTeam(result.scores);
+  const slackLines = [`*Trivia ${result.year} — ${hourLabel} Scores*`];
+  if (wiiTeam) {
+    slackLines.push(`${wiiTeam.teamName}: #${wiiTeam.place} with ${wiiTeam.score.toLocaleString()} pts`);
+  } else {
+    slackLines.push(`${result.scores.length} teams scraped — no team with "wii" found`);
+  }
+  const slackMessage = slackLines.join("\n");
 
   const blueskyMessage = [
     `Trivia ${result.year} — ${hourLabel} Scores are posted!`,
-    "",
-    "Top 10:",
-    formatTopScores(result.scores),
     "",
     "http://www.90fmtrivia.org/TriviaScores2026/",
   ].join("\n");
@@ -266,7 +263,7 @@ const main = async (): Promise<void> => {
     await runLoop(url);
   } else {
     await scrapeOnce(url);
-    await triviaConnection.close();
+    await Promise.all([triviaConnection.close(), mongoose.disconnect()]);
     console.info("Done.");
   }
 };
