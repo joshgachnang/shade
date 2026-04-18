@@ -28,6 +28,29 @@ test.describe("Feature: Tab Navigation", () => {
   });
 });
 
+test.describe("Feature: Tab Navigation — profile API", () => {
+  test.use({storageState: "./e2e/.auth/user.json"});
+
+  test("Profile tab loads the signed-in user via GET /auth/me", async ({page}) => {
+    const profileMeResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/auth/me") &&
+        response.request().method() === "GET" &&
+        response.status() === 200,
+      {timeout: 60000}
+    );
+
+    await page.goto("/", {timeout: 60000});
+    await page.waitForLoadState("networkidle");
+
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
+    await profileMeResponse;
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
+  });
+});
+
 test.describe("Feature: Auth Routing", () => {
   // This test is unreliable in CI due to Expo cold-start bundling times exceeding
   // the test timeout. The auth.setup.ts already verifies that unauthenticated state

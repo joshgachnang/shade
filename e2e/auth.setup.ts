@@ -37,17 +37,27 @@ setup("authenticate", async ({page, request}) => {
 
   // Seed localStorage before any app bundle runs (same-origin; avoids about:blank
   // localStorage SecurityError in headless Chromium).
-  const persistRoot = JSON.stringify({
-    auth: JSON.stringify({token, refreshToken, userId}),
-    appState: JSON.stringify({}),
-    _persist: JSON.stringify({version: 1, rehydrated: true}),
-  });
-
+  // @terreno/rtk reads Bearer tokens from AsyncStorage (localStorage on web) as AUTH_TOKEN /
+  // REFRESH_TOKEN; redux-persist only restores userId. Without the token keys, GET /auth/me
+  // fails and the profile screen never leaves loading.
   await page.context().addInitScript(
-    (payload: string) => {
-      localStorage.setItem("persist:root", payload);
+    ({seedToken, seedRefreshToken, seedUserId}: {seedToken: string; seedRefreshToken: string; seedUserId: string}) => {
+      localStorage.setItem("AUTH_TOKEN", seedToken);
+      localStorage.setItem("REFRESH_TOKEN", seedRefreshToken);
+
+      const authSliceState = {
+        error: null,
+        lastTokenRefreshTimestamp: null,
+        userId: seedUserId,
+      };
+
+      localStorage.setItem("persist:root", JSON.stringify({
+        auth: JSON.stringify(authSliceState),
+        appState: JSON.stringify({}),
+        _persist: JSON.stringify({version: 1, rehydrated: true}),
+      }));
     },
-    persistRoot
+    {seedToken: token, seedRefreshToken: refreshToken, seedUserId: userId}
   );
 
   await page.goto("/", {timeout: 60000});
