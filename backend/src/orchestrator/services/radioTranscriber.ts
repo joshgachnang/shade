@@ -265,7 +265,11 @@ export class RadioTranscriber {
 
     ffmpeg.stdout?.on("data", (chunk: Buffer) => {
       if (active.ws && (active.ws as any).readyState === WebSocket.OPEN) {
-        (active.ws as any).send(chunk);
+        try {
+          (active.ws as any).send(chunk);
+        } catch (err) {
+          logger.debug(`WebSocket send error for "${active.doc.name}": ${err}`);
+        }
       }
       // Collect audio for the current flush window (MP3 attachment)
       active.flushAudioChunks.push(Buffer.from(chunk));
@@ -556,6 +560,21 @@ export class RadioTranscriber {
     };
   }
 
+  private async postMessageToSlack(botToken: string, channelId: string, text: string): Promise<void> {
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({channel: channelId, text}),
+    });
+    const data = (await response.json()) as any;
+    if (!data.ok) {
+      throw new Error(`chat.postMessage failed: ${data.error}`);
+    }
+  }
+
   private async sendToSlackWebhook(webhookUrl: string, text: string): Promise<void> {
     const response = await fetch(webhookUrl, {
       method: "POST",
@@ -631,8 +650,8 @@ export class RadioTranscriber {
     }
 
     try {
-      // If we have a bot token + channel, upload file with message
       if (active.doc.slackBotToken && active.doc.slackChannelId && mp3Buffer) {
+        // Upload file with message
         await this.uploadToSlack(
           active.doc.slackBotToken,
           active.doc.slackChannelId,
@@ -640,6 +659,9 @@ export class RadioTranscriber {
           mp3Buffer,
           `${active.doc.name}-${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`
         );
+      } else if (active.doc.slackBotToken && active.doc.slackChannelId) {
+        // Post text-only message via bot token (no MP3 available)
+        await this.postMessageToSlack(active.doc.slackBotToken, active.doc.slackChannelId, messageText);
       } else if (active.doc.slackWebhookUrl) {
         // Fall back to webhook (text only)
         await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText);

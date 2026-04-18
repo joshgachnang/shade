@@ -31,20 +31,25 @@ beforeAll(async () => {
   process.env.TOKEN_SECRET = "test-secret";
   process.env.PORT = "0"; // let OS pick a port
 
-  const uri = await startMongoServer();
+  try {
+    const uri = await startMongoServer();
 
-  await mongoose.connect(uri, {
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 30000,
-    connectTimeoutMS: 5000,
-  });
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
+      connectTimeoutMS: 5000,
+    });
 
-  // Initialize all registered models
-  const models = Object.keys(mongoose.models);
-  await Promise.all(models.map((m) => mongoose.models[m].init()));
+    // Initialize all registered models
+    const models = Object.keys(mongoose.models);
+    await Promise.all(models.map((m) => mongoose.models[m].init()));
 
-  isServerStarted = true;
-  logger.debug(`[preload] MongoDB ready, ${models.length} models initialized`);
+    isServerStarted = true;
+    logger.debug(`[preload] MongoDB ready, ${models.length} models initialized`);
+  } catch (error) {
+    // Allow tests that don't need MongoDB to still run
+    logger.warn(`[preload] MongoDB setup failed, tests requiring DB will be skipped: ${error}`);
+  }
 }, 30000);
 
 afterAll(async () => {

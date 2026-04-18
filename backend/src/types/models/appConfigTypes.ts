@@ -54,6 +54,19 @@ export interface AppConfigPrWatch {
   reposBaseDir: string;
 }
 
+export interface AppConfigTriviaMonitor {
+  enabled: boolean;
+  groupId: string;
+  questionsWebhook: string;
+  answersWebhook: string;
+}
+
+export interface AppConfigTriviaStats {
+  slackWebhook: string;
+  blueskyIdentifier: string;
+  blueskyPassword: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -65,6 +78,8 @@ export interface AppConfigFields {
   apiKeys: AppConfigApiKeys;
   triviaAutoSearch: AppConfigTriviaAutoSearch;
   prWatch: AppConfigPrWatch;
+  triviaMonitor: AppConfigTriviaMonitor;
+  triviaStats: AppConfigTriviaStats;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;

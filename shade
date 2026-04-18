@@ -443,6 +443,16 @@ cmd_deploy() {
   cmd_start "$@"
 
   echo ""
+
+  # Deploy frontend to Netlify if netlify CLI is available
+  if command -v netlify &>/dev/null; then
+    echo "Deploying frontend to Netlify..."
+    cmd_deploy_frontend --prod
+  else
+    echo "Skipping frontend deploy (netlify CLI not installed)"
+  fi
+
+  echo ""
   echo "=== Deploy complete ==="
   echo ""
   echo "Commands:"
@@ -525,27 +535,64 @@ cmd_remote_setup() {
   echo "Server provisioned. Next: shade remote-deploy $host"
 }
 
+# --- Deploy Frontend to Netlify ---
+cmd_deploy_frontend() {
+  local prod_flag=""
+  if [[ "${1:-}" == "--prod" ]]; then
+    prod_flag="--prod"
+    shift
+  fi
+
+  echo "=== Shade Frontend Deploy (Netlify) ==="
+  echo ""
+
+  # Build the static web export
+  echo "Building frontend..."
+  (cd "$PROJECT_DIR/frontend" && bun expo export --platform web)
+  echo "  Built: frontend/dist/"
+  echo ""
+
+  # Deploy to Netlify
+  if ! command -v netlify &>/dev/null; then
+    echo "Error: netlify CLI not found. Install with: bun install -g netlify-cli" >&2
+    exit 1
+  fi
+
+  if [[ -n "$prod_flag" ]]; then
+    echo "Deploying to production..."
+    (cd "$PROJECT_DIR/frontend" && netlify deploy --prod --dir=dist)
+  else
+    echo "Deploying preview..."
+    (cd "$PROJECT_DIR/frontend" && netlify deploy --dir=dist)
+  fi
+
+  echo ""
+  echo "=== Frontend deploy complete ==="
+}
+
 # --- Main ---
 COMMAND="${1:-deploy}"
 shift || true
 
 case "$COMMAND" in
-  deploy)        cmd_deploy "$@" ;;
-  build)         cmd_build "$@" ;;
-  install)       cmd_install "$@" ;;
-  start)         cmd_start "$@" ;;
-  stop)          cmd_stop "$@" ;;
-  restart)       cmd_restart "$@" ;;
-  status)        cmd_status "$@" ;;
-  logs)          cmd_logs "$@" ;;
-  uninstall)     cmd_uninstall "$@" ;;
-  remote-deploy) cmd_remote_deploy "$@" ;;
-  remote-setup)  cmd_remote_setup "$@" ;;
+  deploy)           cmd_deploy "$@" ;;
+  deploy-frontend)  cmd_deploy_frontend "$@" ;;
+  build)            cmd_build "$@" ;;
+  install)          cmd_install "$@" ;;
+  start)            cmd_start "$@" ;;
+  stop)             cmd_stop "$@" ;;
+  restart)          cmd_restart "$@" ;;
+  status)           cmd_status "$@" ;;
+  logs)             cmd_logs "$@" ;;
+  uninstall)        cmd_uninstall "$@" ;;
+  remote-deploy)    cmd_remote_deploy "$@" ;;
+  remote-setup)     cmd_remote_setup "$@" ;;
   *)
     echo "Usage: shade <command> [service...]"
     echo ""
-    echo "Local:  deploy, build, install, start, stop, restart, status, logs, uninstall"
-    echo "Remote: remote-setup <host>, remote-deploy <host> [service...]"
+    echo "Local:    deploy, build, install, start, stop, restart, status, logs, uninstall"
+    echo "Frontend: deploy-frontend [--prod]"
+    echo "Remote:   remote-setup <host>, remote-deploy <host> [service...]"
     echo ""
     echo "Services: $ALL_SERVICES"
     exit 1

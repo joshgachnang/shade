@@ -60,6 +60,19 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       autoFixConflicts: {type: Boolean, default: true},
       reposBaseDir: {type: String, default: "data/repos"},
     },
+
+    triviaMonitor: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      questionsWebhook: {type: String, default: ""},
+      answersWebhook: {type: String, default: ""},
+    },
+
+    triviaStats: {
+      slackWebhook: {type: String, default: ""},
+      blueskyIdentifier: {type: String, default: ""},
+      blueskyPassword: {type: String, default: ""},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

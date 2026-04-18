@@ -3,6 +3,7 @@
 	"private": true,
 	"workspaces": ["packages/*", "backend"],
 	"scripts": {
+		"bootstrap": "bun install && cd frontend && bun run sdk && cd ..",
 		"rules": "rulesync generate",
 		"lint": "cd backend && bun run lint && cd ../frontend && bun run lint",
 		"lint:fix": "cd backend && bun run lint:fix && cd ../frontend && bun run lint:fix",

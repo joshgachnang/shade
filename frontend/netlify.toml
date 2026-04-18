@@ -1,7 +1,11 @@
 [build]
   base = "frontend"
-  command = "bun install && bun expo export --platform web"
+  command = "bun run build:web"
   publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
 
 [[redirects]]
   from = "/*"
