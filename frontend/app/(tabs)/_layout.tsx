@@ -3,6 +3,7 @@ import {Tabs} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
 import {colors} from "@/constants/theme";
+import {useGetMeQuery} from "@/store";
 
 const TabBarIcon: React.FC<{
   name: React.ComponentProps<typeof FontAwesome>["name"];
@@ -12,6 +13,9 @@ const TabBarIcon: React.FC<{
 };
 
 const TabLayout: React.FC = () => {
+  const {data: me} = useGetMeQuery();
+  const isAdmin = me?.data?.admin === true;
+
   const renderHomeIcon = useCallback(
     ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="home" />,
     []
@@ -54,6 +58,7 @@ const TabLayout: React.FC = () => {
         name="movies"
         options={{
           headerShown: false,
+          href: null,
           tabBarIcon: renderMoviesIcon,
           title: "Movies",
         }}
@@ -78,6 +83,7 @@ const TabLayout: React.FC = () => {
         name="admin"
         options={{
           headerShown: false,
+          href: isAdmin ? "/admin" : null,
           tabBarIcon: renderAdminIcon,
           title: "Admin",
         }}

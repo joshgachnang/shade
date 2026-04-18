@@ -14,6 +14,7 @@ export interface ProfileResponse {
   data: {
     _id: string;
     id: string;
+    admin: boolean;
     email: string;
     name: string;
   };
