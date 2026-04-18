@@ -37,7 +37,7 @@ jobs:
           REPO="${{ github.repository }}"
           curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"Shade backend deployed successfully :rocket:\n\`${SHORT_SHA}\` ${COMMIT_MSG}\nhttps://github.com/${REPO}/commit/${COMMIT_SHA}\"}"
+            -d "{\"text\":\"Shade backend deployed successfully :rocket:\\n\`${SHORT_SHA}\` ${COMMIT_MSG}\\nhttps://github.com/${REPO}/commit/${COMMIT_SHA}\"}"
 
       - name: Notify Slack on failure
         if: failure()
@@ -47,4 +47,4 @@ jobs:
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"Shade backend deploy failed :x:\n\`${SHORT_SHA}\` — <${RUN_URL}|View logs>\"}"
+            -d "{\"text\":\"Shade backend deploy failed :x:\\n\`${SHORT_SHA}\` — <${RUN_URL}|View logs>\"}"
