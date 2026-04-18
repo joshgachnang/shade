@@ -13,7 +13,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {logger} from "@terreno/api";
 import mongoose from "mongoose";
-import {loadAppConfig} from "../../models/appConfig";
+import {AppConfig, loadAppConfig, reloadAppConfig} from "../../models/appConfig";
 import {TriviaQuestion, triviaConnection} from "../../models/triviaQuestion";
 import {combinedSearch} from "../../utils/search/combinedSearch";
 import {formatSearchResults} from "../../utils/search/types";
@@ -291,10 +291,41 @@ export class TriviaAutoSearch {
 
     const config = await loadAppConfig();
     if (!config.triviaAutoSearch.allowedUserIds.includes(senderExternalId)) {
-      logger.debug(`Trivia question from non-allowed user ${senderExternalId}, ignoring`);
+      logger.debug(`Trivia command from non-allowed user ${senderExternalId}, ignoring`);
       return false;
     }
 
+    const subcommand = match[1].trim().toLowerCase();
+
+    // Handle on/off toggle
+    if (subcommand === "on" || subcommand === "off") {
+      const enabled = subcommand === "on";
+      await AppConfig.findOneAndUpdate({}, {$set: {"triviaAutoSearch.enabled": enabled}});
+      await reloadAppConfig();
+
+      if (enabled) {
+        await this.start();
+      } else {
+        this.stop();
+      }
+
+      logger.info(`Trivia auto-search ${enabled ? "enabled" : "disabled"} by ${senderExternalId}`);
+      await this.postToGroup(`Trivia auto-search *${enabled ? "enabled" : "disabled"}*`);
+      return true;
+    }
+
+    // Handle status check
+    if (subcommand === "status") {
+      const currentConfig = await loadAppConfig();
+      const enabled = currentConfig.triviaAutoSearch.enabled;
+      const running = this.pollInterval !== null;
+      await this.postToGroup(
+        `Trivia auto-search: *${enabled ? "enabled" : "disabled"}* | Polling: *${running ? "active" : "stopped"}*`
+      );
+      return true;
+    }
+
+    // Otherwise treat as a manual question
     const questionText = match[1].trim();
     logger.info(
       `Manual trivia question from ${senderExternalId}: ${questionText.substring(0, 80)}`

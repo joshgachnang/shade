@@ -659,26 +659,17 @@ export class RadioTranscriber {
       logger.error(`Failed to save transcript for "${active.doc.name}": ${err}`);
     }
 
+    const slackMessage = recordingUrl ? `${messageText} (<${recordingUrl}|mp3>)` : messageText;
+
     try {
-      if (active.doc.slackBotToken && active.doc.slackChannelId && mp3Buffer) {
-        // Upload file with message
-        await this.uploadToSlack(
-          active.doc.slackBotToken,
-          active.doc.slackChannelId,
-          messageText,
-          mp3Buffer,
-          `${active.doc.name}-${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`
-        );
-      } else if (active.doc.slackBotToken && active.doc.slackChannelId) {
-        // Post text-only message via bot token (no MP3 available)
+      if (active.doc.slackBotToken && active.doc.slackChannelId) {
         await this.postMessageToSlack(
           active.doc.slackBotToken,
           active.doc.slackChannelId,
-          messageText
+          slackMessage
         );
       } else if (active.doc.slackWebhookUrl) {
-        // Fall back to webhook (text only)
-        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText);
+        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, slackMessage);
       }
 
       if (active.doc.targetGroupId) {
@@ -737,54 +728,5 @@ export class RadioTranscriber {
       ffmpeg.stdin?.write(pcm);
       ffmpeg.stdin?.end();
     });
-  }
-
-  private async uploadToSlack(
-    botToken: string,
-    channelId: string,
-    message: string,
-    fileBuffer: Buffer,
-    filename: string
-  ): Promise<void> {
-    // Step 1: Get upload URL
-    const getUrlResp = await fetch("https://slack.com/api/files.getUploadURLExternal", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        filename,
-        length: fileBuffer.length.toString(),
-      }),
-    });
-    const getUrlData = (await getUrlResp.json()) as any;
-    if (!getUrlData.ok) {
-      throw new Error(`files.getUploadURLExternal failed: ${getUrlData.error}`);
-    }
-
-    // Step 2: Upload the file
-    await fetch(getUrlData.upload_url, {
-      method: "POST",
-      body: fileBuffer,
-    });
-
-    // Step 3: Complete the upload and share to channel
-    const completeResp = await fetch("https://slack.com/api/files.completeUploadExternal", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        files: [{id: getUrlData.file_id, title: filename}],
-        channel_id: channelId,
-        initial_comment: message,
-      }),
-    });
-    const completeData = (await completeResp.json()) as any;
-    if (!completeData.ok) {
-      throw new Error(`files.completeUploadExternal failed: ${completeData.error}`);
-    }
   }
 }
