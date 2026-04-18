@@ -36,17 +36,22 @@ setup("authenticate", async ({page, request}) => {
   }
 
   // Run before any document scripts so redux-persist never flushes over a late write.
-  // (localStorage on about:blank throws SecurityError in Chromium/Playwright.)
+  // @terreno/rtk reads Bearer tokens from AsyncStorage (localStorage on web) as AUTH_TOKEN /
+  // REFRESH_TOKEN; redux-persist only restores userId. Without the token keys, GET /auth/me
+  // fails and the profile screen never leaves loading.
   await page.addInitScript(
     ({seedToken, seedRefreshToken, seedUserId}: {seedToken: string; seedRefreshToken: string; seedUserId: string}) => {
-      const authState = {
-        token: seedToken,
-        refreshToken: seedRefreshToken,
+      localStorage.setItem("AUTH_TOKEN", seedToken);
+      localStorage.setItem("REFRESH_TOKEN", seedRefreshToken);
+
+      const authSliceState = {
+        error: null,
+        lastTokenRefreshTimestamp: null,
         userId: seedUserId,
       };
 
       localStorage.setItem("persist:root", JSON.stringify({
-        auth: JSON.stringify(authState),
+        auth: JSON.stringify(authSliceState),
         appState: JSON.stringify({}),
         _persist: JSON.stringify({version: 1, rehydrated: true}),
       }));
