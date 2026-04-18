@@ -2,6 +2,7 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import {Tabs} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
+import {Platform} from "react-native";
 import {colors} from "@/constants/theme";
 
 const TabBarIcon: React.FC<{
@@ -29,8 +30,12 @@ const TabLayout: React.FC = () => {
 
   return (
     <Tabs
+      detachInactiveScreens={false}
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
+        // Web E2E: lazy tabs keep inactive scenes detached in a way Playwright often
+        // treats as non-visible; mount tab screens up front on web only.
+        ...(Platform.OS === "web" ? {lazy: false} : {}),
       }}
     >
       <Tabs.Screen

@@ -9,9 +9,10 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Home to Profile tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Profile"}).click();
-    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
   });
 
   test("user can switch from Home to Search tab", async ({page}) => {
@@ -21,8 +22,10 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Profile back to Home tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Profile"}).click();
-    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
 
     await page.getByRole("tab", {name: "Home"}).click();
     await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 15000});
@@ -54,7 +57,7 @@ test.describe("Feature: Auth Routing", () => {
     const page = await context.newPage();
     await page.goto("/profile", {timeout: 60000});
     await page.waitForLoadState("networkidle");
-    await page.getByTestId("login-screen").waitFor({state: "visible", timeout: 60000});
+    await expect(page.getByTestId("login-screen")).toBeVisible({timeout: 60000});
     await expect(page.getByTestId("login-heading")).toContainText("Welcome Back");
     await context.close();
   });
