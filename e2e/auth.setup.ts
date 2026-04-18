@@ -47,13 +47,6 @@ setup("authenticate", async ({page, request}) => {
         userId,
       };
 
-      // The Redux persist key is "root" and auth is at the "auth" key
-      const persistedState = {
-        auth: authState,
-        appState: {},
-        _persist: {version: 1, rehydrated: true},
-      };
-
       localStorage.setItem("persist:root", JSON.stringify({
         auth: JSON.stringify(authState),
         appState: JSON.stringify({}),

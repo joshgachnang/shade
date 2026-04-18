@@ -2,6 +2,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.42",
     "@anthropic-ai/sdk": "^0.82.0",
+    "@atproto/api": "^0.19.9",
     "@deepgram/sdk": "^5.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@shade/fleet-types": "workspace:*",
@@ -52,6 +53,7 @@
     "scrape:scores": "bun run scripts/scrapeScores.ts",
     "scrape:scores:loop": "bun run scripts/scrapeScores.ts --loop",
     "scrape:vault": "bun run scripts/scrapeVaultScores.ts",
+    "mcp:media": "bun run src/mcpMediaServer/index.ts",
     "test": "bun test"
   },
   "type": "module",

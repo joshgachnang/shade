@@ -38,6 +38,25 @@ export interface AppConfigApiKeys {
   tavily: string;
 }
 
+export interface AppConfigTriviaAutoSearch {
+  enabled: boolean;
+  groupId: string;
+  allowedUserIds: string[];
+}
+
+export interface AppConfigTriviaMonitor {
+  enabled: boolean;
+  groupId: string;
+  questionsWebhook: string;
+  answersWebhook: string;
+}
+
+export interface AppConfigTriviaStats {
+  slackWebhook: string;
+  blueskyIdentifier: string;
+  blueskyPassword: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -47,6 +66,9 @@ export interface AppConfigFields {
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
+  triviaAutoSearch: AppConfigTriviaAutoSearch;
+  triviaMonitor: AppConfigTriviaMonitor;
+  triviaStats: AppConfigTriviaStats;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;
