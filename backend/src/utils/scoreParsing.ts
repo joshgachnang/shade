@@ -275,7 +275,7 @@ export const parseScoresFromText = (text: string): ParsedScore[] => {
 export const parsePage = ($: cheerio.CheerioAPI): {hour: number; scores: ParsedScore[]} => {
   // Combine <title>, <h1>, and <h2> — some score pages put the hour only in the h1
   // (e.g. 2026 pages: <title>TRIVIA 56: Team Standings</title> / <h1>... as of Hour Twelve</h1>).
-  const titleSources = [$("title").text(), $("h1").first().text(), $("h2").first().text()]
+  const titleSources = [$("title").text(), $("h1").first().text(), $("h2").first().text(), $("h3").first().text()]
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
   const title = titleSources.join(" | ");
@@ -307,6 +307,8 @@ export const parsePage = ($: cheerio.CheerioAPI): {hour: number; scores: ParsedS
       scores = parseScoresFromText(preText);
     }
   }
+
+  scores.sort((a, b) => a.place - b.place);
 
   return {hour, scores};
 };
