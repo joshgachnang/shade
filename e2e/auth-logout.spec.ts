@@ -1,4 +1,12 @@
 import {test, expect} from "@playwright/test";
+import type {Page} from "@playwright/test";
+
+const openProfileTabAndWaitForProfile = async (page: Page): Promise<void> => {
+  const profileTab = page.getByRole("tab", {name: "Profile"});
+  await profileTab.waitFor({state: "visible", timeout: 15000});
+  await profileTab.click();
+  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
+};
 
 test.describe("Feature: Logout", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
@@ -8,12 +16,10 @@ test.describe("Feature: Logout", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    const profileTab = page.getByRole("tab", {name: "Profile"});
-    await profileTab.waitFor({state: "visible", timeout: 15000});
-    await profileTab.click();
+    await openProfileTabAndWaitForProfile(page);
 
     // Verify profile data is displayed
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
     await expect(page.getByTestId("profile-email-text")).toBeVisible();
 
     // Logout

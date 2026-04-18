@@ -35,22 +35,28 @@ setup("authenticate", async ({page, request}) => {
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
-  // Runs before any page scripts on the next navigation so redux-persist sees auth on first load.
+  // Run before any document scripts so redux-persist never flushes over a late write.
+  // @terreno/rtk reads Bearer tokens from AsyncStorage (localStorage on web) as AUTH_TOKEN /
+  // REFRESH_TOKEN; redux-persist only restores userId. Without the token keys, GET /auth/me
+  // fails and the profile screen never leaves loading.
   await page.addInitScript(
-    ({token: t, refreshToken: rt, userId: uid}) => {
-      const authState = {
-        token: t,
-        refreshToken: rt,
-        userId: uid,
+    ({seedToken, seedRefreshToken, seedUserId}: {seedToken: string; seedRefreshToken: string; seedUserId: string}) => {
+      localStorage.setItem("AUTH_TOKEN", seedToken);
+      localStorage.setItem("REFRESH_TOKEN", seedRefreshToken);
+
+      const authSliceState = {
+        error: null,
+        lastTokenRefreshTimestamp: null,
+        userId: seedUserId,
       };
 
       localStorage.setItem("persist:root", JSON.stringify({
-        auth: JSON.stringify(authState),
+        auth: JSON.stringify(authSliceState),
         appState: JSON.stringify({}),
         _persist: JSON.stringify({version: 1, rehydrated: true}),
       }));
     },
-    {token, refreshToken, userId}
+    {seedToken: token, seedRefreshToken: refreshToken, seedUserId: userId}
   );
 
   await page.goto("/", {timeout: 60000});
