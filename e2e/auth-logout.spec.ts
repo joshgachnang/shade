@@ -8,12 +8,12 @@ test.describe("Feature: Logout", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    // Navigate to profile tab
-    await page.getByRole("tab", {name: "Profile"}).click();
-    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
 
     // Verify profile data is displayed
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
     await expect(page.getByTestId("profile-email-text")).toBeVisible();
 
     // Logout

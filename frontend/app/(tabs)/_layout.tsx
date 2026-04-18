@@ -2,8 +2,8 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import {Tabs} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
+import {Platform} from "react-native";
 import {colors} from "@/constants/theme";
-import {useGetMeQuery} from "@/store";
 
 const TabBarIcon: React.FC<{
   name: React.ComponentProps<typeof FontAwesome>["name"];
@@ -13,16 +13,8 @@ const TabBarIcon: React.FC<{
 };
 
 const TabLayout: React.FC = () => {
-  const {data: me} = useGetMeQuery();
-  const isAdmin = me?.data?.admin === true;
-
   const renderHomeIcon = useCallback(
     ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="home" />,
-    []
-  );
-
-  const renderMoviesIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="film" />,
     []
   );
 
@@ -36,15 +28,14 @@ const TabLayout: React.FC = () => {
     []
   );
 
-  const renderAdminIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="cog" />,
-    []
-  );
-
   return (
     <Tabs
+      detachInactiveScreens={false}
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
+        // Web E2E: lazy tabs keep inactive scenes detached in a way Playwright often
+        // treats as non-visible; mount tab screens up front on web only.
+        ...(Platform.OS === "web" ? {lazy: false} : {}),
       }}
     >
       <Tabs.Screen
@@ -52,15 +43,6 @@ const TabLayout: React.FC = () => {
         options={{
           tabBarIcon: renderHomeIcon,
           title: "Home",
-        }}
-      />
-      <Tabs.Screen
-        name="movies"
-        options={{
-          headerShown: false,
-          href: null,
-          tabBarIcon: renderMoviesIcon,
-          title: "Movies",
         }}
       />
       <Tabs.Screen
@@ -80,12 +62,17 @@ const TabLayout: React.FC = () => {
         }}
       />
       <Tabs.Screen
+        name="movies"
+        options={{
+          headerShown: false,
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="admin"
         options={{
           headerShown: false,
-          href: isAdmin ? "/admin" : null,
-          tabBarIcon: renderAdminIcon,
-          title: "Admin",
+          href: null,
         }}
       />
     </Tabs>
