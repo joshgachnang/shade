@@ -1,16 +1,5 @@
 import {test, expect} from "@playwright/test";
 
-const goToProfileTab = async (page: import("@playwright/test").Page): Promise<void> => {
-  const meResponse = page.waitForResponse(
-    (response) =>
-      response.url().includes("/auth/me") && response.request().method() === "GET" && response.ok(),
-    {timeout: 20000}
-  );
-  await page.getByRole("tab", {name: "Profile"}).click();
-  await meResponse;
-  await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
-};
-
 test.describe("Feature: Logout", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
 
@@ -19,7 +8,9 @@ test.describe("Feature: Logout", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    await goToProfileTab(page);
+    // Navigate to profile tab
+    await page.getByRole("tab", {name: "Profile"}).click();
+    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
 
     // Verify profile data is displayed
     await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
