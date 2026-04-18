@@ -21,7 +21,7 @@ import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
 import {SearchPlugin} from "./api/search";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
-import {transcriptRoutes} from "./api/transcripts";
+import {RecordingsPlugin, transcriptRoutes} from "./api/transcripts";
 import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
@@ -100,6 +100,7 @@ export const start = async (skipListen = false) => {
     .register(pluginRoutes)
     .register(radioStreamRoutes)
     .register(transcriptRoutes)
+    .register(new RecordingsPlugin())
     .register(webhookSourceRoutes)
     .register(movieRoutes)
     .register(frameRoutes)

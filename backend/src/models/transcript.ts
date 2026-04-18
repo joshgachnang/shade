@@ -8,6 +8,7 @@ const transcriptSchema = new mongoose.Schema<TranscriptDocument, TranscriptModel
     targetGroupId: {type: mongoose.Schema.Types.ObjectId, ref: "Group"},
     content: {type: String, required: true},
     durationMs: {type: Number},
+    recordingUrl: {type: String},
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

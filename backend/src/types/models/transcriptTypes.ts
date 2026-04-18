@@ -6,6 +6,7 @@ export interface TranscriptFields {
   targetGroupId?: mongoose.Types.ObjectId;
   content: string;
   durationMs?: number;
+  recordingUrl?: string;
 }
 
 export type TranscriptDocument = DefaultDoc & TranscriptFields;
