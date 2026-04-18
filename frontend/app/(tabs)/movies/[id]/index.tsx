@@ -1,3 +1,4 @@
+import {baseUrl} from "@terreno/rtk";
 import {Badge, Box, Button, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
 import {useLocalSearchParams, useRouter} from "expo-router";
 import type React from "react";
@@ -13,8 +14,6 @@ import {
   useListFramesQuery,
   useProcessMovieMutation,
 } from "@/store/sdk";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4020";
 
 const formatTimestamp = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600);
@@ -70,7 +69,7 @@ const MovieDetailScreen: React.FC = () => {
         <Box gap={1}>
           <Image
             source={{
-              uri: `${API_URL}/static/movies/${id}/frames/frame_${String(item.frameNumber + 1).padStart(6, "0")}.jpg`,
+              uri: `${baseUrl}/static/movies/${id}/frames/frame_${String(item.frameNumber + 1).padStart(6, "0")}.jpg`,
             }}
             style={{width: 120, height: 68, borderRadius: 4}}
             resizeMode="cover"

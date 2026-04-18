@@ -1,10 +1,9 @@
+import {baseUrl} from "@terreno/rtk";
 import {Badge, Box, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
 import {useLocalSearchParams} from "expo-router";
 import type React from "react";
 import {Image, ScrollView} from "react-native";
 import {useGetFrameAnalysisQuery, useGetFrameQuery} from "@/store/sdk";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4020";
 
 const formatTimestamp = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600);
@@ -43,7 +42,7 @@ const FrameDetailScreen: React.FC = () => {
               <Image
                 testID="frame-detail-image"
                 source={{
-                  uri: `${API_URL}/static/movies/${id}/frames/frame_${String((frame.frameNumber || 0) + 1).padStart(6, "0")}.jpg`,
+                  uri: `${baseUrl}/static/movies/${id}/frames/frame_${String((frame.frameNumber || 0) + 1).padStart(6, "0")}.jpg`,
                 }}
                 style={{width: "100%", aspectRatio: 16 / 9, borderRadius: 8}}
                 resizeMode="contain"

@@ -1,11 +1,10 @@
+import {baseUrl} from "@terreno/rtk";
 import {Box, Card, Heading, Page, Spinner, Text, TextField} from "@terreno/ui";
 import {useRouter} from "expo-router";
 import type React from "react";
 import {useCallback, useState} from "react";
 import {FlatList, Image, Pressable} from "react-native";
 import {type FrameAnalysis, useSearchQuery, useSearchSuggestQuery} from "@/store/sdk";
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:4020";
 
 type FilterType = "all" | "objects" | "characters" | "text" | "tags";
 
@@ -71,7 +70,7 @@ const SearchScreen: React.FC = () => {
               testID={`search-result-${index}-thumbnail`}
               source={{
                 uri: item.frame
-                  ? `${API_URL}/static/movies/${item.movieId}/frames/frame_${String((item.frame.frameNumber || 0) + 1).padStart(6, "0")}.jpg`
+                  ? `${baseUrl}/static/movies/${item.movieId}/frames/frame_${String((item.frame.frameNumber || 0) + 1).padStart(6, "0")}.jpg`
                   : undefined,
               }}
               style={{width: 120, height: 68, borderRadius: 4}}
