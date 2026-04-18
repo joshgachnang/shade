@@ -18,8 +18,9 @@ jobs:
           gh release download latest --repo ${{ github.repository }} --pattern shade-backend-linux --dir /tmp --clobber
           chmod +x /tmp/shade-backend-linux
 
-      - name: Deploy to server
+      - name: Deploy and restart
         run: |
+          set -euo pipefail
           mv /tmp/shade-backend-linux /opt/shade/shade-backend
           chmod +x /opt/shade/shade-backend
           sudo systemctl restart shade-backend
