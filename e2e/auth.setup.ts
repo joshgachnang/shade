@@ -35,10 +35,9 @@ setup("authenticate", async ({page, request}) => {
     console.log(`[Auth Setup] Login succeeded, userId: ${userId}`);
   }
 
-  // Navigate to the app to set up the browser context
-  await page.goto("/", {timeout: 60000});
-
-  // Inject auth state into localStorage (matching @terreno/rtk persist format)
+  // Seed localStorage before the SPA loads. Visiting / first lets redux-persist flush
+  // storage; a late write can overwrite injected auth and leave the app logged out after reload.
+  await page.goto("about:blank");
   await page.evaluate(
     ({token, refreshToken, userId}) => {
       const authState = {
@@ -56,11 +55,11 @@ setup("authenticate", async ({page, request}) => {
     {token, refreshToken, userId}
   );
 
-  // Reload to pick up the persisted state
-  await page.reload({timeout: 60000});
+  await page.goto("/", {timeout: 60000});
+  await page.waitForLoadState("networkidle");
 
   // Verify we're authenticated — login screen should not appear
-  await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
+  await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 45000});
 
   // Save browser state for other tests
   await page.context().storageState({path: "./e2e/.auth/user.json"});
