@@ -44,7 +44,19 @@ export interface IpcRadioStream {
   radioStreamId: string;
 }
 
-type IpcFile = IpcMessage | IpcTaskAction | IpcReaction | IpcCreateFeature | IpcRadioStream;
+export interface IpcTriviaToggle {
+  type: "toggle_trivia_auto_search";
+  groupId: string;
+  enabled: boolean;
+}
+
+type IpcFile =
+  | IpcMessage
+  | IpcTaskAction
+  | IpcReaction
+  | IpcCreateFeature
+  | IpcRadioStream
+  | IpcTriviaToggle;
 
 type SendMessageFn = (
   channelId: string,
@@ -61,6 +73,7 @@ type AddReactionFn = (
 
 type CreateFeatureFn = (data: IpcCreateFeature) => Promise<void>;
 type RadioStreamFn = (data: IpcRadioStream) => Promise<void>;
+type TriviaToggleFn = (data: IpcTriviaToggle) => Promise<void>;
 
 export class IpcWatcher {
   private intervalId: ReturnType<typeof setInterval> | null = null;
@@ -68,6 +81,7 @@ export class IpcWatcher {
   private addReaction: AddReactionFn | null = null;
   private createFeature: CreateFeatureFn | null = null;
   private radioStream: RadioStreamFn | null = null;
+  private triviaToggle: TriviaToggleFn | null = null;
 
   setSendMessage(fn: SendMessageFn): void {
     this.sendMessage = fn;
@@ -83,6 +97,10 @@ export class IpcWatcher {
 
   setRadioStream(fn: RadioStreamFn): void {
     this.radioStream = fn;
+  }
+
+  setTriviaToggle(fn: TriviaToggleFn): void {
+    this.triviaToggle = fn;
   }
 
   async start(): Promise<void> {
@@ -180,11 +198,12 @@ export class IpcWatcher {
       return targetGroupId === ipcData.groupId;
     }
 
-    // Feature channel creation and radio stream control require main group
+    // Feature channel creation, radio stream control, and trivia toggle require main group
     if (
       ipcData.type === "create_feature" ||
       ipcData.type === "start_radio_stream" ||
-      ipcData.type === "stop_radio_stream"
+      ipcData.type === "stop_radio_stream" ||
+      ipcData.type === "toggle_trivia_auto_search"
     ) {
       return false;
     }
@@ -218,6 +237,9 @@ export class IpcWatcher {
       case "start_radio_stream":
       case "stop_radio_stream":
         await this.handleRadioStream(ipcData);
+        break;
+      case "toggle_trivia_auto_search":
+        await this.handleTriviaToggle(ipcData);
         break;
       case "create_task":
         await this.handleCreateTask(ipcData);
@@ -314,6 +336,20 @@ export class IpcWatcher {
       logger.info(`IPC: ${data.type} for radio stream ${data.radioStreamId}`);
     } catch (err) {
       logger.error(`IPC: failed to ${data.type} radio stream ${data.radioStreamId}: ${err}`);
+    }
+  }
+
+  private async handleTriviaToggle(data: IpcTriviaToggle): Promise<void> {
+    if (!this.triviaToggle) {
+      logger.warn("No triviaToggle handler registered for IPC");
+      return;
+    }
+
+    try {
+      await this.triviaToggle(data);
+      logger.info(`IPC: trivia auto-search ${data.enabled ? "enabled" : "disabled"}`);
+    } catch (err) {
+      logger.error(`IPC: failed to toggle trivia auto-search: ${err}`);
     }
   }
 
