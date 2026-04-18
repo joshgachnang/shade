@@ -5,6 +5,7 @@ import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
+import {handleMovieSearch} from "../movieSearch";
 import {createEmailConnector} from "./email";
 import {createIMessageConnector} from "./imessage";
 import {createSlackConnector} from "./slack";
@@ -123,6 +124,25 @@ export class ChannelManager {
     logger.debug(
       `Storing inbound message from ${inbound.sender} in group ${group.name} (${inbound.content.substring(0, 80)})`
     );
+
+    // Intercept !search commands and respond directly
+    const searchMatch = inbound.content.match(/^!moviesearch\s+(.+)/i);
+    if (searchMatch) {
+      const query = searchMatch[1].trim();
+      logger.info(`Movie search from ${inbound.sender}: "${query}"`);
+      try {
+        const response = await handleMovieSearch(query);
+        await this.sendMessage(channelDoc._id.toString(), inbound.groupExternalId, response);
+      } catch (err) {
+        logError("Movie search failed", err);
+        await this.sendMessage(
+          channelDoc._id.toString(),
+          inbound.groupExternalId,
+          `Search failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      return;
+    }
 
     // Store the message
     try {
