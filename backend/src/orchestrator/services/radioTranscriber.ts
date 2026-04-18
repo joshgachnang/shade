@@ -566,15 +566,33 @@ export class RadioTranscriber {
   private async postMessageToSlack(
     botToken: string,
     channelId: string,
-    text: string
+    text: string,
+    recordingUrl?: string
   ): Promise<void> {
+    const body: Record<string, unknown> = {channel: channelId, text};
+
+    if (recordingUrl) {
+      body.blocks = [
+        {
+          type: "section",
+          text: {type: "mrkdwn", text},
+          accessory: {
+            type: "button",
+            text: {type: "plain_text", text: "Listen"},
+            url: recordingUrl,
+            action_id: "listen_recording",
+          },
+        },
+      ];
+    }
+
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${botToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({channel: channelId, text}),
+      body: JSON.stringify(body),
     });
     const data = (await response.json()) as any;
     if (!data.ok) {
@@ -659,17 +677,19 @@ export class RadioTranscriber {
       logger.error(`Failed to save transcript for "${active.doc.name}": ${err}`);
     }
 
-    const slackMessage = recordingUrl ? `${messageText} (<${recordingUrl}|mp3>)` : messageText;
-
     try {
       if (active.doc.slackBotToken && active.doc.slackChannelId) {
         await this.postMessageToSlack(
           active.doc.slackBotToken,
           active.doc.slackChannelId,
-          slackMessage
+          messageText,
+          recordingUrl
         );
       } else if (active.doc.slackWebhookUrl) {
-        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, slackMessage);
+        const webhookMessage = recordingUrl
+          ? `${messageText} (<${recordingUrl}|mp3>)`
+          : messageText;
+        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, webhookMessage);
       }
 
       if (active.doc.targetGroupId) {
