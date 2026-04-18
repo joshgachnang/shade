@@ -1,3 +1,4 @@
+import {useSelectCurrentUserId} from "@terreno/rtk";
 import {Box, Button, Heading, Page, Text} from "@terreno/ui";
 import {useRouter} from "expo-router";
 import type React from "react";
@@ -7,7 +8,8 @@ import {logout, useAppDispatch, useGetMeQuery} from "@/store";
 const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const {data: profile, isLoading} = useGetMeQuery();
+  const userId = useSelectCurrentUserId();
+  const {data: profile, isLoading} = useGetMeQuery(undefined, {skip: !userId});
 
   const handleLogout = useCallback((): void => {
     dispatch(logout());
