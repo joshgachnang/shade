@@ -3,6 +3,7 @@
  *
  * Watches transcripts for trivia questions and answers as they're read on air.
  * Posts each question once when detected, and each answer once when the DJ reads it.
+ * Automatically researches each question using Claude with web search.
  * Saves both to the TriviaQuestion DB.
  *
  * Controlled via AppConfig.triviaMonitor.enabled / .groupId.
@@ -10,16 +11,37 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import {logger} from "@terreno/api";
+import fs from "fs";
 import mongoose from "mongoose";
+import path from "path";
 import {loadAppConfig} from "../../models/appConfig";
 import {TriviaQuestion, triviaConnection} from "../../models/triviaQuestion";
 import type {ChannelManager} from "../channels/manager";
 
 const DETECTOR_MODEL = process.env.DETECTOR_MODEL || "claude-haiku-4-5-20251001";
+const ANSWERER_MODEL = process.env.ANSWERER_MODEL || "claude-sonnet-4-20250514";
 const POLL_INTERVAL_MS = 3000;
 const TRANSCRIPT_WINDOW_SIZE = 25;
 
 const anthropic = new Anthropic();
+
+// Load trivia prompt from file at module load time
+let TRIVIA_PROMPT = "";
+try {
+  const promptPath = path.resolve(__dirname, "../../../../trivia_prompt.md");
+  TRIVIA_PROMPT = fs.readFileSync(promptPath, "utf-8");
+} catch (err) {
+  logger.warn(`Could not load trivia_prompt.md: ${err}`);
+}
+
+interface ResearchResult {
+  answer: string;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  category: string;
+  sourceMaterial: string;
+  reasoning: string;
+  alternateAnswers: string;
+}
 
 const SYSTEM_PROMPT = `You are a trivia question and answer detector for the WWSP 90FM Trivia contest broadcast.
 
@@ -313,6 +335,11 @@ export class TriviaMonitor {
     const message = `*[${key}]* Question ${q.questionNumber}, Hour ${q.hour}:\n${q.questionText}`;
     await this.postToGroup(message);
     await this.postToWebhook("questions", message);
+
+    // Research in background (don't block polling)
+    this.researchQuestion(key, q).catch((err) => {
+      logger.error(`[TriviaMonitor] Research error for ${key}: ${err}`);
+    });
   }
 
   // ── Handle detected answer ─────────────────────────────────────────────
@@ -344,6 +371,123 @@ export class TriviaMonitor {
     const message = `*[${key}]* Official Answer to Q${a.questionNumber}, Hour ${a.hour}: *${a.answer}*`;
     await this.postToGroup(message);
     await this.postToWebhook("answers", message);
+  }
+
+  // ── Research question using Claude + web search ─────────────────────────
+
+  private async researchQuestion(key: string, q: DetectedQuestion): Promise<void> {
+    if (!TRIVIA_PROMPT) {
+      logger.warn(`[TriviaMonitor] No trivia prompt loaded, skipping research for ${key}`);
+      return;
+    }
+
+    logger.info(`[TriviaMonitor] Researching ${key}...`);
+
+    try {
+      const response = await anthropic.messages.create({
+        model: ANSWERER_MODEL,
+        max_tokens: 4096,
+        system: TRIVIA_PROMPT,
+        tools: [
+          {
+            type: "web_search_20250305",
+            name: "web_search",
+            max_uses: 5,
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content: `Question ${q.questionNumber}, Hour ${q.hour}:\n\n${q.questionText}`,
+          },
+        ],
+      });
+
+      // Extract text from response (may include tool use blocks)
+      const textBlocks = response.content.filter(
+        (block): block is Anthropic.TextBlock => block.type === "text"
+      );
+      const fullText = textBlocks.map((b) => b.text).join("\n");
+
+      if (!fullText) {
+        logger.warn(`[TriviaMonitor] Empty research response for ${key}`);
+        return;
+      }
+
+      // Parse the structured response
+      const result = this.parseResearchResponse(fullText);
+
+      logger.info(
+        `[TriviaMonitor] Research ${key}: ${result.confidence} confidence — ${result.answer}`
+      );
+
+      // Save research to DB
+      const year = new Date().getFullYear();
+      try {
+        await TriviaQuestion.findOneAndUpdate(
+          {year, hour: q.hour, questionNumber: q.questionNumber},
+          {
+            reasoning: [
+              `Confidence: ${result.confidence}`,
+              `Category: ${result.category}`,
+              `Source: ${result.sourceMaterial}`,
+              result.reasoning,
+              result.alternateAnswers ? `Alternates: ${result.alternateAnswers}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          }
+        );
+      } catch (err) {
+        logger.warn(`[TriviaMonitor] DB research save error for ${key}: ${err}`);
+      }
+
+      // Post high/medium confidence answers to the webhook
+      if (result.confidence === "HIGH" || result.confidence === "MEDIUM") {
+        const confidenceEmoji =
+          result.confidence === "HIGH" ? ":white_check_mark:" : ":thinking_face:";
+        const parts = [
+          `${confidenceEmoji} *[${key}]* Researched Answer (${result.confidence}): *${result.answer}*`,
+        ];
+
+        if (result.sourceMaterial) {
+          parts.push(`Source: ${result.sourceMaterial}`);
+        }
+        if (result.reasoning) {
+          parts.push(`Reasoning: ${result.reasoning}`);
+        }
+        if (result.alternateAnswers) {
+          parts.push(`Alternates: ${result.alternateAnswers}`);
+        }
+
+        const message = parts.join("\n");
+        await this.postToWebhook("answers", message);
+        await this.postToGroup(message);
+      } else {
+        // Low confidence — still post to group but not webhook
+        const message = `:question: *[${key}]* Research (LOW confidence): ${result.answer || "No confident answer"}\n${result.reasoning || fullText.substring(0, 500)}`;
+        await this.postToGroup(message);
+      }
+    } catch (err) {
+      logger.error(`[TriviaMonitor] Research API error for ${key}: ${err}`);
+    }
+  }
+
+  private parseResearchResponse(text: string): ResearchResult {
+    const extract = (label: string): string => {
+      const regex = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+?)(?=\\n\\*\\*|$)`, "s");
+      const match = text.match(regex);
+      return match ? match[1].trim() : "";
+    };
+
+    return {
+      answer: extract("ANSWER"),
+      confidence: (extract("CONFIDENCE") as ResearchResult["confidence"]) || "LOW",
+      category: extract("CATEGORY"),
+      sourceMaterial: extract("SOURCE MATERIAL"),
+      reasoning: extract("REASONING"),
+      alternateAnswers: extract("ALTERNATIVE ANSWERS"),
+    };
   }
 
   // ── Post to configured group ───────────────────────────────────────────
