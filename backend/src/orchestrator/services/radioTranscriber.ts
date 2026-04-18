@@ -560,7 +560,11 @@ export class RadioTranscriber {
     };
   }
 
-  private async postMessageToSlack(botToken: string, channelId: string, text: string): Promise<void> {
+  private async postMessageToSlack(
+    botToken: string,
+    channelId: string,
+    text: string
+  ): Promise<void> {
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
@@ -661,7 +665,11 @@ export class RadioTranscriber {
         );
       } else if (active.doc.slackBotToken && active.doc.slackChannelId) {
         // Post text-only message via bot token (no MP3 available)
-        await this.postMessageToSlack(active.doc.slackBotToken, active.doc.slackChannelId, messageText);
+        await this.postMessageToSlack(
+          active.doc.slackBotToken,
+          active.doc.slackChannelId,
+          messageText
+        );
       } else if (active.doc.slackWebhookUrl) {
         // Fall back to webhook (text only)
         await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText);
