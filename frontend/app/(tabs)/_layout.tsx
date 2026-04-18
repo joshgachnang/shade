@@ -32,9 +32,6 @@ const TabLayout: React.FC = () => {
       detachInactiveScreens={false}
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
-        // Keep all tab panels mounted and attached on web so E2E can see testIDs
-        // after tab switches (default web behavior detaches inactive screens).
-        lazy: false,
       }}
     >
       <Tabs.Screen
