@@ -1,12 +1,5 @@
 import {test, expect} from "@playwright/test";
-import type {Page} from "@playwright/test";
-
-const openProfileTabAndWaitForProfile = async (page: Page): Promise<void> => {
-  const profileTab = page.getByRole("tab", {name: "Profile"});
-  await profileTab.waitFor({state: "visible", timeout: 15000});
-  await profileTab.click();
-  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
-};
+import {openProfileTabAndWaitForMe} from "./helpers/auth";
 
 test.describe("Feature: Tab Navigation", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
@@ -17,8 +10,8 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Home to Profile tab", async ({page}) => {
-    await openProfileTabAndWaitForProfile(page);
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    await openProfileTabAndWaitForMe(page);
+    await expect(page.getByTestId("profile-name-text")).toBeVisible();
   });
 
   test("user can switch from Home to Search tab", async ({page}) => {
@@ -28,8 +21,7 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Profile back to Home tab", async ({page}) => {
-    await openProfileTabAndWaitForProfile(page);
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    await openProfileTabAndWaitForMe(page);
 
     await page.getByRole("tab", {name: "Home"}).click();
     await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 15000});
