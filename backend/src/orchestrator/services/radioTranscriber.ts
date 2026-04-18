@@ -600,11 +600,32 @@ export class RadioTranscriber {
     }
   }
 
-  private async sendToSlackWebhook(webhookUrl: string, text: string): Promise<void> {
+  private async sendToSlackWebhook(
+    webhookUrl: string,
+    text: string,
+    recordingUrl?: string
+  ): Promise<void> {
+    const body: Record<string, unknown> = recordingUrl
+      ? {
+          blocks: [
+            {
+              type: "section",
+              text: {type: "mrkdwn", text},
+              accessory: {
+                type: "button",
+                text: {type: "plain_text", text: "Listen"},
+                url: recordingUrl,
+                action_id: "listen_recording",
+              },
+            },
+          ],
+        }
+      : {text};
+
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({text}),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       throw new Error(`Slack webhook returned ${response.status}: ${await response.text()}`);
@@ -686,10 +707,7 @@ export class RadioTranscriber {
           recordingUrl
         );
       } else if (active.doc.slackWebhookUrl) {
-        const webhookMessage = recordingUrl
-          ? `${messageText} (<${recordingUrl}|mp3>)`
-          : messageText;
-        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, webhookMessage);
+        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText, recordingUrl);
       }
 
       if (active.doc.targetGroupId) {
