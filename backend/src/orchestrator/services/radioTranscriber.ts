@@ -642,8 +642,16 @@ export class RadioTranscriber {
     });
   }
 
+  /**
+   * Strip a trailing parenthesized song title that Deepgram sometimes appends
+   * when transcribing music, e.g. "some lyrics here (Song Title)".
+   */
+  private stripTrailingSongTitle(text: string): string {
+    return text.replace(/\s*\([^)]+\)\s*$/, "").trim();
+  }
+
   private async flushTranscript(active: ActiveStream): Promise<void> {
-    const text = active.transcriptBuffer.trim();
+    const text = this.stripTrailingSongTitle(active.transcriptBuffer.trim());
     if (text.length === 0) {
       active.flushAudioChunks = [];
       return;
