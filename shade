@@ -596,29 +596,59 @@ for i, r in enumerate(results):
 " 2>&1
 }
 
+# --- Trivia ---
+cmd_scrape_scores() {
+  echo "==> Scraping trivia scores..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/scrapeScores.ts "$@"
+}
+
+cmd_scrape_scores_loop() {
+  echo "==> Scraping trivia scores (loop mode)..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/scrapeScores.ts --loop "$@"
+}
+
+cmd_scrape_vault() {
+  echo "==> Scraping vault scores..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/scrapeVaultScores.ts "$@"
+}
+
+cmd_trivia_answer() {
+  echo "==> Starting trivia answerer..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/triviaAnswerer.ts "$@"
+}
+
 # --- Main ---
 COMMAND="${1:-deploy}"
 shift || true
 
 case "$COMMAND" in
-  deploy)        cmd_deploy "$@" ;;
-  build)         cmd_build "$@" ;;
-  install)       cmd_install "$@" ;;
-  start)         cmd_start "$@" ;;
-  stop)          cmd_stop "$@" ;;
-  restart)       cmd_restart "$@" ;;
-  status)        cmd_status "$@" ;;
-  logs)          cmd_logs "$@" ;;
-  uninstall)     cmd_uninstall "$@" ;;
-  remote-deploy) cmd_remote_deploy "$@" ;;
-  remote-setup)  cmd_remote_setup "$@" ;;
-  search)        cmd_search "$@" ;;
+  deploy)            cmd_deploy "$@" ;;
+  build)             cmd_build "$@" ;;
+  install)           cmd_install "$@" ;;
+  start)             cmd_start "$@" ;;
+  stop)              cmd_stop "$@" ;;
+  restart)           cmd_restart "$@" ;;
+  status)            cmd_status "$@" ;;
+  logs)              cmd_logs "$@" ;;
+  uninstall)         cmd_uninstall "$@" ;;
+  remote-deploy)     cmd_remote_deploy "$@" ;;
+  remote-setup)      cmd_remote_setup "$@" ;;
+  search)            cmd_search "$@" ;;
+  scrape-scores)     cmd_scrape_scores "$@" ;;
+  scrape-scores-loop) cmd_scrape_scores_loop "$@" ;;
+  scrape-vault)      cmd_scrape_vault "$@" ;;
+  trivia-answer)     cmd_trivia_answer "$@" ;;
   *)
     echo "Usage: shade <command> [service...]"
     echo ""
-    echo "Local:  deploy, build, install, start, stop, restart, status, logs, uninstall"
-    echo "Movie:  search <query> [--type objects|characters|text|tags]"
-    echo "Remote: remote-setup <host>, remote-deploy <host> [service...]"
+    echo "Local:   deploy, build, install, start, stop, restart, status, logs, uninstall"
+    echo "Movie:   search <query> [--type objects|characters|text|tags]"
+    echo "Trivia:  scrape-scores, scrape-scores-loop, scrape-vault, trivia-answer"
+    echo "Remote:  remote-setup <host>, remote-deploy <host> [service...]"
     echo ""
     echo "Services: $ALL_SERVICES"
     exit 1
