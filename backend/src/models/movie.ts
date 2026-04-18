@@ -22,7 +22,11 @@ const movieSchema = new mongoose.Schema<MovieDocument, MovieModel>(
     errorMessage: {type: String},
     actors: {type: [String], default: []},
     extractionConfig: {
-      mode: {type: String, default: "scene-change", enum: ["scene-change", "interval", "every-frame"]},
+      mode: {
+        type: String,
+        default: "scene-change",
+        enum: ["scene-change", "interval", "every-frame"],
+      },
       intervalSeconds: {type: Number},
       sceneThreshold: {type: Number, default: 0.3},
     },

@@ -3,9 +3,10 @@ export const buildSystemPrompt = (): string => {
 };
 
 export const buildUserPrompt = (actors: string[], timestamp: number): string => {
-  const actorSection = actors.length > 0
-    ? `\nKnown actors in this movie: ${actors.join(", ")}. When you recognize a character, try to match them to one of these actors based on appearance.`
-    : "";
+  const actorSection =
+    actors.length > 0
+      ? `\nKnown actors in this movie: ${actors.join(", ")}. When you recognize a character, try to match them to one of these actors based on appearance.`
+      : "";
 
   return `Analyze this movie frame (timestamp: ${formatTimestamp(timestamp)}).${actorSection}
 

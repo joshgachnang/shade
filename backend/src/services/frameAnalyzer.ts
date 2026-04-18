@@ -69,14 +69,13 @@ const analyzeFrame = async (
   await Frame.findByIdAndUpdate(frameId, {status: "complete"});
 };
 
-export const analyzeAllFrames = async (
-  movieId: string,
-  concurrency = 5
-): Promise<void> => {
+export const analyzeAllFrames = async (movieId: string, concurrency = 5): Promise<void> => {
   const movie = await Movie.findExactlyOne({_id: movieId});
   const frames = await Frame.find({movieId, status: "pending"}).sort({frameNumber: 1});
 
-  logger.info(`Analyzing ${frames.length} frames for movie ${movie.title} with concurrency ${concurrency}`);
+  logger.info(
+    `Analyzing ${frames.length} frames for movie ${movie.title} with concurrency ${concurrency}`
+  );
 
   let processedCount = movie.processedFrameCount || 0;
 

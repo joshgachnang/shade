@@ -8,11 +8,14 @@ export const trackCharacters = async (movieId: string): Promise<void> => {
   logger.info(`Tracking characters across ${analyses.length} frame analyses for "${movie.title}"`);
 
   // Collect all character appearances grouped by name
-  const characterMap = new Map<string, {
-    appearances: Array<{frameId: string; timestamp: number; description: string}>;
-    firstSeen: number;
-    lastSeen: number;
-  }>();
+  const characterMap = new Map<
+    string,
+    {
+      appearances: Array<{frameId: string; timestamp: number; description: string}>;
+      firstSeen: number;
+      lastSeen: number;
+    }
+  >();
 
   for (const analysis of analyses) {
     for (const char of analysis.characters) {
@@ -31,11 +34,13 @@ export const trackCharacters = async (movieId: string): Promise<void> => {
         existing.lastSeen = Math.max(existing.lastSeen, analysis.timestamp);
       } else {
         characterMap.set(name, {
-          appearances: [{
-            frameId: analysis.frameId.toString(),
-            timestamp: analysis.timestamp,
-            description: char.description,
-          }],
+          appearances: [
+            {
+              frameId: analysis.frameId.toString(),
+              timestamp: analysis.timestamp,
+              description: char.description,
+            },
+          ],
           firstSeen: analysis.timestamp,
           lastSeen: analysis.timestamp,
         });

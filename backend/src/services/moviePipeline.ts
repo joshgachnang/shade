@@ -1,8 +1,8 @@
 import {logger} from "@terreno/api";
 import {Movie} from "../models";
 import {trackCharacters} from "./characterTracker";
-import {extractFrames} from "./frameExtractor";
 import {analyzeAllFrames} from "./frameAnalyzer";
+import {extractFrames} from "./frameExtractor";
 
 export const processMovie = async (movieId: string): Promise<void> => {
   logger.info(`Starting movie pipeline for ${movieId}`);

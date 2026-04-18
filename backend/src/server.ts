@@ -5,8 +5,8 @@ import {aiRequestRoutes} from "./api/aiRequests";
 import {appConfigRoutes} from "./api/appConfig";
 import {AppleCalendarPlugin, calendarConfigRoutes} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
-import {characterRoutes} from "./api/characters";
 import {channelRoutes} from "./api/channels";
+import {characterRoutes} from "./api/characters";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
 import {frameAnalysisRoutes} from "./api/frameAnalyses";
@@ -15,11 +15,11 @@ import {groupRoutes} from "./api/groups";
 import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
 import {MovieActionsPlugin, movieRoutes} from "./api/movies";
-import {SearchPlugin} from "./api/search";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
+import {SearchPlugin} from "./api/search";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
 import {transcriptRoutes} from "./api/transcripts";
 import {userRoutes} from "./api/users";
@@ -112,8 +112,6 @@ export const start = async (skipListen = false) => {
     .register(appConfigRoutes)
     .register(adminApp)
     .start();
-
-
 
   if (!skipListen) {
     startOrchestrator(app).catch((err) => {

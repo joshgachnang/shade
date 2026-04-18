@@ -1,5 +1,5 @@
 import path from "node:path";
-import {type TerrenoPlugin, asyncHandler, logger, modelRouter, Permissions} from "@terreno/api";
+import {asyncHandler, logger, modelRouter, Permissions, type TerrenoPlugin} from "@terreno/api";
 import type express from "express";
 import {paths} from "../config";
 import {Movie} from "../models";
@@ -20,8 +20,8 @@ export const movieRoutes = modelRouter("/movies", Movie, {
 export class MovieActionsPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
     // Serve extracted frame images statically with path traversal protection
-    app.get("/static/movies/*", (req, res) => {
-      const resolved = path.resolve(paths.movies, req.params[0]);
+    app.get("/static/movies/*", (req: express.Request, res: express.Response) => {
+      const resolved = path.resolve(paths.movies, (req.params as Record<string, string>)[0]);
       if (!resolved.startsWith(path.resolve(paths.movies))) {
         res.status(403).json({error: "Forbidden"});
         return;
@@ -31,7 +31,7 @@ export class MovieActionsPlugin implements TerrenoPlugin {
 
     app.post(
       "/movie-actions/:id/process",
-      asyncHandler(async (req, res) => {
+      asyncHandler(async (req: express.Request, res: express.Response) => {
         const movie = await Movie.findExactlyOne({_id: req.params.id});
 
         if (movie.status === "extracting" || movie.status === "analyzing") {
@@ -53,7 +53,7 @@ export class MovieActionsPlugin implements TerrenoPlugin {
 
     app.post(
       "/movie-actions/:id/cancel",
-      asyncHandler(async (req, res) => {
+      asyncHandler(async (req: express.Request, res: express.Response) => {
         const movie = await Movie.findExactlyOne({_id: req.params.id});
 
         if (movie.status !== "extracting" && movie.status !== "analyzing") {
@@ -71,7 +71,7 @@ export class MovieActionsPlugin implements TerrenoPlugin {
 
     app.get(
       "/movie-actions/:id/progress",
-      asyncHandler(async (req, res) => {
+      asyncHandler(async (req: express.Request, res: express.Response) => {
         const movie = await Movie.findExactlyOne({_id: req.params.id});
 
         const percentage =
@@ -91,7 +91,7 @@ export class MovieActionsPlugin implements TerrenoPlugin {
 
     app.get(
       "/movie-actions/:id/timeline",
-      asyncHandler(async (req, res) => {
+      asyncHandler(async (req: express.Request, res: express.Response) => {
         const {FrameAnalysis} = await import("../models/frameAnalysis");
         const movieId = req.params.id;
         const {character, object} = req.query;

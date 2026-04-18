@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import {logger} from "@terreno/api";
 
 interface OpenRouterMessage {
   role: "system" | "user" | "assistant";
@@ -40,7 +39,9 @@ const getApiKey = (): string => {
   return key;
 };
 
-export const analyzeImage = async (request: VisionAnalysisRequest): Promise<VisionAnalysisResponse> => {
+export const analyzeImage = async (
+  request: VisionAnalysisRequest
+): Promise<VisionAnalysisResponse> => {
   const apiKey = getApiKey();
 
   // Read image and convert to base64
@@ -72,7 +73,7 @@ export const analyzeImage = async (request: VisionAnalysisRequest): Promise<Visi
   const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": "https://shade.app",
     },

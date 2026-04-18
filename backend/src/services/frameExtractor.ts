@@ -12,11 +12,15 @@ interface ExtractionResult {
   resolution: {width: number; height: number};
 }
 
-const getVideoInfo = (filePath: string): Promise<{duration: number; fps: number; width: number; height: number}> => {
+const getVideoInfo = (
+  filePath: string
+): Promise<{duration: number; fps: number; width: number; height: number}> => {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffprobe", [
-      "-v", "quiet",
-      "-print_format", "json",
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
       "-show_format",
       "-show_streams",
       filePath,
@@ -25,8 +29,12 @@ const getVideoInfo = (filePath: string): Promise<{duration: number; fps: number;
     let stdout = "";
     let stderr = "";
 
-    proc.stdout.on("data", (data) => { stdout += data; });
-    proc.stderr.on("data", (data) => { stderr += data; });
+    proc.stdout.on("data", (data) => {
+      stdout += data;
+    });
+    proc.stderr.on("data", (data) => {
+      stderr += data;
+    });
 
     proc.on("close", (code) => {
       if (code !== 0) {
@@ -35,7 +43,9 @@ const getVideoInfo = (filePath: string): Promise<{duration: number; fps: number;
       }
 
       const info = JSON.parse(stdout);
-      const videoStream = info.streams?.find((s: Record<string, unknown>) => s.codec_type === "video");
+      const videoStream = info.streams?.find(
+        (s: Record<string, unknown>) => s.codec_type === "video"
+      );
 
       if (!videoStream) {
         reject(new Error("No video stream found"));
@@ -63,15 +73,21 @@ const extractSceneChangeFrames = (
 ): Promise<string[]> => {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", [
-      "-i", filePath,
-      "-vf", `select='gt(scene\\,${threshold})',showinfo`,
-      "-vsync", "vfr",
-      "-q:v", "2",
+      "-i",
+      filePath,
+      "-vf",
+      `select='gt(scene\\,${threshold})',showinfo`,
+      "-vsync",
+      "vfr",
+      "-q:v",
+      "2",
       `${outputDir}/frame_%06d.jpg`,
     ]);
 
     let stderr = "";
-    proc.stderr.on("data", (data) => { stderr += data; });
+    proc.stderr.on("data", (data) => {
+      stderr += data;
+    });
 
     proc.on("close", async (code) => {
       if (code !== 0) {
@@ -80,9 +96,7 @@ const extractSceneChangeFrames = (
       }
 
       const files = await fs.readdir(outputDir);
-      const frames = files
-        .filter((f) => f.startsWith("frame_") && f.endsWith(".jpg"))
-        .sort();
+      const frames = files.filter((f) => f.startsWith("frame_") && f.endsWith(".jpg")).sort();
 
       resolve(frames);
     });
@@ -96,55 +110,55 @@ const extractIntervalFrames = (
 ): Promise<string[]> => {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", [
-      "-i", filePath,
-      "-vf", `fps=1/${intervalSeconds}`,
-      "-q:v", "2",
+      "-i",
+      filePath,
+      "-vf",
+      `fps=1/${intervalSeconds}`,
+      "-q:v",
+      "2",
       `${outputDir}/frame_%06d.jpg`,
     ]);
 
     let stderr = "";
-    proc.stderr.on("data", (data) => { stderr += data; });
+    proc.stderr.on("data", (data) => {
+      stderr += data;
+    });
 
     proc.on("close", async (code) => {
       if (code !== 0) {
-        reject(new Error(`FFmpeg interval extraction failed with code ${code}: ${stderr.slice(-500)}`));
+        reject(
+          new Error(`FFmpeg interval extraction failed with code ${code}: ${stderr.slice(-500)}`)
+        );
         return;
       }
 
       const files = await fs.readdir(outputDir);
-      const frames = files
-        .filter((f) => f.startsWith("frame_") && f.endsWith(".jpg"))
-        .sort();
+      const frames = files.filter((f) => f.startsWith("frame_") && f.endsWith(".jpg")).sort();
 
       resolve(frames);
     });
   });
 };
 
-const extractEveryFrame = (
-  filePath: string,
-  outputDir: string
-): Promise<string[]> => {
+const extractEveryFrame = (filePath: string, outputDir: string): Promise<string[]> => {
   return new Promise((resolve, reject) => {
-    const proc = spawn("ffmpeg", [
-      "-i", filePath,
-      "-q:v", "2",
-      `${outputDir}/frame_%06d.jpg`,
-    ]);
+    const proc = spawn("ffmpeg", ["-i", filePath, "-q:v", "2", `${outputDir}/frame_%06d.jpg`]);
 
     let stderr = "";
-    proc.stderr.on("data", (data) => { stderr += data; });
+    proc.stderr.on("data", (data) => {
+      stderr += data;
+    });
 
     proc.on("close", async (code) => {
       if (code !== 0) {
-        reject(new Error(`FFmpeg frame extraction failed with code ${code}: ${stderr.slice(-500)}`));
+        reject(
+          new Error(`FFmpeg frame extraction failed with code ${code}: ${stderr.slice(-500)}`)
+        );
         return;
       }
 
       const files = await fs.readdir(outputDir);
-      const frames = files
-        .filter((f) => f.startsWith("frame_") && f.endsWith(".jpg"))
-        .sort();
+      const frames = files.filter((f) => f.startsWith("frame_") && f.endsWith(".jpg")).sort();
 
       resolve(frames);
     });
@@ -156,7 +170,7 @@ const getFrameTimestamps = (
   mode: string,
   threshold: number
 ): Promise<number[]> => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     let filterExpr: string;
     if (mode === "scene-change") {
       filterExpr = `select='gt(scene\\,${threshold})',showinfo`;
@@ -164,15 +178,12 @@ const getFrameTimestamps = (
       filterExpr = "showinfo";
     }
 
-    const proc = spawn("ffmpeg", [
-      "-i", filePath,
-      "-vf", filterExpr,
-      "-f", "null",
-      "-",
-    ]);
+    const proc = spawn("ffmpeg", ["-i", filePath, "-vf", filterExpr, "-f", "null", "-"]);
 
     let stderr = "";
-    proc.stderr.on("data", (data) => { stderr += data; });
+    proc.stderr.on("data", (data) => {
+      stderr += data;
+    });
 
     proc.on("close", () => {
       const timestamps: number[] = [];
@@ -196,7 +207,9 @@ export const extractFrames = async (movieId: string): Promise<ExtractionResult> 
 
   // Get video info
   const videoInfo = await getVideoInfo(filePath);
-  logger.info(`Video info: ${videoInfo.duration}s, ${videoInfo.fps}fps, ${videoInfo.width}x${videoInfo.height}`);
+  logger.info(
+    `Video info: ${videoInfo.duration}s, ${videoInfo.fps}fps, ${videoInfo.width}x${videoInfo.height}`
+  );
 
   // Create output directory
   const outputDir = path.join(paths.movies, movieId, "frames");
