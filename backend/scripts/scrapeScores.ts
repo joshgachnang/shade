@@ -48,8 +48,10 @@ const postToBluesky = async (text: string): Promise<void> => {
   const config = await loadAppConfig();
   const {blueskyIdentifier, blueskyPassword} = config.triviaStats;
   if (!blueskyIdentifier || !blueskyPassword) {
+    console.info("  Skipping Bluesky: missing blueskyIdentifier or blueskyPassword in config");
     return;
   }
+  console.info("  Will post to Bluesky");
   try {
     const agent = new AtpAgent({service: "https://bsky.social"});
     await agent.login({identifier: blueskyIdentifier, password: blueskyPassword});
@@ -66,8 +68,10 @@ const postToSlack = async (text: string): Promise<void> => {
   const config = await loadAppConfig();
   const webhook = config.triviaStats.slackWebhook;
   if (!webhook) {
+    console.info("  Skipping Slack: missing slackWebhook in config");
     return;
   }
+  console.info("  Will post to Slack");
   try {
     const response = await fetch(webhook, {
       method: "POST",
