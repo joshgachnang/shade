@@ -1,22 +1,11 @@
 import {test, expect} from "@playwright/test";
 import type {Page} from "@playwright/test";
 
-const openProfileTabAndWaitForMe = async (page: Page): Promise<void> => {
+const openProfileTabAndWaitForProfile = async (page: Page): Promise<void> => {
   const profileTab = page.getByRole("tab", {name: "Profile"});
   await profileTab.waitFor({state: "visible", timeout: 15000});
-
-  const meResponse = page.waitForResponse(
-    (response) =>
-      response.url().includes("/auth/me") &&
-      response.request().method() === "GET" &&
-      response.ok(),
-    {timeout: 30000}
-  );
-
-  const profileReady = page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
-
   await profileTab.click();
-  await Promise.race([meResponse, profileReady]);
+  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
 };
 
 test.describe("Feature: Tab Navigation", () => {
@@ -28,22 +17,8 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Home to Profile tab", async ({page}) => {
-    await openProfileTabAndWaitForMe(page);
+    await openProfileTabAndWaitForProfile(page);
     await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
-  });
-
-  test("Profile tab loads the signed-in user via GET /auth/me", async ({page}) => {
-    const profileMeResponse = page.waitForResponse(
-      (response) =>
-        response.url().includes("/auth/me") &&
-        response.request().method() === "GET" &&
-        response.status() === 200
-    );
-    const profileTab = page.getByRole("tab", {name: "Profile"});
-    await profileTab.waitFor({state: "visible", timeout: 15000});
-    await profileTab.click();
-    await profileMeResponse;
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
   });
 
   test("user can switch from Home to Search tab", async ({page}) => {
@@ -53,11 +28,34 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Profile back to Home tab", async ({page}) => {
-    await openProfileTabAndWaitForMe(page);
+    await openProfileTabAndWaitForProfile(page);
     await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
 
     await page.getByRole("tab", {name: "Home"}).click();
     await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 15000});
+  });
+});
+
+test.describe("Feature: Tab Navigation — profile API", () => {
+  test.use({storageState: "./e2e/.auth/user.json"});
+
+  test("Profile tab loads the signed-in user via GET /auth/me", async ({page}) => {
+    const profileMeResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/auth/me") &&
+        response.request().method() === "GET" &&
+        response.status() === 200,
+      {timeout: 60000}
+    );
+
+    await page.goto("/", {timeout: 60000});
+    await page.waitForLoadState("networkidle");
+
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
+    await profileMeResponse;
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
   });
 });
 

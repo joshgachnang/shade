@@ -1,22 +1,11 @@
 import {test, expect} from "@playwright/test";
 import type {Page} from "@playwright/test";
 
-const openProfileTabAndWaitForMe = async (page: Page): Promise<void> => {
+const openProfileTabAndWaitForProfile = async (page: Page): Promise<void> => {
   const profileTab = page.getByRole("tab", {name: "Profile"});
   await profileTab.waitFor({state: "visible", timeout: 15000});
-
-  const meResponse = page.waitForResponse(
-    (response) =>
-      response.url().includes("/auth/me") &&
-      response.request().method() === "GET" &&
-      response.ok(),
-    {timeout: 30000}
-  );
-
-  const profileReady = page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
-
   await profileTab.click();
-  await Promise.race([meResponse, profileReady]);
+  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 30000});
 };
 
 test.describe("Feature: Logout", () => {
@@ -27,7 +16,7 @@ test.describe("Feature: Logout", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    await openProfileTabAndWaitForMe(page);
+    await openProfileTabAndWaitForProfile(page);
 
     // Verify profile data is displayed
     await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
