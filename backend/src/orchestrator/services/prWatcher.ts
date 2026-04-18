@@ -501,11 +501,13 @@ export class PrWatcher {
 
     const sessionId = `pr-fix-${doc.repo.replace("/", "-")}-${doc.prNumber}-${Date.now()}`;
 
+    const worktreePath = `${reposBaseDir}/${owner}/${repo}-wt-${doc.branch}`;
+
     try {
-      // Ensure repo is cloned and branch is checked out
       const {execSync} = await import("node:child_process");
       const fs = await import("node:fs");
 
+      // Ensure base repo is cloned
       if (!fs.existsSync(repoPath)) {
         fs.mkdirSync(repoPath, {recursive: true});
         execSync(`git clone https://github.com/${doc.repo}.git ${repoPath}`, {
@@ -514,18 +516,38 @@ export class PrWatcher {
         });
       }
 
-      // Fetch and checkout the branch
-      execSync(`git fetch origin && git checkout ${doc.branch}`, {
+      // Fetch latest and create a worktree for the branch
+      execSync("git fetch origin", {cwd: repoPath, timeout: 30000, stdio: "pipe"});
+
+      // Remove stale worktree if it exists
+      if (fs.existsSync(worktreePath)) {
+        try {
+          execSync(`git worktree remove --force ${worktreePath}`, {
+            cwd: repoPath,
+            timeout: 10000,
+            stdio: "pipe",
+          });
+        } catch {
+          // If remove fails, just delete the directory
+          fs.rmSync(worktreePath, {recursive: true, force: true});
+          execSync("git worktree prune", {cwd: repoPath, timeout: 10000, stdio: "pipe"});
+        }
+      }
+
+      execSync(`git worktree add ${worktreePath} origin/${doc.branch}`, {
         cwd: repoPath,
         timeout: 30000,
         stdio: "pipe",
       });
 
-      execSync(`git pull origin ${doc.branch}`, {
-        cwd: repoPath,
-        timeout: 30000,
-        stdio: "pipe",
-      });
+      // Bootstrap the worktree
+      try {
+        execSync("bun bootstrap", {cwd: worktreePath, timeout: 120000, stdio: "pipe"});
+      } catch (bootstrapErr) {
+        logger.warn(
+          `[${doc.repo}#${doc.prNumber}] bun bootstrap failed (non-fatal): ${bootstrapErr}`
+        );
+      }
 
       const result = await this.agentRunner.run({
         groupId: doc.slackGroupId,
@@ -534,7 +556,7 @@ export class PrWatcher {
         prompt,
         modelBackend: "claude",
         env: {
-          SHADE_CWD: repoPath,
+          SHADE_CWD: worktreePath,
         },
         timeout: fixType === "conflicts" ? 300000 : 600000,
         idleTimeout: 120000,
@@ -547,6 +569,19 @@ export class PrWatcher {
     } catch (err) {
       doc.autoFixStatus = "failed";
       logger.error(`Auto-fix ${fixType} failed for ${doc.repo}#${doc.prNumber}: ${err}`);
+    } finally {
+      // Clean up worktree
+      try {
+        const {execSync} = await import("node:child_process");
+        execSync(`git worktree remove --force ${worktreePath}`, {
+          cwd: repoPath,
+          timeout: 10000,
+          stdio: "pipe",
+        });
+        logger.debug(`[${doc.repo}#${doc.prNumber}] Cleaned up worktree ${worktreePath}`);
+      } catch (cleanupErr) {
+        logger.warn(`[${doc.repo}#${doc.prNumber}] Worktree cleanup failed: ${cleanupErr}`);
+      }
     }
 
     await doc.save();
