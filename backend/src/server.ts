@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import {AdminApp} from "@terreno/admin-backend";
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
@@ -36,10 +37,12 @@ const isDeployed = process.env.NODE_ENV === "production";
 
 // Global error handlers — prevent uncaught errors from crashing the process
 process.on("uncaughtException", (error) => {
+  Sentry.captureException(error);
   logError("Uncaught exception (process will continue)", error);
 });
 
 process.on("unhandledRejection", (reason, _promise) => {
+  Sentry.captureException(reason);
   logError("Unhandled promise rejection", reason);
 });
 

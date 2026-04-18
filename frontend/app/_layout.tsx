@@ -1,5 +1,6 @@
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import {DefaultTheme, ThemeProvider} from "@react-navigation/native";
+import * as Sentry from "@sentry/react";
 import {useFonts} from "expo-font";
 import {Stack} from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -11,6 +12,11 @@ import {TerrenoProvider} from "@terreno/ui";
 import {Provider} from "react-redux";
 import {PersistGate} from "redux-persist/integration/react";
 import {persistor, store} from "@/store";
+
+Sentry.init({
+  dsn: "https://73dfd26d7a1d38d500ae6a136ab5a0b0@o106257.ingest.us.sentry.io/4511082700341248",
+  tracesSampleRate: 1.0,
+});
 
 export {ErrorBoundary} from "expo-router";
 
