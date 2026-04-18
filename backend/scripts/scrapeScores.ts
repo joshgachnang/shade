@@ -10,6 +10,7 @@
  */
 
 import {join} from "node:path";
+import {AtpAgent, RichText} from "@atproto/api";
 import * as cheerio from "cheerio";
 import {TriviaScore} from "../src/models/triviaScore";
 import {triviaConnection} from "../src/models/triviaQuestion";
@@ -24,10 +25,13 @@ import {
 
 await loadEnvFiles(join(import.meta.dir, ".."));
 
-const DEFAULT_URL = "https://90fmtrivia.org/scores.html";
+const DEFAULT_URL =
+  "https://www.90fmtrivia.org/TriviaScores2026/Results/TSK_results.html";
 const SCRAPE_INTERVAL_MS = 5 * 60 * 1000;
 const CONTEST_YEAR = 2026;
 const SLACK_WEBHOOK = process.env.TRIVIA_STATS_SLACK_WEBHOOK;
+const BLUESKY_IDENTIFIER = process.env.BLUESKY_IDENTIFIER;
+const BLUESKY_PASSWORD = process.env.BLUESKY_PASSWORD;
 
 const CONTEST_START = new Date("2026-04-17T18:00:00-05:00");
 const CONTEST_END = new Date("2026-04-20T17:00:00-05:00");
@@ -37,6 +41,26 @@ interface ParseResult {
   year: number;
   scores: ParsedScore[];
 }
+
+/** Track which hours we've already posted about to avoid duplicate notifications. */
+const postedHours = new Set<number>();
+
+const postToBluesky = async (text: string): Promise<void> => {
+  if (!BLUESKY_IDENTIFIER || !BLUESKY_PASSWORD) {
+    console.warn("Bluesky credentials not set, skipping post");
+    return;
+  }
+  try {
+    const agent = new AtpAgent({service: "https://bsky.social"});
+    await agent.login({identifier: BLUESKY_IDENTIFIER, password: BLUESKY_PASSWORD});
+    const rt = new RichText({text});
+    await rt.detectFacets(agent);
+    await agent.post({text: rt.text, facets: rt.facets});
+    console.info("  Posted to Bluesky");
+  } catch (err) {
+    console.error("  Bluesky post failed:", err);
+  }
+};
 
 const postToSlack = async (text: string): Promise<void> => {
   if (!SLACK_WEBHOOK) {
@@ -146,7 +170,21 @@ const scrapeOnce = async (url: string): Promise<void> => {
   const {inserted, updated} = await saveScores(result);
   console.info(`  DB: ${inserted} inserted, ${updated} updated`);
 
+  if (inserted === 0 && updated === 0) {
+    console.info("  No changes, skipping notifications");
+    return;
+  }
+
+  const isNewHour = !postedHours.has(result.hour);
+  postedHours.add(result.hour);
+
+  if (!isNewHour) {
+    console.info(`  Hour ${result.hour} already posted, skipping notifications`);
+    return;
+  }
+
   const hourLabel = result.hour > 0 ? `Hour ${result.hour}` : "Final";
+
   const slackMessage = [
     `*Trivia ${result.year} — ${hourLabel} Scores*`,
     `${result.scores.length} teams scraped (${inserted} new, ${updated} updated)`,
@@ -155,7 +193,16 @@ const scrapeOnce = async (url: string): Promise<void> => {
     formatTopScores(result.scores),
   ].join("\n");
 
-  await postToSlack(slackMessage);
+  const blueskyMessage = [
+    `Trivia ${result.year} — ${hourLabel} Scores are posted!`,
+    "",
+    "Top 10:",
+    formatTopScores(result.scores),
+    "",
+    "http://www.90fmtrivia.org/TriviaScores2026/",
+  ].join("\n");
+
+  await Promise.all([postToSlack(slackMessage), postToBluesky(blueskyMessage)]);
 };
 
 const runLoop = async (url: string): Promise<void> => {
@@ -190,6 +237,17 @@ const waitForConnection = async (): Promise<void> => {
   });
 };
 
+/** Seed postedHours from the DB so we don't re-notify for hours already scraped. */
+const seedPostedHours = async (): Promise<void> => {
+  const existingHours = await TriviaScore.distinct("hour", {year: CONTEST_YEAR});
+  for (const h of existingHours) {
+    postedHours.add(h);
+  }
+  if (postedHours.size > 0) {
+    console.info(`  Already have scores for hours: ${[...postedHours].sort((a, b) => a - b).join(", ")}`);
+  }
+};
+
 const main = async (): Promise<void> => {
   const args = process.argv.slice(2);
   const loopMode = args.includes("--loop");
@@ -201,6 +259,7 @@ const main = async (): Promise<void> => {
   console.info("Connected");
 
   if (loopMode) {
+    await seedPostedHours();
     await runLoop(url);
   } else {
     await scrapeOnce(url);
