@@ -51,6 +51,13 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       allowedUserIds: {type: [String], default: []},
     },
 
+    triviaMonitor: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      questionsWebhook: {type: String, default: ""},
+      answersWebhook: {type: String, default: ""},
+    },
+
     triviaStats: {
       slackWebhook: {type: String, default: ""},
       blueskyIdentifier: {type: String, default: ""},
