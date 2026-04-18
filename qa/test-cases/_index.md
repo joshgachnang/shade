@@ -8,8 +8,8 @@ Last updated: 2026-04-18
 | auth-signup.md | Signup flow | 5 | 2 | 1 | 1 | 2/5 |
 | auth-logout.md | Logout flow | 4 | 1 | 3 | 0 | 1/4 |
 | auth-routing.md | Auth routing | 4 | 2 | 2 | 0 | 3/4 |
-| navigation-tabs.md | Tab navigation | 5 | 0 | 4 | 1 | 3/5 |
+| navigation-tabs.md | Tab navigation | 6 | 0 | 5 | 1 | 4/6 |
 | not-found.md | Not Found screen | 3 | 0 | 0 | 3 | 2/3 |
 | accessibility.md | Accessibility | 4 | 0 | 0 | 4 | 1/4 |
 
-**Total:** 33 test cases | 8 P0 | 12 P1 | 11 P2 | 16/33 automated
+**Total:** 34 test cases | 8 P0 | 13 P1 | 11 P2 | 17/34 automated

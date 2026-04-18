@@ -15,6 +15,20 @@ test.describe("Feature: Tab Navigation", () => {
     await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
   });
 
+  test("Profile tab loads the signed-in user via GET /auth/me", async ({page}) => {
+    const profileMeResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/auth/me") &&
+        response.request().method() === "GET" &&
+        response.status() === 200
+    );
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
+    await profileMeResponse;
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
+  });
+
   test("user can switch from Home to Search tab", async ({page}) => {
     await page.getByRole("tab", {name: "Search"}).click();
     await page.getByTestId("search-screen").waitFor({state: "visible", timeout: 15000});
