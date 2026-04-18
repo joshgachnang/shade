@@ -38,12 +38,8 @@ const RootLayoutNav: React.FC = () => {
 
   return (
     <ThemeProvider value={DefaultTheme}>
-      <Stack>
-        {!userId ? (
-          <Stack.Screen name="login" options={{headerShown: false}} />
-        ) : (
-          <Stack.Screen name="(tabs)" options={{headerShown: false}} />
-        )}
+      <Stack screenOptions={{headerShown: false}}>
+        {!userId ? <Stack.Screen name="login" /> : <Stack.Screen name="(tabs)" />}
       </Stack>
     </ThemeProvider>
   );
