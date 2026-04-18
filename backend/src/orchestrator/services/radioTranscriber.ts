@@ -6,6 +6,9 @@ import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../../config";
 import {loadAppConfig} from "../../models/appConfig";
+
+const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://api.shade.nang.io";
+
 // Using native WebSocket with Deepgram's token subprotocol auth
 import {RadioStream} from "../../models/radioStream";
 import {Transcript} from "../../models/transcript";
@@ -613,17 +616,6 @@ export class RadioTranscriber {
     active.batchStartedAt = new Date();
     active.flushAudioChunks = [];
 
-    // Always save to DB
-    try {
-      await Transcript.create({
-        radioStreamId: active.doc._id,
-        targetGroupId: active.doc.targetGroupId,
-        content: text,
-      });
-    } catch (err) {
-      logger.error(`Failed to save transcript for "${active.doc.name}": ${err}`);
-    }
-
     // Note: we always post transcripts even during music — better to have lyrics than miss speech
 
     const timestamp = this.formatTimestamp(batchStart);
@@ -631,6 +623,7 @@ export class RadioTranscriber {
 
     // Convert audio to MP3 and upload with message
     let mp3Buffer: Buffer | null = null;
+    let recordingUrl: string | undefined;
     logger.debug(`Audio chunks for flush: ${audioChunks.length} chunks`);
     if (audioChunks.length > 0) {
       try {
@@ -648,9 +641,22 @@ export class RadioTranscriber {
         await fs.mkdir(mp3Dir, {recursive: true});
         const mp3Filename = `${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`;
         await fs.writeFile(path.join(mp3Dir, mp3Filename), mp3Buffer);
+        recordingUrl = `${BASE_URL}/static/recordings/${active.streamId}/${mp3Filename}`;
       } catch (err) {
         logger.debug(`Failed to save MP3 for "${active.doc.name}": ${err}`);
       }
+    }
+
+    // Always save to DB
+    try {
+      await Transcript.create({
+        radioStreamId: active.doc._id,
+        targetGroupId: active.doc.targetGroupId,
+        content: text,
+        recordingUrl,
+      });
+    } catch (err) {
+      logger.error(`Failed to save transcript for "${active.doc.name}": ${err}`);
     }
 
     try {
