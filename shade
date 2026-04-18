@@ -25,36 +25,48 @@ BUN_PATH="$(command -v bun)"
 
 # --- Service Registry ---
 # To add a service: add its name to ALL_SERVICES and entries to the two lookup functions.
-ALL_SERVICES="backend worker"
+ALL_SERVICES="backend worker scrape-scores"
 
 service_entry() {
   case "$1" in
-    backend) echo "backend/src/index.ts" ;;
-    worker)  echo "packages/shade-worker/src/index.ts" ;;
-    *)       echo "" ;;
+    backend)       echo "backend/src/index.ts" ;;
+    worker)        echo "packages/shade-worker/src/index.ts" ;;
+    scrape-scores) echo "backend/scripts/scrapeScores.ts" ;;
+    *)             echo "" ;;
   esac
 }
 
 service_after() {
   case "$1" in
-    worker) echo "shade-backend" ;;
-    *)      echo "" ;;
+    worker)        echo "shade-backend" ;;
+    scrape-scores) echo "shade-backend" ;;
+    *)             echo "" ;;
+  esac
+}
+
+# Extra runtime arguments appended after the built JS file
+service_args() {
+  case "$1" in
+    scrape-scores) echo "--loop" ;;
+    *)             echo "" ;;
   esac
 }
 
 # Packages that fail to bundle (CJS interop issues) and must resolve from node_modules at runtime
 service_externals() {
   case "$1" in
-    backend) echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk ws" ;;
-    *)       echo "" ;;
+    backend)       echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk ws" ;;
+    scrape-scores) echo "cheerio @atproto/api" ;;
+    *)             echo "" ;;
   esac
 }
 
 # Directory containing node_modules for external resolution (workspace that owns the deps)
 service_node_modules() {
   case "$1" in
-    backend) echo "backend/node_modules" ;;
-    *)       echo "" ;;
+    backend)       echo "backend/node_modules" ;;
+    scrape-scores) echo "backend/node_modules" ;;
+    *)             echo "" ;;
   esac
 }
 
@@ -210,6 +222,17 @@ install_launchd() {
   env_xml="${env_xml}      <key>PATH</key>
       <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${HOME}/.bun/bin</string>"
 
+  # Build ProgramArguments with optional extra args
+  local args_xml="    <string>${BUN_PATH}</string>
+    <string>run</string>
+    <string>${PROJECT_DIR}/dist/shade-${name}.js</string>"
+  local extra_args
+  extra_args="$(service_args "$name")"
+  for arg in $extra_args; do
+    args_xml="${args_xml}
+    <string>${arg}</string>"
+  done
+
   cat > "$plist_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -221,9 +244,7 @@ install_launchd() {
 
   <key>ProgramArguments</key>
   <array>
-    <string>${BUN_PATH}</string>
-    <string>run</string>
-    <string>${PROJECT_DIR}/dist/shade-${name}.js</string>
+${args_xml}
   </array>
 
   <key>WorkingDirectory</key>
@@ -275,6 +296,9 @@ install_systemd() {
     after_clause="After=${after}.service"
   fi
 
+  local extra_args
+  extra_args="$(service_args "$name")"
+
   cat > "$unit_path" <<EOF
 [Unit]
 Description=Shade ${name}
@@ -282,7 +306,7 @@ ${after_clause}
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bun run ${PROJECT_DIR}/dist/shade-${name}.js
+ExecStart=/usr/bin/env bun run ${PROJECT_DIR}/dist/shade-${name}.js ${extra_args}
 EnvironmentFile=${env_file}
 WorkingDirectory=${PROJECT_DIR}
 Restart=on-failure
@@ -621,6 +645,58 @@ cmd_trivia_answer() {
   "$BUN_PATH" run scripts/triviaAnswerer.ts "$@"
 }
 
+# --- Run Every ---
+cmd_run_every() {
+  local interval_arg="${1:-}"
+  shift || true
+
+  if [[ -z "$interval_arg" || $# -eq 0 ]]; then
+    echo "Usage: shade run-every <interval> <command> [args...]"
+    echo ""
+    echo "Runs a shade command repeatedly on a fixed interval."
+    echo ""
+    echo "Interval format: number followed by s, m, or h"
+    echo "  5m   = every 5 minutes"
+    echo "  30s  = every 30 seconds"
+    echo "  2h   = every 2 hours"
+    echo ""
+    echo "Examples:"
+    echo "  shade run-every 5m scrape-scores"
+    echo "  shade run-every 1h scrape-vault --year 2025"
+    exit 1
+  fi
+
+  # Parse interval to seconds
+  local num="${interval_arg%[smh]}"
+  local unit="${interval_arg: -1}"
+  local interval_secs
+
+  case "$unit" in
+    s) interval_secs="$num" ;;
+    m) interval_secs=$((num * 60)) ;;
+    h) interval_secs=$((num * 3600)) ;;
+    *)
+      echo "Invalid interval: $interval_arg (use e.g. 5m, 30s, 2h)" >&2
+      exit 1
+      ;;
+  esac
+
+  local subcmd="$1"
+  shift
+
+  echo "==> Running 'shade $subcmd $*' every ${interval_arg} (${interval_secs}s)"
+  echo "    Press Ctrl+C to stop."
+  echo ""
+
+  while true; do
+    echo "--- $(date '+%Y-%m-%d %H:%M:%S') ---"
+    # Re-exec this script with the sub-command; continue on failure
+    "$0" "$subcmd" "$@" || echo "  [warn] Command exited with status $?"
+    echo ""
+    sleep "$interval_secs"
+  done
+}
+
 # --- Main ---
 COMMAND="${1:-deploy}"
 shift || true
@@ -642,12 +718,14 @@ case "$COMMAND" in
   scrape-scores-loop) cmd_scrape_scores_loop "$@" ;;
   scrape-vault)      cmd_scrape_vault "$@" ;;
   trivia-answer)     cmd_trivia_answer "$@" ;;
+  run-every)         cmd_run_every "$@" ;;
   *)
     echo "Usage: shade <command> [service...]"
     echo ""
     echo "Local:   deploy, build, install, start, stop, restart, status, logs, uninstall"
     echo "Movie:   search <query> [--type objects|characters|text|tags]"
     echo "Trivia:  scrape-scores, scrape-scores-loop, scrape-vault, trivia-answer"
+    echo "Repeat:  run-every <interval> <command> [args...]"
     echo "Remote:  remote-setup <host>, remote-deploy <host> [service...]"
     echo ""
     echo "Services: $ALL_SERVICES"
