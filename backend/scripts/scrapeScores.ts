@@ -187,7 +187,7 @@ const scrapeOnce = async (url: string): Promise<void> => {
   const hourLabel = result.hour > 0 ? `Hour ${result.hour}` : "Final";
 
   const wiiTeam = findWiiTeam(result.scores);
-  const slackLines = [`*Trivia ${result.year} — ${hourLabel} Scores*`];
+  const slackLines = [`<!channel> *Trivia ${result.year} — ${hourLabel} Scores*`];
   if (wiiTeam) {
     slackLines.push(`${wiiTeam.teamName}: #${wiiTeam.place} with ${wiiTeam.score.toLocaleString()} pts`);
   } else {
@@ -195,11 +195,7 @@ const scrapeOnce = async (url: string): Promise<void> => {
   }
   const slackMessage = slackLines.join("\n");
 
-  const blueskyMessage = [
-    `Trivia ${result.year} — ${hourLabel} Scores are posted!`,
-    "",
-    "http://www.90fmtrivia.org/TriviaScores2026/",
-  ].join("\n");
+  const blueskyMessage = `Trivia ${result.year} — ${hourLabel} Scores are posted!\nhttp://www.90fmtrivia.org/TriviaScores2026/`;
 
   await Promise.all([postToSlack(slackMessage), postToBluesky(blueskyMessage)]);
 };
