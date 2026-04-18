@@ -58,9 +58,31 @@ setup("authenticate", async ({page, request}) => {
 
   // Reload to pick up the persisted state
   await page.reload({timeout: 60000});
+  await page.waitForLoadState("domcontentloaded");
+
+  // Ensure redux-persist rehydrated the injected auth before asserting routing
+  await page.waitForFunction(
+    (): boolean => {
+      try {
+        const raw = localStorage.getItem("persist:root");
+        if (!raw) {
+          return false;
+        }
+        const parsed = JSON.parse(raw) as {auth?: string};
+        if (!parsed.auth) {
+          return false;
+        }
+        const auth = JSON.parse(parsed.auth) as {userId?: string};
+        return Boolean(auth.userId);
+      } catch {
+        return false;
+      }
+    },
+    {timeout: 30000}
+  );
 
   // Verify we're authenticated — login screen should not appear
-  await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
+  await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 30000});
 
   // Save browser state for other tests
   await page.context().storageState({path: "./e2e/.auth/user.json"});
