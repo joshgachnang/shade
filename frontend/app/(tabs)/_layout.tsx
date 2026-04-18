@@ -82,7 +82,7 @@ const TabLayout: React.FC = () => {
         name="admin"
         options={{
           headerShown: false,
-          href: isAdmin ? "/(tabs)/admin" : null,
+          href: isAdmin ? "/admin" : null,
           tabBarIcon: renderAdminIcon,
           title: "Admin",
         }}
