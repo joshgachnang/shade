@@ -9,6 +9,9 @@ import {loadAppConfig} from "../../models/appConfig";
 
 const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://api.shade.nang.io";
 
+/** Base URL for transcript recording links (http, not https). */
+const RECORDING_PUBLIC_BASE_URL = BASE_URL.replace(/^https:\/\//i, "http://");
+
 // Using native WebSocket with Deepgram's token subprotocol auth
 import {RadioStream} from "../../models/radioStream";
 import {Transcript} from "../../models/transcript";
@@ -688,7 +691,7 @@ export class RadioTranscriber {
         await fs.mkdir(mp3Dir, {recursive: true});
         const mp3Filename = `${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`;
         await fs.writeFile(path.join(mp3Dir, mp3Filename), mp3Buffer);
-        recordingUrl = `${BASE_URL}/static/recordings/${active.streamId}/${mp3Filename}`;
+        recordingUrl = `${RECORDING_PUBLIC_BASE_URL}/static/recordings/${active.streamId}/${mp3Filename}`;
       } catch (err) {
         logger.debug(`Failed to save MP3 for "${active.doc.name}": ${err}`);
       }
