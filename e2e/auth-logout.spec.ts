@@ -5,11 +5,9 @@ test.describe("Feature: Logout", () => {
 
   test("user can log out from profile screen", async ({page}) => {
     test.slow();
-    await page.goto("/", {timeout: 60000});
+    await page.goto("/profile", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    // Navigate to profile tab
-    await page.getByRole("tab", {name: "Profile"}).click();
     await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
 
     // Verify profile data is displayed

@@ -29,7 +29,6 @@ const TabLayout: React.FC = () => {
 
   return (
     <Tabs
-      detachInactiveScreens={false}
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
       }}

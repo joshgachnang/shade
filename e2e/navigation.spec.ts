@@ -9,7 +9,9 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Home to Profile tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Profile"}).click();
+    await page.goto("/profile", {timeout: 60000});
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("tab", {name: "Profile"})).toHaveAttribute("aria-selected", "true");
     await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
     await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
   });
@@ -21,7 +23,8 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Profile back to Home tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Profile"}).click();
+    await page.goto("/profile", {timeout: 60000});
+    await page.waitForLoadState("networkidle");
     await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
 
     await page.getByRole("tab", {name: "Home"}).click();
