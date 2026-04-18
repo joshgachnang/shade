@@ -5,6 +5,7 @@ import path from "node:path";
 import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {z} from "zod";
+import {loadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
 import {Message} from "../models/message";
 import {RadioStream} from "../models/radioStream";
@@ -1104,6 +1105,53 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
+  const toggleTriviaAutoSearchTool = tool(
+    "toggle_trivia_auto_search",
+    "Enable or disable the trivia auto-search service. When enabled, Shade watches radio transcripts for trivia questions and automatically researches answers. When disabled, transcript monitoring stops.",
+    {
+      enabled: z.boolean().describe("true to enable trivia auto-search, false to disable"),
+    },
+    async (args) => {
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "toggle_trivia_auto_search",
+        groupId: ctx.groupId,
+        enabled: args.enabled,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Trivia auto-search ${args.enabled ? "enable" : "disable"} queued (${fileId}).`,
+          },
+        ],
+      };
+    }
+  );
+
+  const triviaAutoSearchStatusTool = tool(
+    "trivia_auto_search_status",
+    "Check the current status of the trivia auto-search service — whether it's enabled in config and whether the polling loop is actively running.",
+    {},
+    async () => {
+      try {
+        const config = await loadAppConfig();
+        const enabled = config.triviaAutoSearch.enabled;
+        const groupId = config.triviaAutoSearch.groupId;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({enabled, groupId: groupId || null}, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error checking status: ${msg}`}]};
+      }
+    }
+  );
+
   return [
     sendMessageTool,
     addReactionTool,
@@ -1135,6 +1183,8 @@ const buildTools = (ctx: McpContext) => {
     stopRadioStreamTool,
     listRadioStreamsTool,
     toggleTranscriptionTool,
+    toggleTriviaAutoSearchTool,
+    triviaAutoSearchStatusTool,
   ];
 };
 

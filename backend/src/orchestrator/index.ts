@@ -4,7 +4,7 @@ import {Group} from "../models/group";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
-import type {IpcCreateFeature, IpcRadioStream} from "./ipc";
+import type {IpcCreateFeature, IpcRadioStream, IpcTriviaToggle} from "./ipc";
 import {IpcWatcher} from "./ipc";
 import {ensureGroupDirectory, initGlobalMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
@@ -169,6 +169,18 @@ export const startOrchestrator = async (
   } catch (err) {
     logError("Trivia monitor start error (non-fatal)", err);
   }
+
+  ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {
+    const {AppConfig, reloadAppConfig} = await import("../models/appConfig");
+    await AppConfig.findOneAndUpdate({}, {$set: {"triviaAutoSearch.enabled": data.enabled}});
+    await reloadAppConfig();
+
+    if (data.enabled) {
+      await triviaAutoSearch.start();
+    } else {
+      triviaAutoSearch.stop();
+    }
+  });
 
   ipcWatcher.setRadioStream(async (data: IpcRadioStream) => {
     const {RadioStream} = await import("../models/radioStream");
