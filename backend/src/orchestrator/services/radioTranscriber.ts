@@ -7,7 +7,7 @@ import {logger} from "@terreno/api";
 import {paths} from "../../config";
 import {loadAppConfig} from "../../models/appConfig";
 
-const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://api.shade.nang.io";
+const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://shade-api.nang.io";
 
 /** Base URL for transcript recording links (http, not https). */
 const RECORDING_PUBLIC_BASE_URL = BASE_URL.replace(/^https:\/\//i, "http://");
