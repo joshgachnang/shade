@@ -1,4 +1,5 @@
 import {logger} from "@terreno/api";
+import {FRAME_STATUS, MOVIE_STATUS} from "../constants/statuses";
 import {Frame, FrameAnalysis, Movie} from "../models";
 import {analyzeImage} from "./openRouter";
 import {buildSystemPrompt, buildUserPrompt} from "./visionPrompt";
@@ -66,12 +67,12 @@ const analyzeFrame = async (
     tokensUsed: response.tokensUsed,
   });
 
-  await Frame.findByIdAndUpdate(frameId, {status: "complete"});
+  await Frame.findByIdAndUpdate(frameId, {status: FRAME_STATUS.complete});
 };
 
 export const analyzeAllFrames = async (movieId: string, concurrency = 5): Promise<void> => {
   const movie = await Movie.findExactlyOne({_id: movieId});
-  const frames = await Frame.find({movieId, status: "pending"}).sort({frameNumber: 1});
+  const frames = await Frame.find({movieId, status: FRAME_STATUS.pending}).sort({frameNumber: 1});
 
   logger.info(
     `Analyzing ${frames.length} frames for movie ${movie.title} with concurrency ${concurrency}`
@@ -83,7 +84,7 @@ export const analyzeAllFrames = async (movieId: string, concurrency = 5): Promis
   for (let i = 0; i < frames.length; i += concurrency) {
     // Check if movie was cancelled
     const currentMovie = await Movie.findOneOrNone({_id: movieId});
-    if (!currentMovie || currentMovie.status === "error") {
+    if (!currentMovie || currentMovie.status === MOVIE_STATUS.error) {
       logger.info(`Movie ${movieId} processing cancelled, stopping analysis`);
       return;
     }
@@ -109,7 +110,7 @@ export const analyzeAllFrames = async (movieId: string, concurrency = 5): Promis
         const frame = batch[j];
         logger.error(`Failed to analyze frame ${frame.frameNumber}: ${result.reason}`);
         await Frame.findByIdAndUpdate(frame._id, {
-          status: "error",
+          status: FRAME_STATUS.error,
           errorMessage: String(result.reason),
         });
       } else {

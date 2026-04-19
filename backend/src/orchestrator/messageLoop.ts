@@ -37,7 +37,7 @@ export class MessageLoop {
       });
     }, interval);
 
-    logger.info(`Message loop started (interval: ${interval}ms)`);
+    logger.debug(`Message loop started (interval: ${interval}ms)`);
   }
 
   stop(): void {

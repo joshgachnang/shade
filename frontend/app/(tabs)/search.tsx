@@ -1,61 +1,27 @@
-import {baseUrl} from "@terreno/rtk";
 import {Box, Card, Heading, Page, Spinner, Text, TextField} from "@terreno/ui";
 import {useRouter} from "expo-router";
 import type React from "react";
-import {useCallback, useState} from "react";
+import {useCallback} from "react";
 import {FlatList, Image, Pressable} from "react-native";
+import {searchFilterOptions, useSearchState} from "@/hooks/useSearchState";
 import {type FrameAnalysis, useSearchQuery, useSearchSuggestQuery} from "@/store/sdk";
-
-type FilterType = "all" | "objects" | "characters" | "text" | "tags";
-
-const filterOptions: Array<{key: FilterType; label: string}> = [
-  {key: "all", label: "All"},
-  {key: "objects", label: "Objects"},
-  {key: "characters", label: "Characters"},
-  {key: "text", label: "Text"},
-  {key: "tags", label: "Tags"},
-];
-
-const formatTimestamp = (seconds: number): string => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
+import {formatTimestamp, frameThumbnailStyle, getFrameImageUrl} from "@/utils";
 
 const SearchScreen: React.FC = () => {
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const search = useSearchState();
 
-  const {data: suggestions} = useSearchSuggestQuery(query, {
-    skip: query.length < 2,
+  const {data: suggestions} = useSearchSuggestQuery(search.query, {
+    skip: search.query.length < 2,
   });
 
   const {data: searchResults, isLoading} = useSearchQuery(
-    {q: submittedQuery, type: activeFilter},
-    {skip: !submittedQuery}
+    {q: search.submittedQuery, type: search.activeFilter},
+    {skip: !search.submittedQuery}
   );
 
-  const handleSubmit = useCallback(() => {
-    setSubmittedQuery(query);
-    setShowSuggestions(false);
-  }, [query]);
-
-  const handleSuggestionPress = useCallback((suggestion: string) => {
-    setQuery(suggestion);
-    setSubmittedQuery(suggestion);
-    setShowSuggestions(false);
-  }, []);
-
-  const handleFilterChange = useCallback((filter: FilterType) => {
-    setActiveFilter(filter);
-  }, []);
-
   const handleResultPress = useCallback(
-    (result: FrameAnalysis & {score: number}) => {
+    (result: FrameAnalysis & {score: number}): void => {
       router.push(`/movies/${result.movieId}/frames/${result.frameId}` as any);
     },
     [router]
@@ -70,10 +36,13 @@ const SearchScreen: React.FC = () => {
               testID={`search-result-${index}-thumbnail`}
               source={{
                 uri: item.frame
-                  ? `${baseUrl}/static/movies/${item.movieId}/frames/frame_${String((item.frame.frameNumber || 0) + 1).padStart(6, "0")}.jpg`
+                  ? getFrameImageUrl({
+                      movieId: item.movieId,
+                      frameNumber: item.frame.frameNumber || 0,
+                    })
                   : undefined,
               }}
-              style={{width: 120, height: 68, borderRadius: 4}}
+              style={frameThumbnailStyle}
             />
             <Box flex="grow" gap={1} testID={`search-result-${index}-context`}>
               <Text size="sm" color="secondaryLight">
@@ -107,41 +76,43 @@ const SearchScreen: React.FC = () => {
           <TextField
             testID="search-input"
             placeholder="Search for objects, characters, text..."
-            value={query}
-            onChange={setQuery}
-            onFocus={() => setShowSuggestions(true)}
-            onSubmitEditing={handleSubmit}
+            value={search.query}
+            onChange={search.setQuery}
+            onFocus={search.openSuggestions}
+            onSubmitEditing={search.submit}
           />
 
           {/* Suggestions */}
-          {showSuggestions && suggestions?.suggestions && suggestions.suggestions.length > 0 && (
-            <Box testID="search-suggestions-list" color="base" rounding="sm" marginTop={1}>
-              {suggestions.suggestions.map((s, i) => (
-                <Pressable key={s} onPress={() => handleSuggestionPress(s)}>
-                  <Box testID={`search-suggestion-${i}`} padding={2}>
-                    <Text size="sm">{s}</Text>
-                  </Box>
-                </Pressable>
-              ))}
-            </Box>
-          )}
+          {search.showSuggestions &&
+            suggestions?.suggestions &&
+            suggestions.suggestions.length > 0 && (
+              <Box testID="search-suggestions-list" color="base" rounding="sm" marginTop={1}>
+                {suggestions.suggestions.map((s, i) => (
+                  <Pressable key={s} onPress={() => search.applySuggestion(s)}>
+                    <Box testID={`search-suggestion-${i}`} padding={2}>
+                      <Text size="sm">{s}</Text>
+                    </Box>
+                  </Pressable>
+                ))}
+              </Box>
+            )}
         </Box>
 
         {/* Filter tabs */}
         <Box direction="row" gap={2} wrap>
-          {filterOptions.map(({key, label}) => (
+          {searchFilterOptions.map(({key, label}) => (
             <Pressable
               key={key}
               testID={`search-filter-${key}`}
-              onPress={() => handleFilterChange(key)}
+              onPress={() => search.setActiveFilter(key)}
             >
               <Box
                 paddingX={3}
                 paddingY={1}
                 rounding="full"
-                color={activeFilter === key ? "primary" : "neutralLight"}
+                color={search.activeFilter === key ? "primary" : "neutralLight"}
               >
-                <Text size="sm" color={activeFilter === key ? "inverted" : "primary"}>
+                <Text size="sm" color={search.activeFilter === key ? "inverted" : "primary"}>
                   {label}
                 </Text>
               </Box>
@@ -158,7 +129,7 @@ const SearchScreen: React.FC = () => {
 
         {searchResults && searchResults.count === 0 && (
           <Box testID="search-empty-state" padding={8} alignItems="center">
-            <Text color="secondaryLight">No results found for "{submittedQuery}"</Text>
+            <Text color="secondaryLight">No results found for "{search.submittedQuery}"</Text>
           </Box>
         )}
 

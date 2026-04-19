@@ -37,67 +37,99 @@ export const formatMessagesAsXml = (messages: MessageDocument[], assistantName: 
   return lines.join("\n");
 };
 
+const MAX_CONTEXT_MESSAGES = 100;
+
+/**
+ * System prompt template. `{assistantName}` and `{groupName}` are substituted
+ * at render time. Kept at module scope so it's easy to edit without scanning
+ * `buildPromptForGroup`.
+ */
+const PROMPT_TEMPLATE = [
+  `You are {assistantName}, responding in a group chat called "{groupName}".`,
+  "",
+  "Here is the conversation from the last few hours:",
+  "{conversation}",
+  "",
+  `The latest message requiring your response is from {sender}:`,
+  "{triggerContent}",
+  "",
+  "Respond naturally and helpfully. Keep responses concise unless detail is needed.",
+  "You have context from the conversation above — reference it when relevant.",
+  "If you need more conversation history for context, use the get_channel_history tool.",
+].join("\n");
+
+/**
+ * Fetch the conversation context: every message in the time window, plus any
+ * unprocessed user messages that fall outside it. One `$or` + sort + limit
+ * query instead of the previous two-query merge. Results are sorted ascending
+ * and capped at `MAX_CONTEXT_MESSAGES` (keeping the most recent).
+ */
+const fetchContextMessages = async (
+  groupId: GroupDocument["_id"],
+  windowStart: Date
+): Promise<{contextMessages: MessageDocument[]; windowCount: number; unprocessedCount: number}> => {
+  const messages = await Message.find({
+    groupId,
+    $or: [{created: {$gte: windowStart}}, {processedAt: {$exists: false}, isFromBot: false}],
+  })
+    .sort({created: 1})
+    .limit(MAX_CONTEXT_MESSAGES * 2);
+
+  let windowCount = 0;
+  let unprocessedCount = 0;
+  for (const msg of messages) {
+    const inWindow = msg.created >= windowStart;
+    if (inWindow) {
+      windowCount++;
+    }
+    if (!inWindow && !msg.isFromBot && !msg.processedAt) {
+      unprocessedCount++;
+    }
+  }
+
+  const contextMessages =
+    messages.length > MAX_CONTEXT_MESSAGES ? messages.slice(-MAX_CONTEXT_MESSAGES) : messages;
+
+  return {contextMessages, windowCount, unprocessedCount};
+};
+
+const renderPrompt = (args: {
+  assistantName: string;
+  group: GroupDocument;
+  triggeringMessage: MessageDocument;
+  conversationXml: string;
+}): string => {
+  return PROMPT_TEMPLATE.replace("{assistantName}", args.assistantName)
+    .replace("{groupName}", args.group.name)
+    .replace("{conversation}", args.conversationXml)
+    .replace("{sender}", args.triggeringMessage.sender)
+    .replace("{triggerContent}", args.triggeringMessage.content);
+};
+
 export const buildPromptForGroup = async (
   group: GroupDocument,
   triggeringMessage: MessageDocument
 ): Promise<FormattedPrompt> => {
   const appConfig = await loadAppConfig();
-  const assistantName = appConfig.assistantName;
-  const groupName = group.name;
+  const {assistantName} = appConfig;
   const windowStart = new Date(Date.now() - appConfig.orchestrator.conversationWindowMs);
 
-  logger.debug(`Building prompt for group ${groupName}, trigger from ${triggeringMessage.sender}`);
+  logger.debug(`Building prompt for group ${group.name}, trigger from ${triggeringMessage.sender}`);
 
-  // Get all messages (user + bot) from the last 4 hours for conversation context
-  const conversationMessages = await Message.find({
-    groupId: group._id,
-    created: {$gte: windowStart},
-  })
-    .sort({created: 1})
-    .limit(100);
+  const {contextMessages, windowCount, unprocessedCount} = await fetchContextMessages(
+    group._id,
+    windowStart
+  );
 
-  // Also get any unprocessed messages that might be older than 4h (edge case)
-  const unprocessedMessages = await Message.find({
-    groupId: group._id,
-    processedAt: {$exists: false},
-    isFromBot: false,
-  }).sort({created: 1});
-
-  // Merge: use conversation window as base, add any unprocessed not already included
-  const seenIds = new Set(conversationMessages.map((m) => m._id.toString()));
-  const allMessages = [...conversationMessages];
-  for (const msg of unprocessedMessages) {
-    if (!seenIds.has(msg._id.toString())) {
-      allMessages.push(msg);
-    }
-  }
-  allMessages.sort((a, b) => a.created.getTime() - b.created.getTime());
-
-  // Cap at 100 messages, keep the most recent
-  const contextMessages = allMessages.length > 100 ? allMessages.slice(-100) : allMessages;
-
-  // Track which unprocessed messages are included (for marking as processed later)
   const messageIds = contextMessages.filter((m) => !m.isFromBot).map((m) => m._id.toString());
 
   logger.debug(
-    `Prompt context for group ${groupName}: ${contextMessages.length} messages (${conversationMessages.length} from window, ${unprocessedMessages.length} unprocessed)`
+    `Prompt context for group ${group.name}: ${contextMessages.length} messages ` +
+      `(${windowCount} from window, ${unprocessedCount} unprocessed)`
   );
 
-  const xmlConversation = formatMessagesAsXml(contextMessages, assistantName);
-
-  const prompt = [
-    `You are ${assistantName}, responding in a group chat called "${group.name}".`,
-    "",
-    "Here is the conversation from the last few hours:",
-    xmlConversation,
-    "",
-    `The latest message requiring your response is from ${triggeringMessage.sender}:`,
-    triggeringMessage.content,
-    "",
-    "Respond naturally and helpfully. Keep responses concise unless detail is needed.",
-    "You have context from the conversation above — reference it when relevant.",
-    "If you need more conversation history for context, use the get_channel_history tool.",
-  ].join("\n");
+  const conversationXml = formatMessagesAsXml(contextMessages, assistantName);
+  const prompt = renderPrompt({assistantName, group, triggeringMessage, conversationXml});
 
   return {prompt, messageIds};
 };

@@ -1,16 +1,9 @@
-import {baseUrl} from "@terreno/rtk";
 import {Badge, Box, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
 import {useLocalSearchParams} from "expo-router";
 import type React from "react";
 import {Image, ScrollView} from "react-native";
 import {useGetFrameAnalysisQuery, useGetFrameQuery} from "@/store/sdk";
-
-const formatTimestamp = (seconds: number): string => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
+import {formatTimestamp, getFrameImageUrl} from "@/utils";
 
 const FrameDetailScreen: React.FC = () => {
   const {id, frameId} = useLocalSearchParams<{id: string; frameId: string}>();
@@ -42,7 +35,7 @@ const FrameDetailScreen: React.FC = () => {
               <Image
                 testID="frame-detail-image"
                 source={{
-                  uri: `${baseUrl}/static/movies/${id}/frames/frame_${String((frame.frameNumber || 0) + 1).padStart(6, "0")}.jpg`,
+                  uri: getFrameImageUrl({movieId: id, frameNumber: frame.frameNumber || 0}),
                 }}
                 style={{width: "100%", aspectRatio: 16 / 9, borderRadius: 8}}
                 resizeMode="contain"

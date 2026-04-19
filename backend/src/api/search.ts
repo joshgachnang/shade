@@ -1,7 +1,48 @@
-import {asyncHandler, type TerrenoPlugin} from "@terreno/api";
+import {APIError, asyncHandler, logger, type TerrenoPlugin} from "@terreno/api";
 import type express from "express";
 import mongoose from "mongoose";
 import {FrameAnalysis} from "../models";
+
+/**
+ * Runs an Atlas Search aggregation and falls back to a regex-based query when
+ * Atlas Search isn't configured (local dev, self-hosted MongoDB). Atlas Search
+ * throws MongoServerError on stage mismatch; any error here is treated as a
+ * signal to use the cheaper fallback path.
+ */
+const withAtlasFallback = async <T>(
+  atlasFn: () => Promise<T>,
+  fallbackFn: () => Promise<T>
+): Promise<T> => {
+  try {
+    return await atlasFn();
+  } catch (err) {
+    logger.debug(`Atlas Search unavailable, falling back to regex: ${err}`);
+    return fallbackFn();
+  }
+};
+
+/**
+ * Map a `type` query param to the Mongo document paths we should search.
+ */
+const buildSearchPaths = (searchType: string): string[] => {
+  const searchPaths: string[] = [];
+  if (searchType === "all" || searchType === "objects") {
+    searchPaths.push("objects.label");
+  }
+  if (searchType === "all" || searchType === "characters") {
+    searchPaths.push("characters.name", "characters.description");
+  }
+  if (searchType === "all" || searchType === "text") {
+    searchPaths.push("text.content");
+  }
+  if (searchType === "all" || searchType === "tags") {
+    searchPaths.push("tags");
+  }
+  if (searchType === "all") {
+    searchPaths.push("sceneDescription", "mood");
+  }
+  return searchPaths;
+};
 
 export class SearchPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
@@ -11,31 +52,12 @@ export class SearchPlugin implements TerrenoPlugin {
         const {q, movieId, type} = req.query;
 
         if (!q || typeof q !== "string") {
-          res.status(400).json({error: "Query parameter 'q' is required"});
-          return;
+          throw new APIError({status: 400, title: "Query parameter 'q' is required"});
         }
 
         const searchType = (typeof type === "string" ? type : "all") as string;
+        const searchPaths = buildSearchPaths(searchType);
 
-        // Build the Atlas Search query
-        const searchPaths: string[] = [];
-        if (searchType === "all" || searchType === "objects") {
-          searchPaths.push("objects.label");
-        }
-        if (searchType === "all" || searchType === "characters") {
-          searchPaths.push("characters.name", "characters.description");
-        }
-        if (searchType === "all" || searchType === "text") {
-          searchPaths.push("text.content");
-        }
-        if (searchType === "all" || searchType === "tags") {
-          searchPaths.push("tags");
-        }
-        if (searchType === "all") {
-          searchPaths.push("sceneDescription", "mood");
-        }
-
-        // Build Atlas Search query — use compound when filtering by movieId
         const searchStage = movieId
           ? {
               $search: {
@@ -62,11 +84,7 @@ export class SearchPlugin implements TerrenoPlugin {
 
         const pipeline: mongoose.PipelineStage[] = [
           searchStage,
-          {
-            $addFields: {
-              score: {$meta: "searchScore"},
-            },
-          },
+          {$addFields: {score: {$meta: "searchScore"}}},
           {$sort: {score: -1}},
           {$limit: 50},
           {
@@ -96,33 +114,28 @@ export class SearchPlugin implements TerrenoPlugin {
           },
         ];
 
-        try {
-          const results = await FrameAnalysis.aggregate(pipeline);
-          res.json({query: q, type: searchType, count: results.length, results});
-        } catch {
-          // Fallback: regex-based search if Atlas Search isn't configured
-          const regex = new RegExp(q, "i");
-          const filter: Record<string, unknown> = {
-            $or: searchPaths.map((p) => ({[p]: regex})),
-          };
-          if (movieId) {
-            filter.movieId = new mongoose.Types.ObjectId(movieId as string);
+        const results = await withAtlasFallback(
+          () => FrameAnalysis.aggregate(pipeline),
+          async () => {
+            const regex = new RegExp(q, "i");
+            const filter: Record<string, unknown> = {
+              $or: searchPaths.map((p) => ({[p]: regex})),
+            };
+            if (movieId) {
+              filter.movieId = new mongoose.Types.ObjectId(movieId as string);
+            }
+
+            const rows = await FrameAnalysis.find(filter)
+              .sort({timestamp: 1})
+              .limit(50)
+              .populate("frameId", "imagePath frameNumber")
+              .lean();
+
+            return rows.map((r) => ({...r, frame: r.frameId, score: 1}));
           }
+        );
 
-          const results = await FrameAnalysis.find(filter)
-            .sort({timestamp: 1})
-            .limit(50)
-            .populate("frameId", "imagePath frameNumber")
-            .lean();
-
-          const mapped = results.map((r) => ({
-            ...r,
-            frame: r.frameId,
-            score: 1,
-          }));
-
-          res.json({query: q, type: searchType, count: mapped.length, results: mapped});
-        }
+        res.json({query: q, type: searchType, count: results.length, results});
       })
     );
 
@@ -132,64 +145,63 @@ export class SearchPlugin implements TerrenoPlugin {
         const {q} = req.query;
 
         if (!q || typeof q !== "string") {
-          res.status(400).json({error: "Query parameter 'q' is required"});
-          return;
+          throw new APIError({status: 400, title: "Query parameter 'q' is required"});
         }
 
-        // Use Atlas Search autocomplete if available, fallback to regex
-        try {
-          const pipeline: mongoose.PipelineStage[] = [
-            {
-              $search: {
-                index: "frame_analysis_autocomplete",
-                autocomplete: {
-                  query: q,
-                  path: "tags",
-                  fuzzy: {maxEdits: 1},
+        const suggestions = await withAtlasFallback(
+          async () => {
+            const pipeline: mongoose.PipelineStage[] = [
+              {
+                $search: {
+                  index: "frame_analysis_autocomplete",
+                  autocomplete: {
+                    query: q,
+                    path: "tags",
+                    fuzzy: {maxEdits: 1},
+                  },
                 },
               },
-            },
-            {$limit: 10},
-            {$project: {tags: 1, "objects.label": 1, "characters.name": 1}},
-          ];
+              {$limit: 10},
+              {$project: {tags: 1, "objects.label": 1, "characters.name": 1}},
+            ];
 
-          const results = await FrameAnalysis.aggregate(pipeline);
-
-          // Extract unique suggestions
-          const suggestions = new Set<string>();
-          for (const result of results) {
-            for (const tag of result.tags || []) {
-              if (tag.toLowerCase().includes(q.toLowerCase())) {
-                suggestions.add(tag);
+            const results = await FrameAnalysis.aggregate(pipeline);
+            const lowered = q.toLowerCase();
+            const out = new Set<string>();
+            for (const result of results) {
+              for (const tag of result.tags || []) {
+                if (tag.toLowerCase().includes(lowered)) {
+                  out.add(tag);
+                }
+              }
+              for (const obj of result.objects || []) {
+                if (obj.label.toLowerCase().includes(lowered)) {
+                  out.add(obj.label);
+                }
+              }
+              for (const char of result.characters || []) {
+                if (char.name.toLowerCase().includes(lowered)) {
+                  out.add(char.name);
+                }
               }
             }
-            for (const obj of result.objects || []) {
-              if (obj.label.toLowerCase().includes(q.toLowerCase())) {
-                suggestions.add(obj.label);
-              }
-            }
-            for (const char of result.characters || []) {
-              if (char.name.toLowerCase().includes(q.toLowerCase())) {
-                suggestions.add(char.name);
-              }
-            }
+            return [...out].slice(0, 10);
+          },
+          async () => {
+            const regex = new RegExp(q, "i");
+            const [tagResults, objectResults, characterResults] = await Promise.all([
+              FrameAnalysis.distinct("tags", {tags: regex}),
+              FrameAnalysis.distinct("objects.label", {"objects.label": regex}),
+              FrameAnalysis.distinct("characters.name", {"characters.name": regex}),
+            ]);
+            return [...new Set([...tagResults, ...objectResults, ...characterResults])].slice(
+              0,
+              10
+            );
           }
+        );
 
-          res.json({suggestions: [...suggestions].slice(0, 10)});
-        } catch {
-          // Fallback: regex-based suggestions if Atlas Search isn't configured
-          const regex = new RegExp(q, "i");
-          const [tagResults, objectResults, characterResults] = await Promise.all([
-            FrameAnalysis.distinct("tags", {tags: regex}),
-            FrameAnalysis.distinct("objects.label", {"objects.label": regex}),
-            FrameAnalysis.distinct("characters.name", {"characters.name": regex}),
-          ]);
-
-          const suggestions = [
-            ...new Set([...tagResults, ...objectResults, ...characterResults]),
-          ].slice(0, 10);
-          res.json({suggestions});
-        }
+        res.json({suggestions});
       })
     );
   }

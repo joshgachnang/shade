@@ -18,10 +18,15 @@ import {loadAppConfig} from "../../models/appConfig";
 import {TriviaQuestion, triviaConnection} from "../../models/triviaQuestion";
 import type {ChannelManager} from "../channels/manager";
 
-const DETECTOR_MODEL = process.env.DETECTOR_MODEL || "claude-haiku-4-5-20251001";
-const ANSWERER_MODEL = process.env.ANSWERER_MODEL || "claude-sonnet-4-20250514";
+const DEFAULT_DETECTOR_MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_ANSWERER_MODEL = "claude-sonnet-4-20250514";
 const POLL_INTERVAL_MS = 3000;
 const TRANSCRIPT_WINDOW_SIZE = 25;
+
+// Resolve at call time so AppConfig-hydrated env vars (see utils/configEnv.ts)
+// take effect even though this module is imported before server.ts runs.
+const getDetectorModel = (): string => process.env.DETECTOR_MODEL || DEFAULT_DETECTOR_MODEL;
+const getAnswererModel = (): string => process.env.ANSWERER_MODEL || DEFAULT_ANSWERER_MODEL;
 
 const anthropic = new Anthropic();
 
@@ -122,7 +127,7 @@ export class TriviaMonitor {
   async start(): Promise<void> {
     const config = await loadAppConfig();
     if (!config.triviaMonitor.enabled) {
-      logger.info("Trivia monitor is disabled");
+      logger.debug("Trivia monitor is disabled");
       return;
     }
 
@@ -262,7 +267,7 @@ export class TriviaMonitor {
   private async detect(windowText: string): Promise<DetectionResult> {
     try {
       const response = await anthropic.messages.create({
-        model: DETECTOR_MODEL,
+        model: getDetectorModel(),
         max_tokens: 2048,
         system: SYSTEM_PROMPT,
         messages: [{role: "user", content: windowText}],
@@ -385,7 +390,7 @@ export class TriviaMonitor {
 
     try {
       const response = await anthropic.messages.create({
-        model: ANSWERER_MODEL,
+        model: getAnswererModel(),
         max_tokens: 4096,
         system: TRIVIA_PROMPT,
         tools: [

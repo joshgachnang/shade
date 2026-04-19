@@ -8,6 +8,27 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     assistantName: {type: String, default: "Shade", trim: true},
     triggerPattern: {type: String, default: "@Shade"},
 
+    // Filesystem path for writable data (movies, recordings, etc.). Defaults
+    // to "" which means "use SHADE_DATA_DIR env var or ./data".
+    dataDir: {type: String, default: ""},
+
+    // Public-facing base URL the backend advertises to integrations (Slack
+    // buttons, webhook callbacks). Empty string falls back to SHADE_PUBLIC_URL
+    // or the production default.
+    publicUrl: {type: String, default: ""},
+
+    logging: {
+      // pino log level override: trace | debug | info | warn | error | fatal
+      level: {type: String, default: ""},
+    },
+
+    auth: {
+      // JWT secrets. Empty string falls back to TOKEN_SECRET /
+      // REFRESH_TOKEN_SECRET env vars.
+      tokenSecret: {type: String, default: ""},
+      refreshTokenSecret: {type: String, default: ""},
+    },
+
     pollIntervals: {
       message: {type: Number, default: 2000},
       task: {type: Number, default: 60000},
@@ -43,6 +64,39 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       braveSearch: {type: String, default: ""},
       exa: {type: String, default: ""},
       tavily: {type: String, default: ""},
+      anthropic: {type: String, default: ""},
+      openRouter: {type: String, default: ""},
+      deepgram: {type: String, default: ""},
+      acrCloudAccessKey: {type: String, default: ""},
+      acrCloudSecretKey: {type: String, default: ""},
+      github: {type: String, default: ""},
+    },
+
+    models: {
+      answerer: {type: String, default: "claude-sonnet-4-20250514"},
+      detector: {type: String, default: "claude-haiku-4-5-20251001"},
+    },
+
+    mcpMedia: {
+      authToken: {type: String, default: ""},
+      port: {type: Number, default: 8081},
+      sonarr: {
+        baseUrl: {type: String, default: ""},
+        apiKey: {type: String, default: ""},
+      },
+      radarr: {
+        baseUrl: {type: String, default: ""},
+        apiKey: {type: String, default: ""},
+      },
+      nzbget: {
+        baseUrl: {type: String, default: ""},
+        username: {type: String, default: "nzbget"},
+        password: {type: String, default: ""},
+      },
+      plex: {
+        baseUrl: {type: String, default: ""},
+        token: {type: String, default: ""},
+      },
     },
 
     triviaAutoSearch: {

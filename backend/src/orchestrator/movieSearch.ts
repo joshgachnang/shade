@@ -2,8 +2,7 @@ import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../config";
 import {FrameAnalysis} from "../models";
-
-const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://shade-api.nang.io";
+import {getPublicBaseUrl} from "../utils/publicUrl";
 
 const formatTimestamp = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600);
@@ -86,7 +85,7 @@ export const handleMovieSearch = async (query: string): Promise<string> => {
     }
     if (imgPath) {
       const relativePath = imgPath.replace(path.resolve(paths.movies), "").replace(/^\//, "");
-      const imageUrl = `${BASE_URL}/static/movies/${relativePath}`;
+      const imageUrl = `${getPublicBaseUrl()}/static/movies/${relativePath}`;
       entry += `\n    ${imageUrl}`;
     }
 

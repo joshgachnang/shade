@@ -1,20 +1,12 @@
 import {App} from "@slack/bolt";
 import type {GenericMessageEvent} from "@slack/types";
 import {logger} from "@terreno/api";
-import {Channel} from "../../models/channel";
-import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
-import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
+import {BaseChannelConnector} from "./baseConnector";
+import type {ConnectorFactory} from "./types";
 
-export class SlackChannelConnector implements ChannelConnector {
-  readonly channelDoc: ChannelDocument;
+export class SlackChannelConnector extends BaseChannelConnector {
   private app: App | null = null;
-  private connected = false;
-  private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
-
-  constructor(channelDoc: ChannelDocument) {
-    this.channelDoc = channelDoc;
-  }
 
   private isUserAllowed(userId: string): boolean {
     const config = this.channelDoc.config as {allowedUserIds?: string[]};
@@ -67,12 +59,7 @@ export class SlackChannelConnector implements ChannelConnector {
           return;
         }
 
-        if (!this.messageHandler) {
-          logger.debug("No message handler registered, skipping Slack message");
-          return;
-        }
-
-        await this.messageHandler({
+        await this.dispatchMessage({
           externalId: msg.ts,
           sender: msg.user || "unknown",
           senderExternalId: msg.user || "",
@@ -101,12 +88,7 @@ export class SlackChannelConnector implements ChannelConnector {
           return;
         }
 
-        if (!this.messageHandler) {
-          logger.debug("No message handler registered, skipping Slack mention");
-          return;
-        }
-
-        await this.messageHandler({
+        await this.dispatchMessage({
           externalId: event.ts,
           sender: event.user || "unknown",
           senderExternalId: event.user || "",
@@ -142,13 +124,7 @@ export class SlackChannelConnector implements ChannelConnector {
       logger.warn(`Could not set presence for "${this.channelDoc.name}": ${err}`);
     }
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "connected", lastConnectedAt: new Date()},
-      });
-    } catch (err) {
-      logger.error(`Failed to update channel status in DB: ${err}`);
-    }
+    await this.persistStatus("connected");
 
     logger.info(`Slack channel "${this.channelDoc.name}" fully connected`);
   }
@@ -165,19 +141,9 @@ export class SlackChannelConnector implements ChannelConnector {
     }
     this.connected = false;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "disconnected"},
-      });
-    } catch (err) {
-      logger.error(`Failed to update channel status in DB: ${err}`);
-    }
+    await this.persistStatus("disconnected");
 
     logger.info(`Slack channel "${this.channelDoc.name}" disconnected`);
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   async sendMessage(groupExternalId: string, content: string): Promise<void> {
@@ -303,10 +269,6 @@ export class SlackChannelConnector implements ChannelConnector {
     } catch (err) {
       logger.debug(`Could not remove reaction: ${err}`);
     }
-  }
-
-  onMessage(handler: (message: InboundMessage) => Promise<void>): void {
-    this.messageHandler = handler;
   }
 }
 

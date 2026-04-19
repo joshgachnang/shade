@@ -1,32 +1,21 @@
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import {Tabs} from "expo-router";
 import type React from "react";
-import {useCallback} from "react";
 import {colors} from "@/constants/theme";
 
-const TabBarIcon: React.FC<{
-  name: React.ComponentProps<typeof FontAwesome>["name"];
-  color: string;
-}> = ({name, color}) => {
-  return <FontAwesome color={color} name={name} size={24} style={{marginBottom: -3}} />;
-};
+type IconName = React.ComponentProps<typeof FontAwesome>["name"];
+
+const renderTabIcon =
+  (name: IconName) =>
+  ({color}: {color: string}): React.ReactElement => (
+    <FontAwesome color={color} name={name} size={24} style={{marginBottom: -3}} />
+  );
+
+const homeIcon = renderTabIcon("home");
+const searchIcon = renderTabIcon("search");
+const profileIcon = renderTabIcon("user");
 
 const TabLayout: React.FC = () => {
-  const renderHomeIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="home" />,
-    []
-  );
-
-  const renderSearchIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="search" />,
-    []
-  );
-
-  const renderProfileIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="user" />,
-    []
-  );
-
   return (
     <Tabs
       detachInactiveScreens={false}
@@ -37,7 +26,7 @@ const TabLayout: React.FC = () => {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: renderHomeIcon,
+          tabBarIcon: homeIcon,
           title: "Home",
         }}
       />
@@ -45,7 +34,7 @@ const TabLayout: React.FC = () => {
         name="search"
         options={{
           headerShown: false,
-          tabBarIcon: renderSearchIcon,
+          tabBarIcon: searchIcon,
           title: "Search",
         }}
       />
@@ -53,7 +42,7 @@ const TabLayout: React.FC = () => {
         name="profile"
         options={{
           headerShown: false,
-          tabBarIcon: renderProfileIcon,
+          tabBarIcon: profileIcon,
           title: "Profile",
         }}
       />

@@ -1,7 +1,6 @@
 import type {TerrenoPlugin} from "@terreno/api";
 import {APIError, asyncHandler, authenticateMiddleware, logger} from "@terreno/api";
 import type {Request, Response} from "express";
-import type {UserDocument} from "../types";
 import {
   addShadeContext,
   createContact,
@@ -13,6 +12,7 @@ import {
   searchContacts,
   updateContact,
 } from "../utils/appleContacts";
+import {requireUser} from "../utils/auth";
 
 /**
  * Apple Contacts integration routes:
@@ -105,10 +105,7 @@ export class AppleContactsPlugin implements TerrenoPlugin {
       "/apple-contacts",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {firstName, lastName, company, jobTitle, emails, phones, note, birthday} =
           req.body as {
@@ -147,10 +144,7 @@ export class AppleContactsPlugin implements TerrenoPlugin {
       "/apple-contacts/:id",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {firstName, lastName, company, jobTitle, note} = req.body as {
           firstName?: string;
@@ -179,10 +173,7 @@ export class AppleContactsPlugin implements TerrenoPlugin {
       "/apple-contacts/:id/context",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {relationship, metAt, interests, topics, preferences, recentUpdates, customFields} =
           req.body as {

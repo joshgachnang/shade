@@ -32,13 +32,11 @@ jobs:
           bun-version: latest
 
       - name: Install workspace dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Install frontend dependencies
-        run: cd frontend && bun install
-
-      - name: Install Playwright
-        run: bun add -d @playwright/test
+        run: bun install --frozen-lockfile
+        working-directory: frontend
 
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium

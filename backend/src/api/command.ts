@@ -3,7 +3,7 @@ import {APIError, asyncHandler, authenticateMiddleware, logger} from "@terreno/a
 import type {Request, Response} from "express";
 import {Group} from "../models/group";
 import {Message} from "../models/message";
-import type {UserDocument} from "../types";
+import {requireUser} from "../utils/auth";
 
 /**
  * POST /command
@@ -23,10 +23,7 @@ export class CommandPlugin implements TerrenoPlugin {
       "/command",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {content, groupId, groupName} = req.body as {
           content?: string;

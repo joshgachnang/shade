@@ -1,45 +1,25 @@
-import path from "node:path";
-import {asyncHandler, logger, modelRouter, Permissions, type TerrenoPlugin} from "@terreno/api";
+import {APIError, asyncHandler, logger, type TerrenoPlugin} from "@terreno/api";
 import type express from "express";
 import {paths} from "../config";
+import {isMovieProcessing, MOVIE_STATUS} from "../constants/statuses";
 import {Movie} from "../models";
 import {processMovie} from "../services/moviePipeline";
-
-export const movieRoutes = modelRouter("/movies", Movie, {
-  permissions: {
-    create: [Permissions.IsAuthenticated],
-    delete: [Permissions.IsAuthenticated],
-    list: [Permissions.IsAuthenticated],
-    read: [Permissions.IsAuthenticated],
-    update: [Permissions.IsAuthenticated],
-  },
-  queryFields: ["title", "status"],
-  sort: "-created",
-});
+import {serveStaticUnder} from "../utils/staticFiles";
 
 export class MovieActionsPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
-    // Serve extracted frame images statically with path traversal protection
-    app.get("/static/movies/*", (req: express.Request, res: express.Response) => {
-      const resolved = path.resolve(paths.movies, (req.params as Record<string, string>)[0]);
-      if (!resolved.startsWith(path.resolve(paths.movies))) {
-        res.status(403).json({error: "Forbidden"});
-        return;
-      }
-      res.sendFile(resolved);
-    });
+    app.get("/static/movies/*", serveStaticUnder(paths.movies));
 
     app.post(
       "/movie-actions/:id/process",
       asyncHandler(async (req: express.Request, res: express.Response) => {
         const movie = await Movie.findExactlyOne({_id: req.params.id});
 
-        if (movie.status === "extracting" || movie.status === "analyzing") {
-          res.status(400).json({error: "Movie is already being processed"});
-          return;
+        if (isMovieProcessing(movie.status)) {
+          throw new APIError({status: 400, title: "Movie is already being processed"});
         }
 
-        movie.status = "extracting";
+        movie.status = MOVIE_STATUS.extracting;
         movie.errorMessage = undefined;
         await movie.save();
 
@@ -47,7 +27,7 @@ export class MovieActionsPlugin implements TerrenoPlugin {
           logger.error(`Movie processing failed for ${movie._id}: ${err}`);
         });
 
-        res.json({movieId: movie._id, status: "extracting"});
+        res.json({movieId: movie._id, status: MOVIE_STATUS.extracting});
       })
     );
 
@@ -56,16 +36,15 @@ export class MovieActionsPlugin implements TerrenoPlugin {
       asyncHandler(async (req: express.Request, res: express.Response) => {
         const movie = await Movie.findExactlyOne({_id: req.params.id});
 
-        if (movie.status !== "extracting" && movie.status !== "analyzing") {
-          res.status(400).json({error: "Movie is not currently being processed"});
-          return;
+        if (!isMovieProcessing(movie.status)) {
+          throw new APIError({status: 400, title: "Movie is not currently being processed"});
         }
 
-        movie.status = "error";
+        movie.status = MOVIE_STATUS.error;
         movie.errorMessage = "Cancelled by user";
         await movie.save();
 
-        res.json({movieId: movie._id, status: "error"});
+        res.json({movieId: movie._id, status: MOVIE_STATUS.error});
       })
     );
 

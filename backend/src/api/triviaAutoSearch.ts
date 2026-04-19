@@ -3,7 +3,7 @@ import {APIError, asyncHandler, authenticateMiddleware, logger} from "@terreno/a
 import type {Request, Response} from "express";
 import {AppConfig, reloadAppConfig} from "../models/appConfig";
 import {getOrchestrator} from "../orchestrator";
-import type {UserDocument} from "../types";
+import {requireUser} from "../utils/auth";
 
 /**
  * Trivia Auto-Search API endpoints.
@@ -19,10 +19,7 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
       "/trivia/toggle",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {enabled} = req.body as {enabled?: boolean};
         if (typeof enabled !== "boolean") {
@@ -51,10 +48,7 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
       "/trivia/ask",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {question} = req.body as {question?: string};
         if (!question || typeof question !== "string" || question.trim().length === 0) {

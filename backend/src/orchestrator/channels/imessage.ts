@@ -3,10 +3,9 @@ import {execSync} from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {logger} from "@terreno/api";
-import {Channel} from "../../models/channel";
-import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
-import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
+import {BaseChannelConnector} from "./baseConnector";
+import type {ConnectorFactory} from "./types";
 
 interface IMessageRow {
   rowid: number;
@@ -33,17 +32,10 @@ const escapeAppleScript = (str: string): string => {
   return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 };
 
-export class IMessageChannelConnector implements ChannelConnector {
-  readonly channelDoc: ChannelDocument;
-  private connected = false;
-  private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
+export class IMessageChannelConnector extends BaseChannelConnector {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private db: Database | null = null;
   private lastRowId = 0;
-
-  constructor(channelDoc: ChannelDocument) {
-    this.channelDoc = channelDoc;
-  }
 
   async connect(): Promise<void> {
     const config = this.channelDoc.config as {
@@ -80,13 +72,7 @@ export class IMessageChannelConnector implements ChannelConnector {
 
     this.connected = true;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "connected", lastConnectedAt: new Date()},
-      });
-    } catch (err) {
-      logger.error(`Failed to update iMessage channel status: ${err}`);
-    }
+    await this.persistStatus("connected");
 
     logger.info(
       `iMessage channel "${this.channelDoc.name}" connected, polling every ${pollInterval}ms`
@@ -164,19 +150,9 @@ export class IMessageChannelConnector implements ChannelConnector {
 
     this.connected = false;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "disconnected"},
-      });
-    } catch (err) {
-      logger.error(`Failed to update iMessage channel status: ${err}`);
-    }
+    await this.persistStatus("disconnected");
 
     logger.info(`iMessage channel "${this.channelDoc.name}" disconnected`);
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   async sendMessage(groupExternalId: string, content: string): Promise<void> {
@@ -240,10 +216,6 @@ end tell`;
 
   async inviteToChannel(_channelId: string, _userId: string): Promise<void> {
     throw new Error("iMessage channels do not support channel invitations");
-  }
-
-  onMessage(handler: (message: InboundMessage) => Promise<void>): void {
-    this.messageHandler = handler;
   }
 }
 

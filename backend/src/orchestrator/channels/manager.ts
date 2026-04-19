@@ -1,11 +1,12 @@
 import {logger} from "@terreno/api";
 import type express from "express";
+import {CHANNEL_STATUS} from "../../constants/statuses";
 import {Channel} from "../../models/channel";
 import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
-import {handleMovieSearch} from "../movieSearch";
+import {ChatCommandRouter} from "./commandRouter";
 import {createEmailConnector} from "./email";
 import {createIMessageConnector} from "./imessage";
 import {createSlackConnector} from "./slack";
@@ -27,9 +28,11 @@ export class ChannelManager {
   private groupCache = new Map<string, GroupDocument>();
   private expressApp: express.Application | null = null;
   private connectorFactories: Record<string, ConnectorFactory>;
+  private commandRouter: ChatCommandRouter;
 
-  constructor(factories?: Record<string, ConnectorFactory>) {
+  constructor(factories?: Record<string, ConnectorFactory>, commandRouter?: ChatCommandRouter) {
     this.connectorFactories = factories ?? defaultConnectorFactories;
+    this.commandRouter = commandRouter ?? new ChatCommandRouter();
   }
 
   setExpressApp(app: express.Application): void {
@@ -61,7 +64,9 @@ export class ChannelManager {
       } catch (err) {
         logError(`Failed to connect channel "${channelDoc.name}"`, err);
         try {
-          await Channel.findByIdAndUpdate(channelDoc._id, {$set: {status: "error"}});
+          await Channel.findByIdAndUpdate(channelDoc._id, {
+            $set: {status: CHANNEL_STATUS.error},
+          });
         } catch (dbErr) {
           logger.error(`Failed to update channel error status in DB: ${dbErr}`);
         }
@@ -125,20 +130,15 @@ export class ChannelManager {
       `Storing inbound message from ${inbound.sender} in group ${group.name} (${inbound.content.substring(0, 80)})`
     );
 
-    // Intercept !search commands and respond directly
-    const searchMatch = inbound.content.match(/^!moviesearch\s+(.+)/i);
-    if (searchMatch) {
-      const query = searchMatch[1].trim();
-      logger.info(`Movie search from ${inbound.sender}: "${query}"`);
-      try {
-        const response = await handleMovieSearch(query);
-        await this.sendMessage(channelDoc._id.toString(), inbound.groupExternalId, response);
-      } catch (err) {
-        logError("Movie search failed", err);
+    // Let the command router intercept chat-prefix commands (!moviesearch, …)
+    // before the message falls through to the regular storage pipeline.
+    const commandReply = await this.commandRouter.tryHandle(inbound);
+    if (commandReply !== undefined) {
+      if (commandReply) {
         await this.sendMessage(
           channelDoc._id.toString(),
           inbound.groupExternalId,
-          `Search failed: ${err instanceof Error ? err.message : String(err)}`
+          commandReply.content
         );
       }
       return;

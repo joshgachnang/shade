@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../config";
+import {FRAME_STATUS} from "../constants/statuses";
 import {Frame, Movie} from "../models";
 
 interface ExtractionResult {
@@ -261,7 +262,7 @@ export const extractFrames = async (movieId: string): Promise<ExtractionResult> 
       width: videoInfo.width,
       height: videoInfo.height,
       fileSizeBytes: stat.size,
-      status: "pending",
+      status: FRAME_STATUS.pending,
     });
   }
 

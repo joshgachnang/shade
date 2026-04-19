@@ -36,6 +36,12 @@ export interface AppConfigApiKeys {
   braveSearch: string;
   exa: string;
   tavily: string;
+  anthropic: string;
+  openRouter: string;
+  deepgram: string;
+  acrCloudAccessKey: string;
+  acrCloudSecretKey: string;
+  github: string;
 }
 
 export interface AppConfigTriviaAutoSearch {
@@ -67,15 +73,60 @@ export interface AppConfigTriviaStats {
   blueskyPassword: string;
 }
 
+export interface AppConfigModels {
+  answerer: string;
+  detector: string;
+}
+
+export interface AppConfigMcpServiceConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+export interface AppConfigMcpNzbgetConfig {
+  baseUrl: string;
+  username: string;
+  password: string;
+}
+
+export interface AppConfigMcpPlexConfig {
+  baseUrl: string;
+  token: string;
+}
+
+export interface AppConfigMcpMedia {
+  authToken: string;
+  port: number;
+  sonarr: AppConfigMcpServiceConfig;
+  radarr: AppConfigMcpServiceConfig;
+  nzbget: AppConfigMcpNzbgetConfig;
+  plex: AppConfigMcpPlexConfig;
+}
+
+export interface AppConfigLogging {
+  level: string;
+}
+
+export interface AppConfigAuth {
+  tokenSecret: string;
+  refreshTokenSecret: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
+  dataDir: string;
+  publicUrl: string;
+  logging: AppConfigLogging;
+  auth: AppConfigAuth;
   pollIntervals: AppConfigPollIntervals;
   concurrency: AppConfigConcurrency;
   radioTranscriber: AppConfigRadioTranscriber;
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
+  models: AppConfigModels;
+  mcpMedia: AppConfigMcpMedia;
   triviaAutoSearch: AppConfigTriviaAutoSearch;
   prWatch: AppConfigPrWatch;
   triviaMonitor: AppConfigTriviaMonitor;

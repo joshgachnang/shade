@@ -1,43 +1,72 @@
-import {Badge, Box, Button, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
+import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Heading,
+  Modal,
+  Page,
+  Spinner,
+  Text,
+  TextField,
+} from "@terreno/ui";
 import {useRouter} from "expo-router";
 import type React from "react";
-import {useCallback} from "react";
+import {useCallback, useState} from "react";
 import {FlatList, Pressable} from "react-native";
+import {MovieProgressBar} from "@/components/MovieProgressBar";
+import {getMovieStatusBadge, isMovieProcessing} from "@/constants/movieStatus";
 import {type Movie, useCreateMovieMutation, useListMoviesQuery} from "@/store/sdk";
 
-const statusToStatus: Record<string, "info" | "success" | "error" | "warning" | "neutral"> = {
-  pending: "neutral",
-  extracting: "info",
-  analyzing: "warning",
-  complete: "success",
-  error: "error",
-};
+interface AddMovieFormState {
+  title: string;
+  filePath: string;
+  actors: string;
+}
+
+const emptyForm: AddMovieFormState = {title: "", filePath: "", actors: ""};
 
 const MovieListScreen: React.FC = () => {
   const router = useRouter();
   const {data, isLoading, refetch} = useListMoviesQuery();
-  const [createMovie] = useCreateMovieMutation();
+  const [createMovie, {isLoading: isCreating}] = useCreateMovieMutation();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [form, setForm] = useState<AddMovieFormState>(emptyForm);
 
   const movies = data?.results || [];
 
-  const handleAddMovie = useCallback(async () => {
-    const title = prompt("Movie title:");
-    if (!title) {
-      return;
-    }
-    const filePath = prompt("File path to movie:");
-    if (!filePath) {
-      return;
-    }
-    const actors = prompt("Actor names (comma-separated, optional):");
+  const handleOpenAdd = useCallback((): void => {
+    setForm(emptyForm);
+    setModalVisible(true);
+  }, []);
 
-    await createMovie({
-      title,
-      filePath,
-      actors: actors ? actors.split(",").map((a) => a.trim()) : [],
-    });
+  const handleDismissAdd = useCallback((): void => {
+    setModalVisible(false);
+  }, []);
+
+  const handleFormChange = useCallback(
+    (field: keyof AddMovieFormState) =>
+      (value: string): void => {
+        setForm((prev) => ({...prev, [field]: value}));
+      },
+    []
+  );
+
+  const handleSubmitAdd = useCallback(async (): Promise<void> => {
+    const title = form.title.trim();
+    const filePath = form.filePath.trim();
+    if (!title || !filePath) {
+      return;
+    }
+    const actors = form.actors
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+
+    await createMovie({title, filePath, actors});
+    setModalVisible(false);
     refetch();
-  }, [createMovie, refetch]);
+  }, [createMovie, form, refetch]);
 
   const handleMoviePress = useCallback(
     (movie: Movie) => {
@@ -48,9 +77,6 @@ const MovieListScreen: React.FC = () => {
 
   const renderMovie = useCallback(
     ({item}: {item: Movie}) => {
-      const progress =
-        item.frameCount > 0 ? Math.round((item.processedFrameCount / item.frameCount) * 100) : 0;
-
       return (
         <Pressable onPress={() => handleMoviePress(item)} testID={`movies-item-${item._id}`}>
           <Card>
@@ -59,7 +85,7 @@ const MovieListScreen: React.FC = () => {
                 <Heading size="sm">{item.title}</Heading>
                 <Badge
                   testID={`movies-item-${item._id}-status`}
-                  status={statusToStatus[item.status] || "neutral"}
+                  status={getMovieStatusBadge(item.status)}
                   value={item.status}
                 />
               </Box>
@@ -69,14 +95,12 @@ const MovieListScreen: React.FC = () => {
                   {item.frameCount} frames
                 </Text>
               )}
-              {(item.status === "extracting" || item.status === "analyzing") && (
-                <Box testID={`movies-item-${item._id}-progress`} gap={1}>
-                  <Box height={4} rounding="sm" overflow="hidden" color="neutralLight">
-                    <Box height="100%" width={`${progress}%`} color="primary" rounding="sm" />
-                  </Box>
-                  <Text size="sm" color="secondaryLight">
-                    {item.processedFrameCount} / {item.frameCount} frames ({progress}%)
-                  </Text>
+              {isMovieProcessing(item.status) && (
+                <Box testID={`movies-item-${item._id}-progress`}>
+                  <MovieProgressBar
+                    processedFrames={item.processedFrameCount}
+                    totalFrames={item.frameCount}
+                  />
                 </Box>
               )}
             </Box>
@@ -99,12 +123,14 @@ const MovieListScreen: React.FC = () => {
     );
   }
 
+  const canSubmit = form.title.trim().length > 0 && form.filePath.trim().length > 0;
+
   return (
     <Page navigation={undefined} title="Movies">
       <Box padding={4} gap={4} testID="movies-screen">
         <Box direction="row" justifyContent="between" alignItems="center">
           <Heading>Movies</Heading>
-          <Button testID="movies-upload-button" text="Add Movie" onClick={handleAddMovie} />
+          <Button testID="movies-upload-button" text="Add Movie" onClick={handleOpenAdd} />
         </Box>
 
         {movies.length === 0 ? (
@@ -120,6 +146,41 @@ const MovieListScreen: React.FC = () => {
             contentContainerStyle={{gap: 12}}
           />
         )}
+
+        <Modal
+          visible={modalVisible}
+          title="Add Movie"
+          subtitle="Point Shade at a local video file to extract and analyze frames."
+          primaryButtonText={isCreating ? "Adding..." : "Add Movie"}
+          primaryButtonDisabled={!canSubmit || isCreating}
+          secondaryButtonText="Cancel"
+          primaryButtonOnClick={handleSubmitAdd}
+          secondaryButtonOnClick={handleDismissAdd}
+          onDismiss={handleDismissAdd}
+        >
+          <Box gap={3} testID="movies-add-modal">
+            <TextField
+              testID="movies-add-title"
+              title="Title"
+              value={form.title}
+              onChange={handleFormChange("title")}
+            />
+            <TextField
+              testID="movies-add-filepath"
+              title="File path"
+              helperText="Absolute path on the Shade server (e.g. /movies/Heat.mkv)."
+              value={form.filePath}
+              onChange={handleFormChange("filePath")}
+            />
+            <TextField
+              testID="movies-add-actors"
+              title="Actors"
+              helperText="Comma-separated, optional."
+              value={form.actors}
+              onChange={handleFormChange("actors")}
+            />
+          </Box>
+        </Modal>
       </Box>
     </Page>
   );

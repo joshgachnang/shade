@@ -4,10 +4,10 @@ import type {ParsedMail} from "mailparser";
 import {simpleParser} from "mailparser";
 import type {Transporter} from "nodemailer";
 import nodemailer from "nodemailer";
-import {Channel} from "../../models/channel";
 import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
-import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
+import {BaseChannelConnector} from "./baseConnector";
+import type {ConnectorFactory} from "./types";
 
 interface EmailChannelConfig {
   imapHost: string;
@@ -76,10 +76,7 @@ const formatSender = (parsed: ParsedMail): {name: string; address: string} => {
   };
 };
 
-export class EmailChannelConnector implements ChannelConnector {
-  readonly channelDoc: ChannelDocument;
-  private connected = false;
-  private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
+export class EmailChannelConnector extends BaseChannelConnector {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private imapClient: ImapFlow | null = null;
   private smtpTransport: Transporter | null = null;
@@ -87,7 +84,7 @@ export class EmailChannelConnector implements ChannelConnector {
   private lastSeenUid = 0;
 
   constructor(channelDoc: ChannelDocument) {
-    this.channelDoc = channelDoc;
+    super(channelDoc);
     this.config = channelDoc.config as unknown as EmailChannelConfig;
   }
 
@@ -158,13 +155,7 @@ export class EmailChannelConnector implements ChannelConnector {
 
     this.connected = true;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "connected", lastConnectedAt: new Date()},
-      });
-    } catch (err) {
-      logger.error(`Failed to update email channel status: ${err}`);
-    }
+    await this.persistStatus("connected");
 
     logger.info(
       `Email channel "${this.channelDoc.name}" connected, polling every ${pollInterval}ms`
@@ -300,19 +291,9 @@ export class EmailChannelConnector implements ChannelConnector {
 
     this.connected = false;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "disconnected"},
-      });
-    } catch (err) {
-      logger.error(`Failed to update email channel status: ${err}`);
-    }
+    await this.persistStatus("disconnected");
 
     logger.info(`Email channel "${this.channelDoc.name}" disconnected`);
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   async sendMessage(groupExternalId: string, content: string): Promise<void> {
@@ -383,10 +364,6 @@ export class EmailChannelConnector implements ChannelConnector {
 
   async inviteToChannel(_channelId: string, _userId: string): Promise<void> {
     throw new Error("Email channels do not support inviting users");
-  }
-
-  onMessage(handler: (message: InboundMessage) => Promise<void>): void {
-    this.messageHandler = handler;
   }
 }
 

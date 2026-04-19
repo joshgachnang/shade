@@ -1,9 +1,12 @@
-import {baseUrl} from "@terreno/rtk";
-import {Badge, Box, Button, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
+import {Badge, Box, Button, Heading, Page, Spinner, Text} from "@terreno/ui";
 import {useLocalSearchParams, useRouter} from "expo-router";
 import type React from "react";
 import {useCallback, useEffect, useState} from "react";
-import {FlatList, Image, Pressable} from "react-native";
+import {FlatList} from "react-native";
+import {MovieCharacterCard} from "@/components/MovieCharacterCard";
+import {MovieFrameThumbnail} from "@/components/MovieFrameThumbnail";
+import {MovieProgressBar} from "@/components/MovieProgressBar";
+import {getMovieStatusBadge, isMovieProcessing, movieStatus} from "@/constants/movieStatus";
 import {
   type Character,
   type Frame,
@@ -15,13 +18,6 @@ import {
   useProcessMovieMutation,
 } from "@/store/sdk";
 
-const formatTimestamp = (seconds: number): string => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
-
 type TabType = "frames" | "characters";
 
 const MovieDetailScreen: React.FC = () => {
@@ -31,7 +27,7 @@ const MovieDetailScreen: React.FC = () => {
   const {data: framesData} = useListFramesQuery({movieId: id});
   const {data: charactersData} = useListCharactersQuery({movieId: id});
   const {data: progress} = useGetMovieProgressQuery(id, {
-    pollingInterval: movie?.status === "extracting" || movie?.status === "analyzing" ? 3000 : 0,
+    pollingInterval: isMovieProcessing(movie?.status ?? "") ? 3000 : 0,
   });
   const [processMovie] = useProcessMovieMutation();
   const [cancelMovie] = useCancelMovieMutation();
@@ -40,24 +36,26 @@ const MovieDetailScreen: React.FC = () => {
   const frames = framesData?.results || [];
   const characters = charactersData?.results || [];
 
+  // Re-fetch the movie record whenever polled progress arrives so the status
+  // badge and counts update in near-real-time while frames are being processed.
   useEffect(() => {
-    if (progress && (movie?.status === "extracting" || movie?.status === "analyzing")) {
+    if (progress && isMovieProcessing(movie?.status ?? "")) {
       refetch();
     }
   }, [progress, movie?.status, refetch]);
 
-  const handleProcess = useCallback(async () => {
+  const handleProcess = useCallback(async (): Promise<void> => {
     await processMovie(id);
     refetch();
   }, [id, processMovie, refetch]);
 
-  const handleCancel = useCallback(async () => {
+  const handleCancel = useCallback(async (): Promise<void> => {
     await cancelMovie(id);
     refetch();
   }, [id, cancelMovie, refetch]);
 
   const handleFramePress = useCallback(
-    (frame: Frame) => {
+    (frame: Frame): void => {
       router.push(`/movies/${id}/frames/${frame._id}` as any);
     },
     [router, id]
@@ -65,45 +63,13 @@ const MovieDetailScreen: React.FC = () => {
 
   const renderFrame = useCallback(
     ({item}: {item: Frame}) => (
-      <Pressable onPress={() => handleFramePress(item)} testID={`movie-detail-frame-${item._id}`}>
-        <Box gap={1}>
-          <Image
-            source={{
-              uri: `${baseUrl}/static/movies/${id}/frames/frame_${String(item.frameNumber + 1).padStart(6, "0")}.jpg`,
-            }}
-            style={{width: 120, height: 68, borderRadius: 4}}
-            resizeMode="cover"
-          />
-          <Text size="sm" color="secondaryLight">
-            {formatTimestamp(item.timestamp)}
-          </Text>
-        </Box>
-      </Pressable>
+      <MovieFrameThumbnail frame={item} movieId={id} onPress={handleFramePress} />
     ),
     [handleFramePress, id]
   );
 
   const renderCharacter = useCallback(
-    ({item}: {item: Character}) => (
-      <Card testID={`movie-detail-character-${item._id}`}>
-        <Box padding={3} gap={1}>
-          <Box direction="row" justifyContent="between">
-            <Text bold>{item.actorName || item.name}</Text>
-            <Text size="sm" color="secondaryLight">
-              {item.totalAppearances} scenes
-            </Text>
-          </Box>
-          {item.actorName && item.name !== item.actorName && (
-            <Text size="sm" color="secondaryLight">
-              as {item.name}
-            </Text>
-          )}
-          <Text size="sm" color="secondaryLight">
-            {formatTimestamp(item.firstSeen)} - {formatTimestamp(item.lastSeen)}
-          </Text>
-        </Box>
-      </Card>
-    ),
+    ({item}: {item: Character}) => <MovieCharacterCard character={item} />,
     []
   );
 
@@ -119,8 +85,7 @@ const MovieDetailScreen: React.FC = () => {
     );
   }
 
-  const progressPct = progress?.percentage || 0;
-  const isProcessing = movie.status === "extracting" || movie.status === "analyzing";
+  const isProcessing = isMovieProcessing(movie.status);
 
   return (
     <Page navigation={undefined} title={movie.title}>
@@ -131,13 +96,7 @@ const MovieDetailScreen: React.FC = () => {
             <Heading testID="movie-detail-title">{movie.title}</Heading>
             <Badge
               testID="movie-detail-status"
-              status={
-                movie.status === "complete"
-                  ? "success"
-                  : movie.status === "error"
-                    ? "error"
-                    : "info"
-              }
+              status={getMovieStatusBadge(movie.status)}
               value={movie.status}
             />
           </Box>
@@ -161,7 +120,7 @@ const MovieDetailScreen: React.FC = () => {
 
         {/* Processing controls */}
         <Box gap={2}>
-          {!isProcessing && movie.status !== "complete" && (
+          {!isProcessing && movie.status !== movieStatus.complete && (
             <Button
               testID="movie-detail-process-button"
               text="Start Processing"
@@ -170,15 +129,13 @@ const MovieDetailScreen: React.FC = () => {
           )}
           {isProcessing && (
             <>
-              <Box testID="movie-detail-progress-bar">
-                <Box height={8} rounding="sm" overflow="hidden" color="neutralLight">
-                  <Box height="100%" width={`${progressPct}%`} color="primary" rounding="sm" />
-                </Box>
-              </Box>
-              <Text testID="movie-detail-progress-text" size="sm" align="center">
-                {progress?.processedFrames || 0} / {progress?.totalFrames || 0} frames (
-                {progressPct}%)
-              </Text>
+              <MovieProgressBar
+                processedFrames={progress?.processedFrames ?? 0}
+                totalFrames={progress?.totalFrames ?? 0}
+                percentage={progress?.percentage}
+                height={8}
+                testIDPrefix="movie-detail-progress"
+              />
               <Button
                 testID="movie-detail-cancel-button"
                 text="Cancel"

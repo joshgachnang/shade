@@ -40,21 +40,19 @@ export const startOrchestrator = async (
     return state;
   }
 
-  logger.info("Starting Shade orchestrator...");
+  logger.debug("Starting Shade orchestrator...");
 
   // Initialize memory system
   try {
     await initGlobalMemory();
-    logger.info("Global memory initialized");
   } catch (err) {
     logger.error(`Failed to initialize global memory (non-fatal): ${err}`);
   }
 
-  // Create the agent runner
   const runner = new DirectAgentRunner();
-  logger.info("Agent runner created");
 
-  // Create and initialize channel manager
+  // Create and initialize channel manager. ChannelManager.initialize logs its
+  // own channel count, so we don't need a separate "initialized" line here.
   const channelManager = new ChannelManager();
   if (expressApp) {
     channelManager.setExpressApp(expressApp);
@@ -62,14 +60,11 @@ export const startOrchestrator = async (
 
   try {
     await channelManager.initialize();
-    logger.info("Channel manager initialized");
   } catch (err) {
     logError("Channel manager initialization error (non-fatal)", err);
   }
 
-  // Create group queue wired to the agent runner
   const groupQueue = new GroupQueue(runner, channelManager);
-  logger.info("Group queue created");
 
   // Create and start message polling loop
   const messageLoop = new MessageLoop(channelManager, groupQueue);

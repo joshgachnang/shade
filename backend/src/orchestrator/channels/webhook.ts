@@ -1,21 +1,12 @@
 import crypto from "node:crypto";
 import {logger} from "@terreno/api";
 import type express from "express";
-import {Channel} from "../../models/channel";
 import {WebhookSource} from "../../models/webhookSource";
-import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
-import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
+import {BaseChannelConnector} from "./baseConnector";
+import type {ConnectorFactory} from "./types";
 
-export class WebhookChannelConnector implements ChannelConnector {
-  readonly channelDoc: ChannelDocument;
-  private connected = false;
-  private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
-
-  constructor(channelDoc: ChannelDocument) {
-    this.channelDoc = channelDoc;
-  }
-
+export class WebhookChannelConnector extends BaseChannelConnector {
   registerRoutes(app: express.Application): void {
     app.post("/webhooks/:sourceId", async (req: express.Request, res: express.Response) => {
       const {sourceId} = req.params;
@@ -90,13 +81,7 @@ export class WebhookChannelConnector implements ChannelConnector {
   async connect(): Promise<void> {
     this.connected = true;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "connected", lastConnectedAt: new Date()},
-      });
-    } catch (err) {
-      logger.error(`Failed to update webhook channel status: ${err}`);
-    }
+    await this.persistStatus("connected");
 
     logger.info(`Webhook channel "${this.channelDoc.name}" connected`);
   }
@@ -104,19 +89,9 @@ export class WebhookChannelConnector implements ChannelConnector {
   async disconnect(): Promise<void> {
     this.connected = false;
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "disconnected"},
-      });
-    } catch (err) {
-      logger.error(`Failed to update webhook channel status: ${err}`);
-    }
+    await this.persistStatus("disconnected");
 
     logger.info(`Webhook channel "${this.channelDoc.name}" disconnected`);
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   async sendMessage(_groupExternalId: string, _content: string): Promise<void> {
@@ -149,10 +124,6 @@ export class WebhookChannelConnector implements ChannelConnector {
     _messageTs: string,
     _emoji: string
   ): Promise<void> {}
-
-  onMessage(handler: (message: InboundMessage) => Promise<void>): void {
-    this.messageHandler = handler;
-  }
 
   private validateSignature(body: unknown, secret: string, signature: string | undefined): boolean {
     if (!signature) {

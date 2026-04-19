@@ -1,16 +1,9 @@
 import type {TerrenoPlugin} from "@terreno/api";
-import {
-  APIError,
-  asyncHandler,
-  authenticateMiddleware,
-  logger,
-  modelRouter,
-  Permissions,
-} from "@terreno/api";
+import {APIError, asyncHandler, authenticateMiddleware, logger} from "@terreno/api";
 import type {Request, Response} from "express";
 import {CalendarConfig} from "../models/calendarConfig";
-import type {UserDocument} from "../types";
 import {createEvent, getEvents, listCalendars} from "../utils/appleCalendar";
+import {requireUser} from "../utils/auth";
 
 /**
  * Apple Calendar integration routes:
@@ -19,7 +12,7 @@ import {createEvent, getEvents, listCalendars} from "../utils/appleCalendar";
  * GET  /apple-calendar/events?start=&end=  — Get events from enabled calendars
  * POST /apple-calendar/events              — Create a new event
  *
- * CRUD /calendar-configs                   — Manage which calendars are enabled (via modelRouter)
+ * CRUD /calendar-configs is registered via crudRoutes.
  */
 export class AppleCalendarPlugin implements TerrenoPlugin {
   register(app: import("express").Application): void {
@@ -38,10 +31,7 @@ export class AppleCalendarPlugin implements TerrenoPlugin {
       "/apple-calendar/events",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {start, end, calendars} = req.query as {
           start?: string;
@@ -85,10 +75,7 @@ export class AppleCalendarPlugin implements TerrenoPlugin {
       "/apple-calendar/events",
       authenticateMiddleware(),
       asyncHandler(async (req: Request, res: Response) => {
-        const user = req.user as UserDocument | undefined;
-        if (!user) {
-          throw new APIError({status: 401, title: "Authentication required"});
-        }
+        const user = requireUser(req);
 
         const {summary, startDate, endDate, calendarName, location, notes, isAllDay} = req.body as {
           summary?: string;
@@ -123,16 +110,3 @@ export class AppleCalendarPlugin implements TerrenoPlugin {
     );
   }
 }
-
-// CRUD routes for calendar config (which calendars to pay attention to)
-export const calendarConfigRoutes = modelRouter("/calendar-configs", CalendarConfig, {
-  permissions: {
-    create: [Permissions.IsAuthenticated],
-    delete: [Permissions.IsOwner],
-    list: [Permissions.IsAuthenticated],
-    read: [Permissions.IsOwner],
-    update: [Permissions.IsOwner],
-  },
-  queryFields: ["name", "owner"],
-  sort: "name",
-});

@@ -90,7 +90,7 @@ export class PrWatcher {
   async start(): Promise<void> {
     const config = await loadAppConfig();
     if (!config.prWatch.enabled) {
-      logger.info("PR watcher is disabled");
+      logger.debug("PR watcher is disabled");
       return;
     }
 
