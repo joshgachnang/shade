@@ -3,7 +3,7 @@ import {logger} from "@terreno/api";
 import {paths} from "../config";
 import {FrameAnalysis} from "../models";
 
-const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://api.shade.nang.io";
+const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://shade-api.nang.io";
 
 const formatTimestamp = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600);
