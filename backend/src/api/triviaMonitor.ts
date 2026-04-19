@@ -6,15 +6,16 @@ import {getOrchestrator} from "../orchestrator";
 import {requireUser} from "../utils/auth";
 
 /**
- * Trivia Auto-Search API endpoints.
+ * Trivia Monitor API endpoints (formerly Trivia Auto-Search).
  *
- * POST /trivia/toggle       — Enable/disable trivia auto-search
- * POST /trivia/ask           — Submit a manual trivia question
- * GET  /trivia/status        — Get current auto-search status
+ * POST /trivia/toggle  — Enable/disable the trivia monitor
+ * POST /trivia/ask     — Submit a manual trivia question (routes through
+ *                        TriviaMonitor.handleChatMessage so the user must be
+ *                        in `triviaMonitor.allowedUserIds`).
+ * GET  /trivia/status  — Get the current monitor config.
  */
-export class TriviaAutoSearchPlugin implements TerrenoPlugin {
+export class TriviaMonitorPlugin implements TerrenoPlugin {
   register(app: import("express").Application): void {
-    // POST /trivia/toggle — enable or disable auto-search
     app.post(
       "/trivia/toggle",
       authenticateMiddleware(),
@@ -26,24 +27,23 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
           throw new APIError({status: 400, title: "enabled must be a boolean"});
         }
 
-        await AppConfig.findOneAndUpdate({}, {$set: {"triviaAutoSearch.enabled": enabled}});
+        await AppConfig.findOneAndUpdate({}, {$set: {"triviaMonitor.enabled": enabled}});
         await reloadAppConfig();
 
         const orchestrator = getOrchestrator();
         if (orchestrator) {
           if (enabled) {
-            await orchestrator.triviaAutoSearch.start();
+            await orchestrator.triviaMonitor.start();
           } else {
-            orchestrator.triviaAutoSearch.stop();
+            orchestrator.triviaMonitor.stop();
           }
         }
 
-        logger.info(`Trivia auto-search ${enabled ? "enabled" : "disabled"} by ${user.email}`);
+        logger.info(`Trivia monitor ${enabled ? "enabled" : "disabled"} by ${user.email}`);
         res.json({enabled});
       })
     );
 
-    // POST /trivia/ask — submit a manual question
     app.post(
       "/trivia/ask",
       authenticateMiddleware(),
@@ -63,8 +63,7 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
           throw new APIError({status: 503, title: "Orchestrator not running"});
         }
 
-        // Use the user's ID as the sender for the manual question handler
-        const handled = await orchestrator.triviaAutoSearch.handleChatMessage(
+        const handled = await orchestrator.triviaMonitor.handleChatMessage(
           `!trivia ${question}`,
           user._id.toString(),
           ""
@@ -74,7 +73,7 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
           throw new APIError({
             status: 403,
             title:
-              "User not allowed to submit trivia questions. Add your user ID to triviaAutoSearch.allowedUserIds.",
+              "User not allowed to submit trivia questions. Add your user ID to triviaMonitor.allowedUserIds.",
           });
         }
 
@@ -82,16 +81,17 @@ export class TriviaAutoSearchPlugin implements TerrenoPlugin {
       })
     );
 
-    // GET /trivia/status — get current config
     app.get(
       "/trivia/status",
       authenticateMiddleware(),
       asyncHandler(async (_req: Request, res: Response) => {
         const config = await AppConfig.findOneOrNone({});
         res.json({
-          enabled: config?.triviaAutoSearch?.enabled ?? false,
-          groupId: config?.triviaAutoSearch?.groupId ?? "",
-          allowedUserIds: config?.triviaAutoSearch?.allowedUserIds ?? [],
+          enabled: config?.triviaMonitor?.enabled ?? false,
+          groupId: config?.triviaMonitor?.groupId ?? "",
+          allowedUserIds: config?.triviaMonitor?.allowedUserIds ?? [],
+          questionsWebhook: config?.triviaMonitor?.questionsWebhook ?? "",
+          answersWebhook: config?.triviaMonitor?.answersWebhook ?? "",
         });
       })
     );

@@ -12,7 +12,7 @@
     "@slack/types": "^2.14.0",
     "@slack/web-api": "^7.14.1",
     "@terreno/admin-backend": "^0.9.2",
-    "@terreno/api": "0.3.1",
+    "@terreno/api": "^0.9.2",
     "@types/ws": "^8.18.1",
     "@wesleytodd/openapi": "^1.1.0",
     "cheerio": "^1.2.0",

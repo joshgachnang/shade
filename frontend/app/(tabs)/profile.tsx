@@ -1,3 +1,4 @@
+import type {UserResponse} from "@terreno/rtk";
 import {Box, Button, Heading, Page, Text} from "@terreno/ui";
 import {useRouter} from "expo-router";
 import type React from "react";
@@ -39,7 +40,7 @@ const ProfileScreen: React.FC = () => {
           <Text bold>Email</Text>
           <Text testID="profile-email-text">{profile?.data?.email || "Not set"}</Text>
         </Box>
-        {profile?.data?.admin === true && (
+        {(profile as any)?.admin === true && (
           <Box marginTop={4}>
             <Button
               fullWidth

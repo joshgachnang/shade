@@ -11,6 +11,7 @@ import {Transcript} from "../../models/transcript";
 import type {RadioStreamDocument} from "../../types";
 import {getRecordingPublicBaseUrl} from "../../utils/publicUrl";
 import type {ChannelManager} from "../channels/manager";
+import {MUSIC_END_SENTINEL, MUSIC_START_SENTINEL} from "./trivia/prompts";
 import {queryAcrCloud} from "./radio/acrCloud";
 import {pcmToMp3, wrapPcmAsWav} from "./radio/audioEncoding";
 import {postMessageToSlack, sendToSlackWebhook} from "./radio/slackNotifier";
@@ -55,6 +56,20 @@ const FFMPEG_SEARCH_PATHS = [
   "/opt/homebrew/bin/ffmpeg",
   "/usr/local/bin/ffmpeg",
   "/usr/bin/ffmpeg",
+];
+
+/**
+ * ffmpeg stderr noise we always drop. These warnings are emitted for a bad
+ * packet here and there in live MP3/HTTP streams — ffmpeg recovers and
+ * keeps decoding, so surfacing them only pollutes the logs. Anything NOT
+ * matching these patterns still goes to debug.
+ */
+const FFMPEG_STDERR_SILENCE_PATTERNS: RegExp[] = [
+  /Error submitting packet to decoder.*Invalid data found/i,
+  /Invalid data found when processing input/i,
+  /mp3float.*Header missing/i,
+  /past duration .* too large/i,
+  /non monotonically increasing dts/i,
 ];
 
 export class RadioTranscriber {
@@ -174,8 +189,15 @@ export class RadioTranscriber {
       });
     }, batchInterval);
 
-    // Set up periodic song identification via ACRCloud (always on when stream is active)
-    if (process.env.ACRCLOUD_ACCESS_KEY && process.env.ACRCLOUD_SECRET_KEY) {
+    // Set up periodic song identification via ACRCloud. Gated by
+    // AppConfig.radioTranscriber.songIdentification so operators can disable
+    // both the polling and the "Now Playing" Slack post.
+    const songIdEnabled = appConfig.radioTranscriber.songIdentification !== false;
+    if (
+      songIdEnabled &&
+      process.env.ACRCLOUD_ACCESS_KEY &&
+      process.env.ACRCLOUD_SECRET_KEY
+    ) {
       active.songId.timer = setInterval(() => {
         this.identifySong(active).catch((err) => {
           logger.error(`Song ID error for stream "${doc.name}": ${err}`);
@@ -184,6 +206,8 @@ export class RadioTranscriber {
       logger.info(
         `Song identification enabled for "${doc.name}" (every ${SONG_ID_INTERVAL_MS / 1000}s)`
       );
+    } else if (!songIdEnabled) {
+      logger.info(`Song identification disabled by AppConfig for "${doc.name}"`);
     }
 
     logger.info(`Radio stream "${doc.name}" pipeline launched (flush every ${batchInterval}ms)`);
@@ -264,9 +288,13 @@ export class RadioTranscriber {
 
     ffmpeg.stderr?.on("data", (data: Buffer) => {
       const msg = data.toString().trim();
-      if (msg) {
-        logger.debug(`ffmpeg [${active.doc.name}]: ${msg}`);
+      if (!msg) {
+        return;
       }
+      if (FFMPEG_STDERR_SILENCE_PATTERNS.some((re) => re.test(msg))) {
+        return;
+      }
+      logger.debug(`ffmpeg [${active.doc.name}]: ${msg}`);
     });
 
     ffmpeg.stdout?.on("data", (chunk: Buffer) => {
@@ -432,6 +460,13 @@ export class RadioTranscriber {
   }
 
   private async doIdentifySong(active: ActiveStream): Promise<void> {
+    // Honor runtime toggle so flipping the flag in AppConfig takes effect
+    // without restarting the stream.
+    const appConfig = await loadAppConfig();
+    if (appConfig.radioTranscriber.songIdentification === false) {
+      return;
+    }
+
     const accessKey = process.env.ACRCLOUD_ACCESS_KEY!;
     const secretKey = process.env.ACRCLOUD_SECRET_KEY!;
 
@@ -448,6 +483,7 @@ export class RadioTranscriber {
       // No song match — it's speech. Allow transcripts to post.
       if (active.songId.musicPlaying) {
         logger.info(`Music ended on "${active.doc.name}", resuming transcription`);
+        await this.emitMusicSentinel(active, MUSIC_END_SENTINEL);
       }
       active.songId.musicPlaying = false;
       active.songId.lastIdentifiedSong = null;
@@ -455,7 +491,14 @@ export class RadioTranscriber {
     }
 
     // Song matched — suppress transcripts (they're lyrics)
+    const wasPlaying = active.songId.musicPlaying;
     active.songId.musicPlaying = true;
+    if (!wasPlaying) {
+      // Transition into music. Insert a sentinel Transcript so downstream
+      // consumers (e.g. TriviaMonitor) can finalize any pending questions —
+      // the DJ stopped talking.
+      await this.emitMusicSentinel(active, MUSIC_START_SENTINEL);
+    }
 
     const songKey = `${result.artist} - ${result.title}`;
 
@@ -471,15 +514,35 @@ export class RadioTranscriber {
 
     logger.info(`Song identified on "${active.doc.name}": ${songKey}`);
 
+    // "Now Playing" posts are gated separately so music-gating can run without
+    // spamming Slack.
+    const postSongIdToSlack = appConfig.radioTranscriber.postSongIdToSlack !== false;
+
     try {
-      if (active.doc.slackWebhookUrl) {
+      if (postSongIdToSlack && active.doc.slackWebhookUrl) {
         await sendToSlackWebhook({webhookUrl: active.doc.slackWebhookUrl, text: message});
       }
-      if (active.doc.targetGroupId) {
+      if (postSongIdToSlack && active.doc.targetGroupId) {
         await this.channelManager.sendMessageToGroup(active.doc.targetGroupId.toString(), message);
       }
     } catch (err) {
       logger.error(`Failed to post song ID for "${active.doc.name}": ${err}`);
+    }
+  }
+
+  /**
+   * Write a sentinel Transcript signaling a music-state transition. Used by
+   * TriviaMonitor to decide when to finalize pending questions.
+   */
+  private async emitMusicSentinel(active: ActiveStream, sentinel: string): Promise<void> {
+    try {
+      await Transcript.create({
+        radioStreamId: active.doc._id,
+        targetGroupId: active.doc.targetGroupId,
+        content: sentinel,
+      });
+    } catch (err) {
+      logger.warn(`Failed to emit music sentinel for "${active.doc.name}": ${err}`);
     }
   }
 
@@ -558,14 +621,21 @@ export class RadioTranscriber {
     }
 
     try {
-      if (active.doc.slackBotToken && active.doc.slackChannelId) {
+      // AppConfig.radioTranscriber.postTranscriptsToSlack gates the raw per-flush
+      // Slack post. When disabled, transcripts are still written to the DB so
+      // downstream consumers like TriviaMonitor (Haiku question extractor +
+      // web-search research) keep running.
+      const appConfig = await loadAppConfig();
+      const postToSlack = appConfig.radioTranscriber.postTranscriptsToSlack !== false;
+
+      if (postToSlack && active.doc.slackBotToken && active.doc.slackChannelId) {
         await postMessageToSlack({
           botToken: active.doc.slackBotToken,
           channelId: active.doc.slackChannelId,
           text: messageText,
           recordingUrl,
         });
-      } else if (active.doc.slackWebhookUrl) {
+      } else if (postToSlack && active.doc.slackWebhookUrl) {
         await sendToSlackWebhook({
           webhookUrl: active.doc.slackWebhookUrl,
           text: messageText,

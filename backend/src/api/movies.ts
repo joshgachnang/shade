@@ -8,7 +8,7 @@ import {serveStaticUnder} from "../utils/staticFiles";
 
 export class MovieActionsPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
-    app.get("/static/movies/*", serveStaticUnder(paths.movies));
+    app.get("/static/movies/*splat", serveStaticUnder(paths.movies));
 
     app.post(
       "/movie-actions/:id/process",

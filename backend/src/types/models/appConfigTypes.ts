@@ -16,6 +16,9 @@ export interface AppConfigRadioTranscriber {
   defaultBatchIntervalMs: number;
   maxReconnectAttempts: number;
   reconnectDelayMs: number;
+  postTranscriptsToSlack: boolean;
+  songIdentification: boolean;
+  postSongIdToSlack: boolean;
 }
 
 export interface AppConfigOrchestrator {
@@ -44,12 +47,6 @@ export interface AppConfigApiKeys {
   github: string;
 }
 
-export interface AppConfigTriviaAutoSearch {
-  enabled: boolean;
-  groupId: string;
-  allowedUserIds: string[];
-}
-
 export interface AppConfigPrWatch {
   enabled: boolean;
   groupId: string;
@@ -63,6 +60,7 @@ export interface AppConfigPrWatch {
 export interface AppConfigTriviaMonitor {
   enabled: boolean;
   groupId: string;
+  allowedUserIds: string[];
   questionsWebhook: string;
   answersWebhook: string;
 }
@@ -117,6 +115,7 @@ export interface AppConfigFields {
   triggerPattern: string;
   dataDir: string;
   publicUrl: string;
+  triviaResearchSystemPrompt: string;
   logging: AppConfigLogging;
   auth: AppConfigAuth;
   pollIntervals: AppConfigPollIntervals;
@@ -127,7 +126,6 @@ export interface AppConfigFields {
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;
-  triviaAutoSearch: AppConfigTriviaAutoSearch;
   prWatch: AppConfigPrWatch;
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;

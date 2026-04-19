@@ -6,6 +6,6 @@ import {serveStaticUnder} from "../utils/staticFiles";
 
 export class RecordingsPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
-    app.get("/static/recordings/*", serveStaticUnder(path.join(paths.data, "recordings")));
+    app.get("/static/recordings/*splat", serveStaticUnder(path.join(paths.data, "recordings")));
   }
 }

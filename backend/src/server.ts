@@ -1,6 +1,8 @@
 import * as Sentry from "@sentry/node";
 import {AdminApp} from "@terreno/admin-backend";
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
+import {adminScripts} from "./admin";
+import {adminModelConfigs} from "./adminConfig";
 import {AppleCalendarPlugin} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
 import {CommandPlugin} from "./api/command";
@@ -9,10 +11,9 @@ import {HealthPlugin} from "./api/health";
 import {MovieActionsPlugin} from "./api/movies";
 import {SearchPlugin} from "./api/search";
 import {RecordingsPlugin} from "./api/transcripts";
-import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
-import {AppConfig, loadAppConfig} from "./models/appConfig";
+import {TriviaMonitorPlugin} from "./api/triviaMonitor";
+import {loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
-import {oapi} from "./openapi";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
 import {hydrateEnvFromConfig} from "./utils/configEnv";
@@ -57,23 +58,19 @@ export const start = async (skipListen = false) => {
   }
 
   const adminApp = new AdminApp({
-    models: [
-      {
-        model: AppConfig,
-        routePath: "/app-configs",
-        displayName: "App Config",
-        listFields: ["assistantName", "triggerPattern", "created"],
-      },
-    ],
+    models: adminModelConfigs,
+    scripts: adminScripts,
   });
 
   // AdminApp.register takes an optional oapi instance to thread into its
-  // model routers; TerrenoApp's plugin interface only passes `app`, so we wrap
-  // AdminApp in a thin TerrenoPlugin that forwards the shared oapi instance.
-  // Without this, AdminApp's modelRouter calls trigger
-  // "No options.openApi provided, skipping *OpenApiMiddleware" debug logs.
+  // model routers. TerrenoApp passes its internal oapi instance as the second
+  // argument to plugin.register, so we forward it here to ensure the admin
+  // routes share the same spec used at /openapi.json.
   const adminPlugin = {
-    register(app: Parameters<typeof adminApp.register>[0]): void {
+    register(
+      app: Parameters<typeof adminApp.register>[0],
+      oapi?: Parameters<typeof adminApp.register>[1]
+    ): void {
       adminApp.register(app, oapi);
     },
   };
@@ -93,10 +90,6 @@ export const start = async (skipListen = false) => {
     logRequests: !isDeployed,
     skipListen,
   })
-    // Mount our shared OpenAPI middleware before anything else registers so
-    // `/openapi.json` serves the spec populated by `modelRouter()` calls
-    // rather than TerrenoApp's empty internal instance.
-    .addMiddleware(oapi)
     .register(new HealthPlugin())
     .register(new CommandPlugin());
 
@@ -111,7 +104,7 @@ export const start = async (skipListen = false) => {
     .register(new SearchPlugin())
     .register(new AppleCalendarPlugin())
     .register(new AppleContactsPlugin())
-    .register(new TriviaAutoSearchPlugin())
+    .register(new TriviaMonitorPlugin())
     .register(adminPlugin)
     .start();
 

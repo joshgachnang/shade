@@ -1105,11 +1105,11 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
-  const toggleTriviaAutoSearchTool = tool(
-    "toggle_trivia_auto_search",
-    "Enable or disable the trivia auto-search service. When enabled, Shade watches radio transcripts for trivia questions and automatically researches answers. When disabled, transcript monitoring stops.",
+  const toggleTriviaMonitorTool = tool(
+    "toggle_trivia_monitor",
+    "Enable or disable the trivia monitor. When enabled, Shade watches radio transcripts for trivia questions and automatically researches answers once music starts. When disabled, transcript monitoring stops.",
     {
-      enabled: z.boolean().describe("true to enable trivia auto-search, false to disable"),
+      enabled: z.boolean().describe("true to enable trivia monitor, false to disable"),
     },
     async (args) => {
       const fileId = await writeIpcFile(ctx.ipcDir, {
@@ -1121,22 +1121,22 @@ const buildTools = (ctx: McpContext) => {
         content: [
           {
             type: "text" as const,
-            text: `Trivia auto-search ${args.enabled ? "enable" : "disable"} queued (${fileId}).`,
+            text: `Trivia monitor ${args.enabled ? "enable" : "disable"} queued (${fileId}).`,
           },
         ],
       };
     }
   );
 
-  const triviaAutoSearchStatusTool = tool(
-    "trivia_auto_search_status",
-    "Check the current status of the trivia auto-search service — whether it's enabled in config and whether the polling loop is actively running.",
+  const triviaMonitorStatusTool = tool(
+    "trivia_monitor_status",
+    "Check the current status of the trivia monitor — whether it's enabled in config and the configured group.",
     {},
     async () => {
       try {
         const config = await loadAppConfig();
-        const enabled = config.triviaAutoSearch.enabled;
-        const groupId = config.triviaAutoSearch.groupId;
+        const enabled = config.triviaMonitor.enabled;
+        const groupId = config.triviaMonitor.groupId;
         return {
           content: [
             {
@@ -1183,8 +1183,8 @@ const buildTools = (ctx: McpContext) => {
     stopRadioStreamTool,
     listRadioStreamsTool,
     toggleTranscriptionTool,
-    toggleTriviaAutoSearchTool,
-    triviaAutoSearchStatusTool,
+    toggleTriviaMonitorTool,
+    triviaMonitorStatusTool,
   ];
 };
 

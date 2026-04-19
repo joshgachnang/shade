@@ -6,21 +6,21 @@ import type {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import type {GroupQueue} from "./groupQueue";
 import {shouldTrigger} from "./router";
-import type {TriviaAutoSearch} from "./services/triviaAutoSearch";
+import type {TriviaMonitor} from "./services/triviaMonitor";
 
 export class MessageLoop {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private channelManager: ChannelManager;
   private groupQueue: GroupQueue;
-  private triviaAutoSearch: TriviaAutoSearch | null = null;
+  private triviaMonitor: TriviaMonitor | null = null;
 
   constructor(channelManager: ChannelManager, groupQueue: GroupQueue) {
     this.channelManager = channelManager;
     this.groupQueue = groupQueue;
   }
 
-  setTriviaAutoSearch(triviaAutoSearch: TriviaAutoSearch): void {
-    this.triviaAutoSearch = triviaAutoSearch;
+  setTriviaMonitor(triviaMonitor: TriviaMonitor): void {
+    this.triviaMonitor = triviaMonitor;
   }
 
   async start(): Promise<void> {
@@ -79,10 +79,10 @@ export class MessageLoop {
     }
 
     // Check for !trivia commands before normal trigger processing
-    if (this.triviaAutoSearch) {
+    if (this.triviaMonitor) {
       for (const msg of unprocessedMessages) {
         if (msg.content.startsWith("!trivia ")) {
-          const handled = await this.triviaAutoSearch.handleChatMessage(
+          const handled = await this.triviaMonitor.handleChatMessage(
             msg.content,
             msg.senderExternalId || "",
             groupId

@@ -1,7 +1,15 @@
+import {randomBytes} from "node:crypto";
 import {logger} from "@terreno/api";
 import mongoose from "mongoose";
 import type {AppConfigDocument, AppConfigModel} from "../types";
 import {addDefaultPlugins} from "./modelPlugins";
+
+/**
+ * Generates a 256-bit hex-encoded random secret, used as a sensible default
+ * for JWT and MCP auth tokens on first boot. Callers can still override via
+ * env vars (which take precedence after `hydrateEnvFromConfig`).
+ */
+const generateSecret = (): string => randomBytes(32).toString("hex");
 
 const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
   {
@@ -16,6 +24,12 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     // buttons, webhook callbacks). Empty string falls back to SHADE_PUBLIC_URL
     // or the production default.
     publicUrl: {type: String, default: ""},
+
+    // System prompt used when researching trivia questions with Claude. Top-
+    // level and stored as a plain string so it's easy to edit at runtime.
+    // Empty string falls back to the TRIVIA_ANSWERER_PROMPT constant in
+    // orchestrator/services/trivia/prompts.ts.
+    triviaResearchSystemPrompt: {type: String, default: ""},
 
     logging: {
       // pino log level override: trace | debug | info | warn | error | fatal
@@ -44,6 +58,16 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       defaultBatchIntervalMs: {type: Number, default: 15000},
       maxReconnectAttempts: {type: Number, default: 50},
       reconnectDelayMs: {type: Number, default: 5000},
+      // Controls whether per-flush transcript batches are echoed directly to
+      // Slack (webhook / bot token). Transcripts are always saved to the DB so
+      // downstream consumers (e.g. TriviaMonitor) keep working when disabled.
+      postTranscriptsToSlack: {type: Boolean, default: true},
+      // Controls ACRCloud polling. Required for TriviaMonitor's music-gated
+      // question finalization (a [MUSIC_START] sentinel is emitted on transition).
+      songIdentification: {type: Boolean, default: true},
+      // Controls the "Now Playing: Artist — Title" Slack post. When false,
+      // ACRCloud still polls for music-gating but no Slack post fires.
+      postSongIdToSlack: {type: Boolean, default: true},
     },
 
     orchestrator: {
@@ -99,11 +123,6 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       },
     },
 
-    triviaAutoSearch: {
-      enabled: {type: Boolean, default: false},
-      groupId: {type: String, default: ""},
-      allowedUserIds: {type: [String], default: []},
-    },
 
     prWatch: {
       enabled: {type: Boolean, default: false},
@@ -118,6 +137,8 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     triviaMonitor: {
       enabled: {type: Boolean, default: false},
       groupId: {type: String, default: ""},
+      // Slack users allowed to issue !trivia commands (chat ID / external ID).
+      allowedUserIds: {type: [String], default: []},
       questionsWebhook: {type: String, default: ""},
       answersWebhook: {type: String, default: ""},
     },
@@ -133,13 +154,31 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
 
 addDefaultPlugins(appConfigSchema);
 
-// Invalidate cache on save so the next loadAppConfig() fetches fresh data
-appConfigSchema.post("save", () => {
+// Invalidate cache on save so the next loadAppConfig() fetches fresh data, and
+// warn the admin if any restart-required field changed. We import lazily to
+// avoid a circular dependency between `models/appConfig.ts` and
+// `utils/configEnv.ts`.
+appConfigSchema.post("save", async (doc) => {
   cachedConfig = null;
+  try {
+    const {warnOnRestartRequiredChanges} = await import("../utils/configEnv");
+    warnOnRestartRequiredChanges(doc as AppConfigDocument);
+  } catch {
+    // Non-fatal — the hook is best-effort operator feedback.
+  }
 });
 
-appConfigSchema.post("findOneAndUpdate", () => {
+appConfigSchema.post("findOneAndUpdate", async (doc) => {
   cachedConfig = null;
+  if (!doc) {
+    return;
+  }
+  try {
+    const {warnOnRestartRequiredChanges} = await import("../utils/configEnv");
+    warnOnRestartRequiredChanges(doc as unknown as AppConfigDocument);
+  } catch {
+    // Non-fatal.
+  }
 });
 
 export const AppConfig = mongoose.model<AppConfigDocument, AppConfigModel>(
@@ -152,6 +191,11 @@ let cachedConfig: AppConfigDocument | null = null;
 /**
  * Load the singleton AppConfig from the database.
  * Creates one with defaults if none exists. Caches the result in memory.
+ *
+ * On first-boot creation we seed randomly-generated values for secrets that
+ * have no sensible static default (JWT + MCP auth tokens). Operators can
+ * rotate them later via the admin UI; the app must be restarted for the new
+ * values to take effect.
  */
 export const loadAppConfig = async (): Promise<AppConfigDocument> => {
   if (cachedConfig) {
@@ -161,7 +205,15 @@ export const loadAppConfig = async (): Promise<AppConfigDocument> => {
   let doc = await AppConfig.findOneOrNone({});
   if (!doc) {
     logger.info("No AppConfig found, creating default configuration");
-    doc = await AppConfig.create({});
+    doc = await AppConfig.create({
+      auth: {
+        tokenSecret: generateSecret(),
+        refreshTokenSecret: generateSecret(),
+      },
+      mcpMedia: {
+        authToken: generateSecret(),
+      },
+    });
   }
 
   cachedConfig = doc;

@@ -27,7 +27,6 @@ import {
   User,
   WebhookSource,
 } from "../models";
-import {oapi} from "../openapi";
 
 /**
  * Permission preset: writes restricted to admins; reads require authentication.
@@ -232,5 +231,5 @@ const descriptors: CrudRouteDescriptor[] = [
 
 export const crudRoutes: ModelRouterRegistration[] = descriptors.map(
   ({path, model, permissions, queryFields, sort}) =>
-    modelRouter(path, model, {permissions, queryFields, sort, openApi: oapi})
+    modelRouter(path, model, {permissions, queryFields, sort})
 );

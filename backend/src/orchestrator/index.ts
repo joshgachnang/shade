@@ -12,7 +12,6 @@ import {DirectAgentRunner} from "./runners/direct";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
-import {TriviaAutoSearch} from "./services/triviaAutoSearch";
 import {TriviaMonitor} from "./services/triviaMonitor";
 
 export interface OrchestratorState {
@@ -22,7 +21,6 @@ export interface OrchestratorState {
   messageLoop: MessageLoop;
   ipcWatcher: IpcWatcher;
   radioTranscriber: RadioTranscriber;
-  triviaAutoSearch: TriviaAutoSearch;
   prWatcher: PrWatcher;
   triviaMonitor: TriviaMonitor;
   isRunning: boolean;
@@ -140,15 +138,6 @@ export const startOrchestrator = async (
     logError("Radio transcriber start error (non-fatal)", err);
   }
 
-  // Start trivia auto-search (non-fatal if it fails)
-  const triviaAutoSearch = new TriviaAutoSearch(channelManager);
-  messageLoop.setTriviaAutoSearch(triviaAutoSearch);
-  try {
-    await triviaAutoSearch.start();
-  } catch (err) {
-    logError("Trivia auto-search start error (non-fatal)", err);
-  }
-
   // Start PR watcher (non-fatal if it fails)
   const prWatcher = new PrWatcher(channelManager, runner);
   try {
@@ -157,8 +146,10 @@ export const startOrchestrator = async (
     logError("PR watcher start error (non-fatal)", err);
   }
 
-  // Start trivia monitor (non-fatal if it fails)
+  // Start trivia monitor — unified service (formerly TriviaMonitor +
+  // TriviaAutoSearch). Also hooks chat-command routing for `!trivia`.
   const triviaMonitor = new TriviaMonitor(channelManager);
+  messageLoop.setTriviaMonitor(triviaMonitor);
   try {
     await triviaMonitor.start();
   } catch (err) {
@@ -167,13 +158,13 @@ export const startOrchestrator = async (
 
   ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {
     const {AppConfig, reloadAppConfig} = await import("../models/appConfig");
-    await AppConfig.findOneAndUpdate({}, {$set: {"triviaAutoSearch.enabled": data.enabled}});
+    await AppConfig.findOneAndUpdate({}, {$set: {"triviaMonitor.enabled": data.enabled}});
     await reloadAppConfig();
 
     if (data.enabled) {
-      await triviaAutoSearch.start();
+      await triviaMonitor.start();
     } else {
-      triviaAutoSearch.stop();
+      triviaMonitor.stop();
     }
   });
 
@@ -206,7 +197,6 @@ export const startOrchestrator = async (
     messageLoop,
     ipcWatcher,
     radioTranscriber,
-    triviaAutoSearch,
     prWatcher,
     triviaMonitor,
     isRunning: true,
@@ -228,7 +218,6 @@ export const stopOrchestrator = async (): Promise<void> => {
 
   state.messageLoop.stop();
   state.ipcWatcher.stop();
-  state.triviaAutoSearch.stop();
   state.prWatcher.stop();
   state.triviaMonitor.stop();
 
