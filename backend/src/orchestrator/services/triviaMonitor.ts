@@ -78,6 +78,14 @@ interface DetectedQuestion {
    * research is skipped — the question can't be answered remotely.
    */
   skipReason: string | null;
+  /**
+   * True once the detector has observed the "again, question X, hour Y"
+   * repeat marker following the first full read. That phrase is the DJ's
+   * signal that the question is done being read — we can finalize
+   * immediately instead of waiting for [MUSIC_START] or the safety-net
+   * timeout.
+   */
+  readComplete: boolean;
 }
 
 /**
@@ -290,6 +298,7 @@ export class TriviaMonitor {
       questionNumber: 0,
       questionText,
       skipReason: null,
+      readComplete: true,
     };
     await this.researchQuestion(key, q, {persist: false});
   }
@@ -408,6 +417,7 @@ export class TriviaMonitor {
           questionNumber: q.questionNumber,
           questionText: q.questionText,
           skipReason: typeof q.skipReason === "string" && q.skipReason.trim() ? q.skipReason.trim() : null,
+          readComplete: q.readComplete === true,
         })),
         answers: (parsed.answers || []).filter(
           (a: any) =>
@@ -451,10 +461,23 @@ export class TriviaMonitor {
 
     if (isNew) {
       logger.info(
-        `[TriviaMonitor] Pending ${key}: ${q.questionText.substring(0, 120)} (waiting for music)`
+        `[TriviaMonitor] Pending ${key}: ${q.questionText.substring(0, 120)} ` +
+          `(${q.readComplete ? "read complete, finalizing now" : "waiting for music"})`
       );
     } else if (isUpdated) {
-      logger.debug(`[TriviaMonitor] Pending ${key} updated (waiting for music)`);
+      logger.debug(
+        `[TriviaMonitor] Pending ${key} updated ` +
+          `(${q.readComplete ? "read complete" : "waiting for music"})`
+      );
+    }
+
+    // DJ said "again, question X, hour Y" — the question read is done, so
+    // finalize immediately instead of waiting for [MUSIC_START] or timeout.
+    if (q.readComplete) {
+      this.pendingQuestions.delete(key);
+      this.finalizeQuestion(q).catch((err) => {
+        logger.error(`[TriviaMonitor] Immediate finalize error for ${key}: ${err}`);
+      });
     }
   }
 
@@ -500,42 +523,52 @@ export class TriviaMonitor {
     }
 
     for (const q of toFinalize) {
-      const key = `H${q.hour}Q${q.questionNumber}`;
-      if (this.postedQuestions.has(key)) {
-        continue;
-      }
-      this.postedQuestions.add(key);
-
-      logger.info(`[TriviaMonitor] Question ${key}: ${q.questionText.substring(0, 120)}`);
-
-      const year = new Date().getFullYear();
-      try {
-        await TriviaQuestion.findOneAndUpdate(
-          {year, hour: q.hour, questionNumber: q.questionNumber},
-          {year, hour: q.hour, questionNumber: q.questionNumber, questionText: q.questionText},
-          {upsert: true, new: true}
-        );
-        logger.debug(`[TriviaMonitor] Saved question for ${key} to DB`);
-      } catch (err) {
-        logger.warn(`[TriviaMonitor] DB save error for ${key}: ${err}`);
-      }
-
-      const questionMsg = `*[${key}]* Question ${q.questionNumber}, Hour ${q.hour}:\n${q.questionText}`;
-      await this.postToGroup(questionMsg);
-      await this.postToWebhook("questions", questionMsg);
-
-      if (q.skipReason) {
-        const skipMsg = `:no_entry_sign: *[${key}]* Skipping research — ${q.skipReason} question`;
-        logger.info(`[TriviaMonitor] Skipping research for ${key}: ${q.skipReason}`);
-        await this.postToGroup(skipMsg);
-        await this.postToWebhook("answers", skipMsg);
-        continue;
-      }
-
-      this.researchQuestion(key, q).catch((err) => {
-        logger.error(`[TriviaMonitor] Research error for ${key}: ${err}`);
-      });
+      await this.finalizeQuestion(q);
     }
+  }
+
+  /**
+   * Finalize a single question: mark as posted, persist, post to group +
+   * questions webhook, then kick off research (unless `skipReason` is set).
+   * Safe to call from either the music/timeout batch finalizer or the
+   * immediate `readComplete` path in `handleQuestion`.
+   */
+  private async finalizeQuestion(q: DetectedQuestion): Promise<void> {
+    const key = `H${q.hour}Q${q.questionNumber}`;
+    if (this.postedQuestions.has(key)) {
+      return;
+    }
+    this.postedQuestions.add(key);
+
+    logger.info(`[TriviaMonitor] Question ${key}: ${q.questionText.substring(0, 120)}`);
+
+    const year = new Date().getFullYear();
+    try {
+      await TriviaQuestion.findOneAndUpdate(
+        {year, hour: q.hour, questionNumber: q.questionNumber},
+        {year, hour: q.hour, questionNumber: q.questionNumber, questionText: q.questionText},
+        {upsert: true, new: true}
+      );
+      logger.debug(`[TriviaMonitor] Saved question for ${key} to DB`);
+    } catch (err) {
+      logger.warn(`[TriviaMonitor] DB save error for ${key}: ${err}`);
+    }
+
+    const questionMsg = `*[${key}]* Question ${q.questionNumber}, Hour ${q.hour}:\n${q.questionText}`;
+    await this.postToGroup(questionMsg);
+    await this.postToWebhook("questions", questionMsg);
+
+    if (q.skipReason) {
+      const skipMsg = `:no_entry_sign: *[${key}]* Skipping research — ${q.skipReason} question`;
+      logger.info(`[TriviaMonitor] Skipping research for ${key}: ${q.skipReason}`);
+      await this.postToGroup(skipMsg);
+      await this.postToWebhook("answers", skipMsg);
+      return;
+    }
+
+    this.researchQuestion(key, q).catch((err) => {
+      logger.error(`[TriviaMonitor] Research error for ${key}: ${err}`);
+    });
   }
 
   // ── Answer handling (DJ-read official answers) ───────────────────────

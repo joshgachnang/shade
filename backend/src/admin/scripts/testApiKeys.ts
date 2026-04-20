@@ -55,6 +55,22 @@ export const testApiKeys: ScriptRunner = async (): Promise<{
     report("openrouter", false, "no key configured (AppConfig.apiKeys.openRouter)");
   }
 
+  // OpenAI — /v1/models is the cheapest identity probe. Used by the feature
+  // channel planner (AppConfig.models.planner).
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/models", {
+        headers: {Authorization: `Bearer ${process.env.OPENAI_API_KEY}`},
+        signal: AbortSignal.timeout(8000),
+      });
+      report("openai", res.ok, res.ok ? "OK" : `HTTP ${res.status} ${res.statusText}`);
+    } catch (err) {
+      report("openai", false, `error: ${err}`);
+    }
+  } else {
+    report("openai", false, "no key configured (AppConfig.apiKeys.openai)");
+  }
+
   // Deepgram — /v1/projects is the standard auth-check endpoint.
   if (process.env.DEEPGRAM_API_KEY) {
     try {

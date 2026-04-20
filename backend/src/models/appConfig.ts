@@ -90,6 +90,10 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       tavily: {type: String, default: ""},
       anthropic: {type: String, default: ""},
       openRouter: {type: String, default: ""},
+      // OpenAI API key used for feature-channel implementation planning
+      // (the /ip workflow runs against `models.planner`). Stored here per the
+      // "all service credentials belong in AppConfig" rule.
+      openai: {type: String, default: ""},
       deepgram: {type: String, default: ""},
       acrCloudAccessKey: {type: String, default: ""},
       acrCloudSecretKey: {type: String, default: ""},
@@ -99,6 +103,10 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     models: {
       answerer: {type: String, default: "claude-sonnet-4-20250514"},
       detector: {type: String, default: "claude-haiku-4-5-20251001"},
+      // OpenAI model used to drive the /ip planning conversation inside
+      // feature Slack channels. Implementation is still handed off to the
+      // Claude Agent SDK once the plan is approved.
+      planner: {type: String, default: "gpt-5.4"},
     },
 
     mcpMedia: {

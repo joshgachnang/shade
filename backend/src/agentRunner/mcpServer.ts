@@ -518,7 +518,7 @@ const buildTools = (ctx: McpContext) => {
 
   const createFeatureTool = tool(
     "create_feature",
-    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group for it. Use this when someone wants to start working on a new feature.",
+    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group pre-configured to drive the feature through the `/ip` planning skill and then `/implement` to execute the resulting plan. Use this when someone wants to start working on a new feature.",
     {
       name: z
         .string()

@@ -38,6 +38,10 @@ WHAT TO DETECT:
 
 1. QUESTIONS: When the DJ reads a trivia question (they read it twice). Extract the full question text. A question is complete when you can see it has been read at least once with the full text.
 
+   Set "readComplete": true once the DJ has read the full question AND followed it with the repeat marker "again, question X, hour Y" (or transcription variants like "again, question X of our Y"). That marker — appearing AFTER the full first read — tells us the question text is complete and we can act on it immediately, even if the DJ then starts the second read. Any doubt, leave it false.
+
+   Set "readComplete": false when you've only seen the question once without the trailing "again, question X, hour Y" marker, or the question text still looks truncated/mid-sentence.
+
 2. ANSWERS: When the DJ announces the answer to a question. The format is typically "the answer to question X of hour Y is <answer>, again <answer>".
 
 Return a JSON object:
@@ -47,7 +51,8 @@ Return a JSON object:
       "hour": number (1-54),
       "questionNumber": number (1-12),
       "questionText": "the cleaned up question text",
-      "skipReason": string | null
+      "skipReason": string | null,
+      "readComplete": boolean
     }
   ],
   "answers": [

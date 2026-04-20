@@ -41,6 +41,7 @@ export interface AppConfigApiKeys {
   tavily: string;
   anthropic: string;
   openRouter: string;
+  openai: string;
   deepgram: string;
   acrCloudAccessKey: string;
   acrCloudSecretKey: string;
@@ -74,6 +75,7 @@ export interface AppConfigTriviaStats {
 export interface AppConfigModels {
   answerer: string;
   detector: string;
+  planner: string;
 }
 
 export interface AppConfigMcpServiceConfig {

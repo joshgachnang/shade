@@ -70,6 +70,20 @@ New skills (slash commands) must be created in the project directory at `.claude
 
 ---
 
+## Configuration — ALWAYS use `AppConfig`
+
+**All runtime configuration** — API keys, model names, webhooks, feature flags, service credentials, base URLs, thresholds — **must** live in the `AppConfig` model (`backend/src/models/appConfig.ts`) and be read via `loadAppConfig()`.
+
+- Environment variables are **only** for bootstrap-level values needed before the DB is available: `MONGO_URI`, `PORT`, and the handful of secrets seeded into `process.env` by `hydrateEnvFromConfig` for third-party SDKs that read `process.env` synchronously.
+- When you need a new piece of config:
+  1. Add the field to `backend/src/models/appConfig.ts` and `backend/src/types/models/appConfigTypes.ts`.
+  2. If it has to end up in `process.env` for an SDK, extend `hydrateEnvFromConfig` + `RESTART_REQUIRED_FIELDS` in `backend/src/utils/configEnv.ts`.
+  3. Surface it in the admin UI so operators can edit it without a deploy.
+- **Do not** add new `process.env.FOO` reads in application code without a corresponding `AppConfig` field. Do not hardcode API keys, model names, or URLs.
+- When agents ask "where does this config come from?", the answer is always `AppConfig`.
+
+---
+
 ### Inline Annotations (`%%`)
 
 Lines starting with `%%` in any file are **inline annotations from the user**. When you encounter them:

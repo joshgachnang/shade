@@ -19,6 +19,7 @@ let hydratedSnapshot: Record<string, string> = {};
 const RESTART_REQUIRED_FIELDS: Array<{envName: string; configPath: string}> = [
   {envName: "ANTHROPIC_API_KEY", configPath: "apiKeys.anthropic"},
   {envName: "OPENROUTER_API_KEY", configPath: "apiKeys.openRouter"},
+  {envName: "OPENAI_API_KEY", configPath: "apiKeys.openai"},
   {envName: "DEEPGRAM_API_KEY", configPath: "apiKeys.deepgram"},
   {envName: "ACRCLOUD_ACCESS_KEY", configPath: "apiKeys.acrCloudAccessKey"},
   {envName: "ACRCLOUD_SECRET_KEY", configPath: "apiKeys.acrCloudSecretKey"},
@@ -28,6 +29,7 @@ const RESTART_REQUIRED_FIELDS: Array<{envName: string; configPath: string}> = [
   {envName: "TAVILY_API_KEY", configPath: "apiKeys.tavily"},
   {envName: "ANSWERER_MODEL", configPath: "models.answerer"},
   {envName: "DETECTOR_MODEL", configPath: "models.detector"},
+  {envName: "PLANNER_MODEL", configPath: "models.planner"},
   {envName: "SHADE_DATA_DIR", configPath: "dataDir"},
   {envName: "SHADE_PUBLIC_URL", configPath: "publicUrl"},
   {envName: "LOG_LEVEL", configPath: "logging.level"},
@@ -51,6 +53,7 @@ export const hydrateEnvFromConfig = (config: AppConfigDocument): void => {
     // API credentials for third-party services
     ["ANTHROPIC_API_KEY", config.apiKeys?.anthropic],
     ["OPENROUTER_API_KEY", config.apiKeys?.openRouter],
+    ["OPENAI_API_KEY", config.apiKeys?.openai],
     ["DEEPGRAM_API_KEY", config.apiKeys?.deepgram],
     ["ACRCLOUD_ACCESS_KEY", config.apiKeys?.acrCloudAccessKey],
     ["ACRCLOUD_SECRET_KEY", config.apiKeys?.acrCloudSecretKey],
@@ -64,6 +67,7 @@ export const hydrateEnvFromConfig = (config: AppConfigDocument): void => {
     // trivia services lazily.
     ["ANSWERER_MODEL", config.models?.answerer],
     ["DETECTOR_MODEL", config.models?.detector],
+    ["PLANNER_MODEL", config.models?.planner],
     // Former "bootstrap" values that can now live in AppConfig. Consumers read
     // these through lazy getters or post-hydration reconfiguration, so landing
     // them in process.env is enough to make everything pick them up.
