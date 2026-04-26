@@ -44,6 +44,29 @@ export interface AppConfigTriviaAutoSearch {
   allowedUserIds: string[];
 }
 
+export interface AppConfigPrWatch {
+  enabled: boolean;
+  groupId: string;
+  pollIntervalMs: number;
+  githubUsername: string;
+  autoRespondToBots: boolean;
+  autoFixConflicts: boolean;
+  reposBaseDir: string;
+}
+
+export interface AppConfigTriviaMonitor {
+  enabled: boolean;
+  groupId: string;
+  questionsWebhook: string;
+  answersWebhook: string;
+}
+
+export interface AppConfigTriviaStats {
+  slackWebhook: string;
+  blueskyIdentifier: string;
+  blueskyPassword: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -54,6 +77,9 @@ export interface AppConfigFields {
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
   triviaAutoSearch: AppConfigTriviaAutoSearch;
+  prWatch: AppConfigPrWatch;
+  triviaMonitor: AppConfigTriviaMonitor;
+  triviaStats: AppConfigTriviaStats;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;

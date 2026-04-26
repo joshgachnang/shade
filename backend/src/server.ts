@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import {AdminApp} from "@terreno/admin-backend";
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {agentSessionRoutes} from "./api/agentSessions";
@@ -6,17 +7,22 @@ import {appConfigRoutes} from "./api/appConfig";
 import {AppleCalendarPlugin, calendarConfigRoutes} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
 import {channelRoutes} from "./api/channels";
+import {characterRoutes} from "./api/characters";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
+import {frameAnalysisRoutes} from "./api/frameAnalyses";
+import {frameRoutes} from "./api/frames";
 import {groupRoutes} from "./api/groups";
 import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
+import {MovieActionsPlugin, movieRoutes} from "./api/movies";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
+import {SearchPlugin} from "./api/search";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
-import {transcriptRoutes} from "./api/transcripts";
+import {RecordingsPlugin, transcriptRoutes} from "./api/transcripts";
 import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
@@ -31,10 +37,12 @@ const isDeployed = process.env.NODE_ENV === "production";
 
 // Global error handlers — prevent uncaught errors from crashing the process
 process.on("uncaughtException", (error) => {
+  Sentry.captureException(error);
   logError("Uncaught exception (process will continue)", error);
 });
 
 process.on("unhandledRejection", (reason, _promise) => {
+  Sentry.captureException(reason);
   logError("Unhandled promise rejection", reason);
 });
 
@@ -95,7 +103,14 @@ export const start = async (skipListen = false) => {
     .register(pluginRoutes)
     .register(radioStreamRoutes)
     .register(transcriptRoutes)
+    .register(new RecordingsPlugin())
     .register(webhookSourceRoutes)
+    .register(movieRoutes)
+    .register(frameRoutes)
+    .register(frameAnalysisRoutes)
+    .register(characterRoutes)
+    .register(new MovieActionsPlugin())
+    .register(new SearchPlugin())
     .register(new AppleCalendarPlugin())
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())

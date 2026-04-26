@@ -8,27 +8,25 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Download binary from release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download latest --repo ${{ github.repository }} --pattern shade-backend-linux --dir /tmp
+          gh release download latest --repo ${{ github.repository }} --pattern shade-backend-linux --dir /tmp --clobber
           chmod +x /tmp/shade-backend-linux
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-
-      - name: Deploy to server
+      - name: Deploy and restart
         run: |
-          tailscale ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'cat > /tmp/shade-backend-new' < /tmp/shade-backend-linux
-          tailscale ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'set -euo pipefail && mv /tmp/shade-backend-new /opt/shade/shade-backend && chmod +x /opt/shade/shade-backend && sudo systemctl restart shade-backend && sleep 3 && systemctl is-active shade-backend && echo "Deploy complete"'
+          set -euo pipefail
+          mv /tmp/shade-backend-linux /opt/shade/shade-backend
+          chmod +x /opt/shade/shade-backend
+          sudo systemctl restart shade-backend
+          sleep 3
+          systemctl is-active shade-backend
+          echo "Deploy complete"
 
       - name: Notify Slack on success
         if: success()
@@ -39,7 +37,7 @@ jobs:
           REPO="${{ github.repository }}"
           curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"Shade backend deployed successfully :rocket:\n\`${SHORT_SHA}\` ${COMMIT_MSG}\nhttps://github.com/${REPO}/commit/${COMMIT_SHA}\"}"
+            -d "{\"text\":\"Shade backend deployed successfully :rocket:\\n\`${SHORT_SHA}\` ${COMMIT_MSG}\\nhttps://github.com/${REPO}/commit/${COMMIT_SHA}\"}"
 
       - name: Notify Slack on failure
         if: failure()
@@ -49,4 +47,4 @@ jobs:
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"Shade backend deploy failed :x:\n\`${SHORT_SHA}\` — <${RUN_URL}|View logs>\"}"
+            -d "{\"text\":\"Shade backend deploy failed :x:\\n\`${SHORT_SHA}\` — <${RUN_URL}|View logs>\"}"

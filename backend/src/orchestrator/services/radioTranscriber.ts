@@ -6,6 +6,12 @@ import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../../config";
 import {loadAppConfig} from "../../models/appConfig";
+
+const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://shade-api.nang.io";
+
+/** Base URL for transcript recording links (http, not https). */
+const RECORDING_PUBLIC_BASE_URL = BASE_URL.replace(/^https:\/\//i, "http://");
+
 // Using native WebSocket with Deepgram's token subprotocol auth
 import {RadioStream} from "../../models/radioStream";
 import {Transcript} from "../../models/transcript";
@@ -265,7 +271,11 @@ export class RadioTranscriber {
 
     ffmpeg.stdout?.on("data", (chunk: Buffer) => {
       if (active.ws && (active.ws as any).readyState === WebSocket.OPEN) {
-        (active.ws as any).send(chunk);
+        try {
+          (active.ws as any).send(chunk);
+        } catch (err) {
+          logger.debug(`WebSocket send error for "${active.doc.name}": ${err}`);
+        }
       }
       // Collect audio for the current flush window (MP3 attachment)
       active.flushAudioChunks.push(Buffer.from(chunk));
@@ -556,11 +566,69 @@ export class RadioTranscriber {
     };
   }
 
-  private async sendToSlackWebhook(webhookUrl: string, text: string): Promise<void> {
+  private async postMessageToSlack(
+    botToken: string,
+    channelId: string,
+    text: string,
+    recordingUrl?: string
+  ): Promise<void> {
+    const body: Record<string, unknown> = {channel: channelId, text};
+
+    if (recordingUrl) {
+      body.blocks = [
+        {
+          type: "section",
+          text: {type: "mrkdwn", text},
+          accessory: {
+            type: "button",
+            text: {type: "plain_text", text: "Listen"},
+            url: recordingUrl,
+            action_id: "listen_recording",
+          },
+        },
+      ];
+    }
+
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const data = (await response.json()) as any;
+    if (!data.ok) {
+      throw new Error(`chat.postMessage failed: ${data.error}`);
+    }
+  }
+
+  private async sendToSlackWebhook(
+    webhookUrl: string,
+    text: string,
+    recordingUrl?: string
+  ): Promise<void> {
+    const body: Record<string, unknown> = recordingUrl
+      ? {
+          blocks: [
+            {
+              type: "section",
+              text: {type: "mrkdwn", text},
+              accessory: {
+                type: "button",
+                text: {type: "plain_text", text: "Listen"},
+                url: recordingUrl,
+                action_id: "listen_recording",
+              },
+            },
+          ],
+        }
+      : {text};
+
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({text}),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       throw new Error(`Slack webhook returned ${response.status}: ${await response.text()}`);
@@ -577,8 +645,16 @@ export class RadioTranscriber {
     });
   }
 
+  /**
+   * Strip a trailing parenthesized song title that Deepgram sometimes appends
+   * when transcribing music, e.g. "some lyrics here (Song Title)".
+   */
+  private stripTrailingSongTitle(text: string): string {
+    return text.replace(/\s*\([^)]+\)\s*$/, "").trim();
+  }
+
   private async flushTranscript(active: ActiveStream): Promise<void> {
-    const text = active.transcriptBuffer.trim();
+    const text = this.stripTrailingSongTitle(active.transcriptBuffer.trim());
     if (text.length === 0) {
       active.flushAudioChunks = [];
       return;
@@ -590,17 +666,6 @@ export class RadioTranscriber {
     active.batchStartedAt = new Date();
     active.flushAudioChunks = [];
 
-    // Always save to DB
-    try {
-      await Transcript.create({
-        radioStreamId: active.doc._id,
-        targetGroupId: active.doc.targetGroupId,
-        content: text,
-      });
-    } catch (err) {
-      logger.error(`Failed to save transcript for "${active.doc.name}": ${err}`);
-    }
-
     // Note: we always post transcripts even during music — better to have lyrics than miss speech
 
     const timestamp = this.formatTimestamp(batchStart);
@@ -608,6 +673,7 @@ export class RadioTranscriber {
 
     // Convert audio to MP3 and upload with message
     let mp3Buffer: Buffer | null = null;
+    let recordingUrl: string | undefined;
     logger.debug(`Audio chunks for flush: ${audioChunks.length} chunks`);
     if (audioChunks.length > 0) {
       try {
@@ -625,24 +691,34 @@ export class RadioTranscriber {
         await fs.mkdir(mp3Dir, {recursive: true});
         const mp3Filename = `${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`;
         await fs.writeFile(path.join(mp3Dir, mp3Filename), mp3Buffer);
+        recordingUrl = `${RECORDING_PUBLIC_BASE_URL}/static/recordings/${active.streamId}/${mp3Filename}`;
       } catch (err) {
         logger.debug(`Failed to save MP3 for "${active.doc.name}": ${err}`);
       }
     }
 
+    // Always save to DB
     try {
-      // If we have a bot token + channel, upload file with message
-      if (active.doc.slackBotToken && active.doc.slackChannelId && mp3Buffer) {
-        await this.uploadToSlack(
+      await Transcript.create({
+        radioStreamId: active.doc._id,
+        targetGroupId: active.doc.targetGroupId,
+        content: text,
+        recordingUrl,
+      });
+    } catch (err) {
+      logger.error(`Failed to save transcript for "${active.doc.name}": ${err}`);
+    }
+
+    try {
+      if (active.doc.slackBotToken && active.doc.slackChannelId) {
+        await this.postMessageToSlack(
           active.doc.slackBotToken,
           active.doc.slackChannelId,
           messageText,
-          mp3Buffer,
-          `${active.doc.name}-${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`
+          recordingUrl
         );
       } else if (active.doc.slackWebhookUrl) {
-        // Fall back to webhook (text only)
-        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText);
+        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText, recordingUrl);
       }
 
       if (active.doc.targetGroupId) {
@@ -701,54 +777,5 @@ export class RadioTranscriber {
       ffmpeg.stdin?.write(pcm);
       ffmpeg.stdin?.end();
     });
-  }
-
-  private async uploadToSlack(
-    botToken: string,
-    channelId: string,
-    message: string,
-    fileBuffer: Buffer,
-    filename: string
-  ): Promise<void> {
-    // Step 1: Get upload URL
-    const getUrlResp = await fetch("https://slack.com/api/files.getUploadURLExternal", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        filename,
-        length: fileBuffer.length.toString(),
-      }),
-    });
-    const getUrlData = (await getUrlResp.json()) as any;
-    if (!getUrlData.ok) {
-      throw new Error(`files.getUploadURLExternal failed: ${getUrlData.error}`);
-    }
-
-    // Step 2: Upload the file
-    await fetch(getUrlData.upload_url, {
-      method: "POST",
-      body: fileBuffer,
-    });
-
-    // Step 3: Complete the upload and share to channel
-    const completeResp = await fetch("https://slack.com/api/files.completeUploadExternal", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        files: [{id: getUrlData.file_id, title: filename}],
-        channel_id: channelId,
-        initial_comment: message,
-      }),
-    });
-    const completeData = (await completeResp.json()) as any;
-    if (!completeData.ok) {
-      throw new Error(`files.completeUploadExternal failed: ${completeData.error}`);
-    }
   }
 }

@@ -3,6 +3,13 @@
     "terreno": {
       "type": "http",
       "url": "https://mcp.terreno.flourish.health/mcp"
+    },
+    "shade-media": {
+      "type": "http",
+      "url": "http://localhost:8081/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+      }
     }
   }
 }

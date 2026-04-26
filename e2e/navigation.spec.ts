@@ -1,4 +1,5 @@
 import {test, expect} from "@playwright/test";
+import {openProfileTabAndWaitForMe} from "./helpers/auth";
 
 test.describe("Feature: Tab Navigation", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
@@ -9,17 +10,44 @@ test.describe("Feature: Tab Navigation", () => {
   });
 
   test("user can switch from Home to Profile tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Profile"}).click();
-    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    await openProfileTabAndWaitForMe(page);
+    await expect(page.getByTestId("profile-name-text")).toBeVisible();
+  });
+
+  test("user can switch from Home to Search tab", async ({page}) => {
+    await page.getByRole("tab", {name: "Search"}).click();
+    await page.getByTestId("search-screen").waitFor({state: "visible", timeout: 15000});
+    await expect(page.getByTestId("search-input")).toBeVisible({timeout: 15000});
   });
 
   test("user can switch from Profile back to Home tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Profile"}).click();
-    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
+    await openProfileTabAndWaitForMe(page);
 
     await page.getByRole("tab", {name: "Home"}).click();
     await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 15000});
+  });
+});
+
+test.describe("Feature: Tab Navigation — profile API", () => {
+  test.use({storageState: "./e2e/.auth/user.json"});
+
+  test("Profile tab loads the signed-in user via GET /auth/me", async ({page}) => {
+    const profileMeResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/auth/me") &&
+        response.request().method() === "GET" &&
+        response.status() === 200,
+      {timeout: 60000}
+    );
+
+    await page.goto("/", {timeout: 60000});
+    await page.waitForLoadState("networkidle");
+
+    const profileTab = page.getByRole("tab", {name: "Profile"});
+    await profileTab.waitFor({state: "visible", timeout: 15000});
+    await profileTab.click();
+    await profileMeResponse;
+    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
   });
 });
 
@@ -40,6 +68,16 @@ test.describe("Feature: Auth Routing", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("login-screen")).not.toBeVisible({timeout: 15000});
+    await context.close();
+  });
+
+  test("unauthenticated user visiting Profile URL is redirected to login", async ({browser}) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto("/profile", {timeout: 60000});
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("login-screen")).toBeVisible({timeout: 60000});
+    await expect(page.getByTestId("login-heading")).toContainText("Welcome Back");
     await context.close();
   });
 });

@@ -1,9 +1,9 @@
 # Test Cases: Tab Navigation
 
-**Screen(s):** HomeScreen, ProfileScreen, TabLayout
-**Date:** 2026-02-15
+**Screen(s):** HomeScreen, SearchScreen, ProfileScreen, TabLayout
+**Date:** 2026-04-18
 **Author:** Claude
-**Related Code:** frontend/app/(tabs)/_layout.tsx, frontend/app/(tabs)/index.tsx, frontend/app/(tabs)/profile.tsx
+**Related Code:** frontend/app/(tabs)/_layout.tsx, frontend/app/(tabs)/index.tsx, frontend/app/(tabs)/search.tsx, frontend/app/(tabs)/profile.tsx, frontend/app/(tabs)/movies/_layout.tsx, frontend/app/(tabs)/admin/_layout.tsx
 
 ## Prerequisites
 - App is running on web (localhost:8082)
@@ -24,7 +24,7 @@
 2. Tap the "Profile" tab
 
 **Expected Result:**
-- After step 1: Two tabs are visible — "Home" (active/highlighted) and "Profile".
+- After step 1: Three tabs are visible — "Home", "Search", and "Profile" — with "Home" active/highlighted. "Movies", "Admin", and other stack-only routes do not appear in the tab bar.
 - After step 2: Profile screen loads showing the user's name and email. The "Profile" tab is now active/highlighted.
 
 ---
@@ -45,7 +45,23 @@
 
 ---
 
-## TC-003: Active tab is visually highlighted
+## TC-003: User can open the Search tab
+
+**Priority:** P1
+**Type:** Happy Path
+**Automation:** [automated]
+
+**Precondition:** User is logged in and viewing the Home screen.
+
+**Steps:**
+1. Tap the "Search" tab
+
+**Expected Result:**
+- Search screen loads (search input visible). The "Search" tab is active/highlighted.
+
+---
+
+## TC-004: Active tab is visually highlighted
 
 **Priority:** P1
 **Type:** Happy Path
@@ -64,7 +80,7 @@
 
 ---
 
-## TC-004: Tab state does not persist incorrectly after logout and re-login
+## TC-005: Tab state does not persist incorrectly after logout and re-login
 
 **Priority:** P2
 **Type:** Edge Case
@@ -79,3 +95,23 @@
 
 **Expected Result:**
 - After step 2: User lands on the Home screen with the Home tab active (not the Profile tab from the previous session).
+
+---
+
+## TC-006: Profile tab fetches the current user from the API
+
+**Priority:** P1
+**Type:** Happy Path
+**Automation:** [automated]
+
+**Precondition:** User is logged in and viewing the Home screen.
+
+**Steps:**
+1. Open browser devtools Network tab (optional, for observation)
+2. Tap the "Profile" tab
+
+**Expected Result:**
+- The app issues a successful GET request to `/auth/me` (HTTP 200).
+- The Profile screen shows the user's name and email text (not stuck on "Loading...").
+
+---

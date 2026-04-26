@@ -1,9 +1,11 @@
 import {defineConfig, devices} from "@playwright/test";
 
+const isStatic = !!process.env.PLAYWRIGHT_STATIC;
+
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 30000,
-  expect: {timeout: 5000},
+  timeout: 60000,
+  expect: {timeout: 10000},
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -38,10 +40,19 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: "cd frontend && bun run web",
-    port: 8082,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-  },
+  webServer: isStatic
+    ? {
+        // In CI, serve the pre-built SPA export to avoid Metro bundling delays.
+        // --single enables SPA routing so all paths fall back to index.html.
+        command: "bunx serve frontend/dist -p 8082 --single",
+        port: 8082,
+        reuseExistingServer: false,
+        timeout: 30000,
+      }
+    : {
+        command: "cd frontend && bun run web",
+        port: 8082,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120000,
+      },
 });

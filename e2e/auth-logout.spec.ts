@@ -1,4 +1,5 @@
 import {test, expect} from "@playwright/test";
+import {openProfileTabAndWaitForMe} from "./helpers/auth";
 
 test.describe("Feature: Logout", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
@@ -8,12 +9,10 @@ test.describe("Feature: Logout", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    // Navigate to profile tab
-    await page.getByRole("tab", {name: "Profile"}).click();
-    await page.getByTestId("profile-screen").waitFor({state: "visible", timeout: 15000});
+    await openProfileTabAndWaitForMe(page);
 
     // Verify profile data is displayed
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 15000});
+    await expect(page.getByTestId("profile-name-text")).toBeVisible();
     await expect(page.getByTestId("profile-email-text")).toBeVisible();
 
     // Logout

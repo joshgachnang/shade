@@ -3,7 +3,7 @@
 **Status:** Open
 **Priority:** High
 **Effort:** Big batch (1-2 weeks)
-**IP:** IP-004
+**IP:** IP-005
 
 Small, single-purpose agents compiled to standalone Bun executables and deployed to edge machines (Mac Mini, Linux servers). Each agent does one thing (e.g. iMessage bridge). Agents self-register with the central Shade server, require admin approval, then receive config/secrets and begin operating. Communication is REST-based: agents push data via heartbeat and POST, Shade sends commands back via heartbeat response.
 

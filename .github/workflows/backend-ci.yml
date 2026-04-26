@@ -5,6 +5,7 @@ on:
     paths:
       - "backend/**"
       - "packages/**"
+      - "bun.lock"
       - ".github/workflows/backend-ci.yml"
 
 jobs:

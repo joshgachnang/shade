@@ -10,7 +10,10 @@
  */
 
 import {join} from "node:path";
+import {AtpAgent, RichText} from "@atproto/api";
 import * as cheerio from "cheerio";
+import mongoose from "mongoose";
+import {loadAppConfig} from "../src/models/appConfig";
 import {TriviaScore} from "../src/models/triviaScore";
 import {triviaConnection} from "../src/models/triviaQuestion";
 import {loadEnvFiles} from "../src/utils/envLoader";
@@ -24,10 +27,10 @@ import {
 
 await loadEnvFiles(join(import.meta.dir, ".."));
 
-const DEFAULT_URL = "https://90fmtrivia.org/scores.html";
+const DEFAULT_URL =
+  "https://www.90fmtrivia.org/TriviaScores2026/Results/TSK_results.html";
 const SCRAPE_INTERVAL_MS = 5 * 60 * 1000;
 const CONTEST_YEAR = 2026;
-const SLACK_WEBHOOK = process.env.TRIVIA_STATS_SLACK_WEBHOOK;
 
 const CONTEST_START = new Date("2026-04-17T18:00:00-05:00");
 const CONTEST_END = new Date("2026-04-20T17:00:00-05:00");
@@ -38,12 +41,39 @@ interface ParseResult {
   scores: ParsedScore[];
 }
 
-const postToSlack = async (text: string): Promise<void> => {
-  if (!SLACK_WEBHOOK) {
+/** Track which hours we've already posted about to avoid duplicate notifications. */
+const postedHours = new Set<number>();
+
+const postToBluesky = async (text: string): Promise<void> => {
+  const config = await loadAppConfig();
+  const {blueskyIdentifier, blueskyPassword} = config.triviaStats;
+  if (!blueskyIdentifier || !blueskyPassword) {
+    console.info("  Skipping Bluesky: missing blueskyIdentifier or blueskyPassword in config");
     return;
   }
+  console.info("  Will post to Bluesky");
   try {
-    const response = await fetch(SLACK_WEBHOOK, {
+    const agent = new AtpAgent({service: "https://bsky.social"});
+    await agent.login({identifier: blueskyIdentifier, password: blueskyPassword});
+    const rt = new RichText({text});
+    await rt.detectFacets(agent);
+    await agent.post({text: rt.text, facets: rt.facets});
+    console.info("  Posted to Bluesky");
+  } catch (err) {
+    console.warn("Bluesky post error:", err);
+  }
+};
+
+const postToSlack = async (text: string): Promise<void> => {
+  const config = await loadAppConfig();
+  const webhook = config.triviaStats.slackWebhook;
+  if (!webhook) {
+    console.info("  Skipping Slack: missing slackWebhook in config");
+    return;
+  }
+  console.info("  Will post to Slack");
+  try {
+    const response = await fetch(webhook, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({text}),
@@ -128,9 +158,8 @@ const isWithinContestWindow = (): boolean => {
   return now >= CONTEST_START && now <= CONTEST_END;
 };
 
-const formatTopScores = (scores: ParsedScore[], count = 10): string => {
-  const top = scores.slice(0, count);
-  return top.map((s) => `  ${s.place}. ${s.teamName} — ${s.score.toLocaleString()} pts`).join("\n");
+const findWiiTeam = (scores: ParsedScore[]): ParsedScore | undefined => {
+  return scores.find((s) => /wii/i.test(s.teamName));
 };
 
 const scrapeOnce = async (url: string): Promise<void> => {
@@ -146,16 +175,33 @@ const scrapeOnce = async (url: string): Promise<void> => {
   const {inserted, updated} = await saveScores(result);
   console.info(`  DB: ${inserted} inserted, ${updated} updated`);
 
-  const hourLabel = result.hour > 0 ? `Hour ${result.hour}` : "Final";
-  const slackMessage = [
-    `*Trivia ${result.year} — ${hourLabel} Scores*`,
-    `${result.scores.length} teams scraped (${inserted} new, ${updated} updated)`,
-    "",
-    "*Top 10:*",
-    formatTopScores(result.scores),
-  ].join("\n");
+  if (inserted === 0 && updated === 0) {
+    console.info("  No changes, skipping notifications");
+    return;
+  }
 
-  await postToSlack(slackMessage);
+  const isNewHour = !postedHours.has(result.hour);
+  postedHours.add(result.hour);
+
+  if (!isNewHour) {
+    console.info(`  Hour ${result.hour} already posted, skipping notifications`);
+    return;
+  }
+
+  const hourLabel = result.hour > 0 ? `Hour ${result.hour}` : "Final";
+
+  const wiiTeam = findWiiTeam(result.scores);
+  const slackLines = [`<!channel> *Trivia ${result.year} — ${hourLabel} Scores*`];
+  if (wiiTeam) {
+    slackLines.push(`${wiiTeam.teamName}: #${wiiTeam.place} with ${wiiTeam.score.toLocaleString()} pts`);
+  } else {
+    slackLines.push(`${result.scores.length} teams scraped — no team with "wii" found`);
+  }
+  const slackMessage = slackLines.join("\n");
+
+  const blueskyMessage = `Trivia ${result.year} — ${hourLabel} Scores are posted!\nhttp://www.90fmtrivia.org/TriviaScores2026/`;
+
+  await Promise.all([postToSlack(slackMessage), postToBluesky(blueskyMessage)]);
 };
 
 const runLoop = async (url: string): Promise<void> => {
@@ -190,21 +236,34 @@ const waitForConnection = async (): Promise<void> => {
   });
 };
 
+/** Seed postedHours from the DB so we don't re-notify for hours already scraped. */
+const seedPostedHours = async (): Promise<void> => {
+  const existingHours = await TriviaScore.distinct("hour", {year: CONTEST_YEAR});
+  for (const h of existingHours) {
+    postedHours.add(h);
+  }
+  if (postedHours.size > 0) {
+    console.info(`  Already have scores for hours: ${[...postedHours].sort((a, b) => a - b).join(", ")}`);
+  }
+};
+
 const main = async (): Promise<void> => {
   const args = process.argv.slice(2);
   const loopMode = args.includes("--loop");
   const urlIdx = args.indexOf("--url");
   const url = urlIdx !== -1 && args[urlIdx + 1] ? args[urlIdx + 1] : DEFAULT_URL;
 
-  console.info("Connecting to trivia database...");
-  await waitForConnection();
+  const mainDbUri = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb://localhost:27017/shade";
+  console.info("Connecting to databases...");
+  await Promise.all([waitForConnection(), mongoose.connect(mainDbUri)]);
   console.info("Connected");
 
   if (loopMode) {
+    await seedPostedHours();
     await runLoop(url);
   } else {
     await scrapeOnce(url);
-    await triviaConnection.close();
+    await Promise.all([triviaConnection.close(), mongoose.disconnect()]);
     console.info("Done.");
   }
 };

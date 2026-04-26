@@ -443,16 +443,6 @@ cmd_deploy() {
   cmd_start "$@"
 
   echo ""
-
-  # Deploy frontend to Netlify if netlify CLI is available
-  if command -v netlify &>/dev/null; then
-    echo "Deploying frontend to Netlify..."
-    cmd_deploy_frontend --prod
-  else
-    echo "Skipping frontend deploy (netlify CLI not installed)"
-  fi
-
-  echo ""
   echo "=== Deploy complete ==="
   echo ""
   echo "Commands:"
@@ -535,39 +525,100 @@ cmd_remote_setup() {
   echo "Server provisioned. Next: shade remote-deploy $host"
 }
 
-# --- Deploy Frontend to Netlify ---
-cmd_deploy_frontend() {
-  local prod_flag=""
-  if [[ "${1:-}" == "--prod" ]]; then
-    prod_flag="--prod"
-    shift
-  fi
+# --- Movie Search ---
+SHADE_API="${SHADE_API_URL:-http://localhost:4020}"
 
-  echo "=== Shade Frontend Deploy (Netlify) ==="
-  echo ""
-
-  # Build the static web export
-  echo "Building frontend..."
-  (cd "$PROJECT_DIR/frontend" && bun expo export --platform web)
-  echo "  Built: frontend/dist/"
-  echo ""
-
-  # Deploy to Netlify
-  if ! command -v netlify &>/dev/null; then
-    echo "Error: netlify CLI not found. Install with: bun install -g netlify-cli" >&2
+cmd_search() {
+  local query="$*"
+  if [[ -z "$query" ]]; then
+    echo "Usage: shade search <query> [--type objects|characters|text|tags]"
+    echo ""
+    echo "Examples:"
+    echo "  shade search restaurant"
+    echo "  shade search \"Billy Crystal\" --type characters"
+    echo "  shade search gun --type objects"
+    echo "  shade search \"FIVE YEARS\" --type text"
     exit 1
   fi
 
-  if [[ -n "$prod_flag" ]]; then
-    echo "Deploying to production..."
-    (cd "$PROJECT_DIR/frontend" && netlify deploy --prod --dir=dist)
-  else
-    echo "Deploying preview..."
-    (cd "$PROJECT_DIR/frontend" && netlify deploy --dir=dist)
-  fi
+  # Parse --type flag
+  local search_type="all"
+  local search_terms=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --type) search_type="$2"; shift 2 ;;
+      *)      search_terms+=("$1"); shift ;;
+    esac
+  done
+  query="${search_terms[*]}"
 
-  echo ""
-  echo "=== Frontend deploy complete ==="
+  local encoded_query
+  encoded_query=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$query'))")
+
+  curl -s --max-time 10 "${SHADE_API}/search?q=${encoded_query}&type=${search_type}" | python3 -c "
+import sys, json
+
+data = json.load(sys.stdin)
+results = data.get('results', [])
+count = data.get('count', 0)
+
+if count == 0:
+    print('No results found.')
+    sys.exit(0)
+
+print(f'Found {count} matching frames:\n')
+
+for i, r in enumerate(results):
+    ts = r.get('timestamp', 0)
+    hrs = int(ts // 3600)
+    mins = int((ts % 3600) // 60)
+    secs = int(ts % 60)
+    time_str = f'{hrs:02d}:{mins:02d}:{secs:02d}'
+
+    scene = r.get('sceneDescription', '')[:120]
+    mood = r.get('mood', '')
+    tags = ', '.join(r.get('tags', []))
+    objects = ', '.join([o['label'] for o in r.get('objects', [])])
+    chars = ', '.join([c['name'] for c in r.get('characters', [])])
+    texts = ' | '.join([t['content'] for t in r.get('text', [])])
+
+    frame = r.get('frame', {})
+    img_path = frame.get('imagePath', '') if isinstance(frame, dict) else ''
+
+    print(f'[{time_str}] {scene}')
+    if chars:   print(f'  Characters: {chars}')
+    if objects:  print(f'  Objects: {objects}')
+    if texts:    print(f'  Text: {texts}')
+    if tags:     print(f'  Tags: {tags}')
+    if mood:     print(f'  Mood: {mood}')
+    if img_path: print(f'  Image: https://api.shade.nang.io/static/movies/{img_path.split(\"/movies/\", 1)[-1] if \"/movies/\" in img_path else img_path}')
+    print()
+" 2>&1
+}
+
+# --- Trivia ---
+cmd_scrape_scores() {
+  echo "==> Scraping trivia scores..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/scrapeScores.ts "$@"
+}
+
+cmd_scrape_scores_loop() {
+  echo "==> Scraping trivia scores (loop mode)..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/scrapeScores.ts --loop "$@"
+}
+
+cmd_scrape_vault() {
+  echo "==> Scraping vault scores..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/scrapeVaultScores.ts "$@"
+}
+
+cmd_trivia_answer() {
+  echo "==> Starting trivia answerer..."
+  cd "$PROJECT_DIR/backend"
+  "$BUN_PATH" run scripts/triviaAnswerer.ts "$@"
 }
 
 # --- Main ---
@@ -575,24 +626,29 @@ COMMAND="${1:-deploy}"
 shift || true
 
 case "$COMMAND" in
-  deploy)           cmd_deploy "$@" ;;
-  deploy-frontend)  cmd_deploy_frontend "$@" ;;
-  build)            cmd_build "$@" ;;
-  install)          cmd_install "$@" ;;
-  start)            cmd_start "$@" ;;
-  stop)             cmd_stop "$@" ;;
-  restart)          cmd_restart "$@" ;;
-  status)           cmd_status "$@" ;;
-  logs)             cmd_logs "$@" ;;
-  uninstall)        cmd_uninstall "$@" ;;
-  remote-deploy)    cmd_remote_deploy "$@" ;;
-  remote-setup)     cmd_remote_setup "$@" ;;
+  deploy)            cmd_deploy "$@" ;;
+  build)             cmd_build "$@" ;;
+  install)           cmd_install "$@" ;;
+  start)             cmd_start "$@" ;;
+  stop)              cmd_stop "$@" ;;
+  restart)           cmd_restart "$@" ;;
+  status)            cmd_status "$@" ;;
+  logs)              cmd_logs "$@" ;;
+  uninstall)         cmd_uninstall "$@" ;;
+  remote-deploy)     cmd_remote_deploy "$@" ;;
+  remote-setup)      cmd_remote_setup "$@" ;;
+  search)            cmd_search "$@" ;;
+  scrape-scores)     cmd_scrape_scores "$@" ;;
+  scrape-scores-loop) cmd_scrape_scores_loop "$@" ;;
+  scrape-vault)      cmd_scrape_vault "$@" ;;
+  trivia-answer)     cmd_trivia_answer "$@" ;;
   *)
     echo "Usage: shade <command> [service...]"
     echo ""
-    echo "Local:    deploy, build, install, start, stop, restart, status, logs, uninstall"
-    echo "Frontend: deploy-frontend [--prod]"
-    echo "Remote:   remote-setup <host>, remote-deploy <host> [service...]"
+    echo "Local:   deploy, build, install, start, stop, restart, status, logs, uninstall"
+    echo "Movie:   search <query> [--type objects|characters|text|tags]"
+    echo "Trivia:  scrape-scores, scrape-scores-loop, scrape-vault, trivia-answer"
+    echo "Remote:  remote-setup <host>, remote-deploy <host> [service...]"
     echo ""
     echo "Services: $ALL_SERVICES"
     exit 1

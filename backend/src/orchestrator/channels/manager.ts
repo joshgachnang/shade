@@ -5,6 +5,7 @@ import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
+import {handleMovieSearch} from "../movieSearch";
 import {createEmailConnector} from "./email";
 import {createIMessageConnector} from "./imessage";
 import {createSlackConnector} from "./slack";
@@ -124,6 +125,25 @@ export class ChannelManager {
       `Storing inbound message from ${inbound.sender} in group ${group.name} (${inbound.content.substring(0, 80)})`
     );
 
+    // Intercept !search commands and respond directly
+    const searchMatch = inbound.content.match(/^!moviesearch\s+(.+)/i);
+    if (searchMatch) {
+      const query = searchMatch[1].trim();
+      logger.info(`Movie search from ${inbound.sender}: "${query}"`);
+      try {
+        const response = await handleMovieSearch(query);
+        await this.sendMessage(channelDoc._id.toString(), inbound.groupExternalId, response);
+      } catch (err) {
+        logError("Movie search failed", err);
+        await this.sendMessage(
+          channelDoc._id.toString(),
+          inbound.groupExternalId,
+          `Search failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      return;
+    }
+
     // Store the message
     try {
       await Message.create({
@@ -155,6 +175,49 @@ export class ChannelManager {
       logger.error(`Failed to send message via channel ${channelId} to ${groupExternalId}: ${err}`);
       throw err;
     }
+  }
+
+  async sendMessageWithTs(
+    channelId: string,
+    groupExternalId: string,
+    content: string
+  ): Promise<string> {
+    const connector = this.connectors.get(channelId);
+    if (!connector) {
+      logger.error(`No connector for channel ${channelId}`);
+      return "";
+    }
+    return connector.sendMessageWithTs(groupExternalId, content);
+  }
+
+  async updateMessage(
+    channelId: string,
+    groupExternalId: string,
+    messageTs: string,
+    content: string
+  ): Promise<void> {
+    const connector = this.connectors.get(channelId);
+    if (!connector) {
+      return;
+    }
+    await connector.updateMessage(groupExternalId, messageTs, content);
+  }
+
+  async sendMessageToGroupWithTs(groupId: string, content: string): Promise<string> {
+    const group = this.groupCache.get(groupId);
+    if (!group) {
+      logger.error(`Group ${groupId} not found in cache`);
+      return "";
+    }
+    return this.sendMessageWithTs(group.channelId.toString(), group.externalId, content);
+  }
+
+  async updateMessageInGroup(groupId: string, messageTs: string, content: string): Promise<void> {
+    const group = this.groupCache.get(groupId);
+    if (!group) {
+      return;
+    }
+    await this.updateMessage(group.channelId.toString(), group.externalId, messageTs, content);
   }
 
   async addReaction(

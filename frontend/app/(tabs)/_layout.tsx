@@ -17,18 +17,19 @@ const TabLayout: React.FC = () => {
     []
   );
 
+  const renderSearchIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="search" />,
+    []
+  );
+
   const renderProfileIcon = useCallback(
     ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="user" />,
     []
   );
 
-  const renderAdminIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="cog" />,
-    []
-  );
-
   return (
     <Tabs
+      detachInactiveScreens={false}
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
       }}
@@ -41,6 +42,14 @@ const TabLayout: React.FC = () => {
         }}
       />
       <Tabs.Screen
+        name="search"
+        options={{
+          headerShown: false,
+          tabBarIcon: renderSearchIcon,
+          title: "Search",
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           headerShown: false,
@@ -49,11 +58,17 @@ const TabLayout: React.FC = () => {
         }}
       />
       <Tabs.Screen
+        name="movies"
+        options={{
+          headerShown: false,
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="admin"
         options={{
           headerShown: false,
-          tabBarIcon: renderAdminIcon,
-          title: "Admin",
+          href: null,
         }}
       />
     </Tabs>
