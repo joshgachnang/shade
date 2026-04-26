@@ -12,6 +12,7 @@ See `CLAUDE.md` for IP lifecycle stages and management guidelines.
 | IP-002 | Shade Claude Fleet | Open | Epic (2+ weeks) | High |
 | IP-003 | Email IMAP Channel Connector | In Progress | Small batch (1-2 days) | High |
 | IP-004 | Movie Scene Analyzer | Pending Verification | Big batch (1-2 weeks) | High |
+| IP-005 | Edge Agents | Open | Big batch (1-2 weeks) | High |
 
 ## Completed
 
