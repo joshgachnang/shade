@@ -111,6 +111,45 @@ export interface SearchSuggestions {
   suggestions: string[];
 }
 
+// Feature types
+export interface FeatureStep {
+  _id: string;
+  name: string;
+  description?: string;
+  order: number;
+  status: "pending" | "in_progress" | "complete" | "error" | "skipped";
+  startedAt?: string;
+  completedAt?: string;
+  result?: string;
+  errorMessage?: string;
+}
+
+export interface Feature {
+  _id: string;
+  id: string;
+  name: string;
+  description?: string;
+  groupId?: string;
+  status: "planned" | "in_progress" | "paused" | "complete" | "error";
+  steps: FeatureStep[];
+  currentStepIndex: number;
+  startedAt?: string;
+  completedAt?: string;
+  errorMessage?: string;
+  created: string;
+  updated: string;
+}
+
+export interface FeatureProgress {
+  status: string;
+  totalSteps: number;
+  completedSteps: number;
+  percentage: number;
+  currentStepIndex: number;
+  currentStepName: string | null;
+  currentStepStatus: string | null;
+}
+
 interface ListResponse<T> {
   results: T[];
   count: number;
@@ -193,6 +232,83 @@ export const terrenoApi = openapi
       listCharacters: builder.query<ListResponse<Character>, {movieId: string}>({
         query: ({movieId}) => ({url: `/characters?movieId=${movieId}`}),
       }),
+      // Feature endpoints
+      listFeatures: builder.query<ListResponse<Feature>, {status?: string} | void>({
+        providesTags: ["Features" as any],
+        query: (args) => {
+          const params = new URLSearchParams();
+          if (args && "status" in args && args.status) {
+            params.set("status", args.status);
+          }
+          const qs = params.toString();
+          return {url: `/features${qs ? `?${qs}` : ""}`};
+        },
+      }),
+      getFeature: builder.query<Feature, string>({
+        providesTags: (_result, _err, id) => [{type: "Features" as any, id}],
+        query: (id) => ({url: `/features/${id}`}),
+      }),
+      createFeature: builder.mutation<Feature, Partial<Feature>>({
+        invalidatesTags: ["Features" as any],
+        query: (body) => ({body, method: "POST", url: "/features"}),
+      }),
+      updateFeature: builder.mutation<Feature, {id: string; body: Partial<Feature>}>({
+        invalidatesTags: (_result, _err, {id}) => [
+          {type: "Features" as any, id},
+          "Features" as any,
+        ],
+        query: ({id, body}) => ({body, method: "PATCH", url: `/features/${id}`}),
+      }),
+      resumeFeature: builder.mutation<Feature, string>({
+        invalidatesTags: (_result, _err, id) => [
+          {type: "Features" as any, id},
+          "Features" as any,
+        ],
+        query: (id) => ({method: "POST", url: `/feature-actions/${id}/resume`}),
+      }),
+      pauseFeature: builder.mutation<Feature, string>({
+        invalidatesTags: (_result, _err, id) => [
+          {type: "Features" as any, id},
+          "Features" as any,
+        ],
+        query: (id) => ({method: "POST", url: `/feature-actions/${id}/pause`}),
+      }),
+      startFeatureStep: builder.mutation<Feature, {id: string; stepIndex?: number}>({
+        invalidatesTags: (_result, _err, {id}) => [{type: "Features" as any, id}],
+        query: ({id, stepIndex}) => ({
+          body: stepIndex !== undefined ? {stepIndex} : {},
+          method: "POST",
+          url: `/feature-actions/${id}/start-step`,
+        }),
+      }),
+      completeFeatureStep: builder.mutation<
+        Feature,
+        {id: string; stepIndex?: number; result?: string}
+      >({
+        invalidatesTags: (_result, _err, {id}) => [{type: "Features" as any, id}],
+        query: ({id, stepIndex, result}) => ({
+          body: {stepIndex, result},
+          method: "POST",
+          url: `/feature-actions/${id}/complete-step`,
+        }),
+      }),
+      failFeatureStep: builder.mutation<
+        Feature,
+        {id: string; stepIndex?: number; errorMessage?: string}
+      >({
+        invalidatesTags: (_result, _err, {id}) => [{type: "Features" as any, id}],
+        query: ({id, stepIndex, errorMessage}) => ({
+          body: {stepIndex, errorMessage},
+          method: "POST",
+          url: `/feature-actions/${id}/fail-step`,
+        }),
+      }),
+      getFeatureProgress: builder.query<FeatureProgress, string>({
+        query: (id) => ({url: `/feature-actions/${id}/progress`}),
+      }),
+      listResumableFeatures: builder.query<ListResponse<Feature>, void>({
+        query: () => ({url: "/feature-actions/resumable"}),
+      }),
       // Search endpoints
       search: builder.query<SearchResult, {q: string; movieId?: string; type?: string}>({
         query: ({q, movieId, type}) => {
@@ -212,7 +328,7 @@ export const terrenoApi = openapi
     }),
   })
   .enhanceEndpoints({
-    addTagTypes: ["profile", "Movies"],
+    addTagTypes: ["profile", "Movies", "Features"],
     endpoints: {
       ...generateTags(openapi, [...addTagTypes]),
     },
@@ -237,5 +353,16 @@ export const {
   useListCharactersQuery,
   useSearchQuery,
   useSearchSuggestQuery,
+  useListFeaturesQuery,
+  useGetFeatureQuery,
+  useCreateFeatureMutation,
+  useUpdateFeatureMutation,
+  useResumeFeatureMutation,
+  usePauseFeatureMutation,
+  useStartFeatureStepMutation,
+  useCompleteFeatureStepMutation,
+  useFailFeatureStepMutation,
+  useGetFeatureProgressQuery,
+  useListResumableFeaturesQuery,
 } = terrenoApi;
 export * from "./openApiSdk";

@@ -22,6 +22,13 @@ const TabLayout: React.FC = () => {
     []
   );
 
+  const renderFeaturesIcon = useCallback(
+    ({color}: {color: string}): React.ReactElement => (
+      <TabBarIcon color={color} name="check-square-o" />
+    ),
+    []
+  );
+
   const renderProfileIcon = useCallback(
     ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="user" />,
     []
@@ -47,6 +54,14 @@ const TabLayout: React.FC = () => {
           headerShown: false,
           tabBarIcon: renderSearchIcon,
           title: "Search",
+        }}
+      />
+      <Tabs.Screen
+        name="features"
+        options={{
+          headerShown: false,
+          tabBarIcon: renderFeaturesIcon,
+          title: "Features",
         }}
       />
       <Tabs.Screen
