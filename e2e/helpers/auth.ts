@@ -8,7 +8,7 @@ export const openProfileTabAndWaitForMe = async (page: Page): Promise<void> => {
   const profileTab = page.getByRole("button", {name: "Profile", exact: true});
   await profileTab.waitFor({state: "visible", timeout: 15000});
   await profileTab.click();
-  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 45000});
+  await page.getByTestId("profile-name-input").waitFor({state: "visible", timeout: 45000});
 };
 
 /**

@@ -11,7 +11,7 @@ test.describe("Feature: Tab Navigation", () => {
 
   test("user can switch from Home to Profile tab", async ({page}) => {
     await openProfileTabAndWaitForMe(page);
-    await expect(page.getByTestId("profile-name-text")).toBeVisible();
+    await expect(page.getByTestId("profile-name-input")).toBeVisible();
   });
 
   test("user can switch from Home to Search tab", async ({page}) => {
@@ -51,7 +51,7 @@ test.describe("Feature: Tab Navigation — profile API", () => {
     await profileTab.waitFor({state: "visible", timeout: 15000});
     await profileTab.click();
     await profileMeResponse;
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
+    await expect(page.getByTestId("profile-name-input")).toBeVisible({timeout: 45000});
   });
 });
 
