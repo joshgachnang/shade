@@ -233,7 +233,7 @@ export const terrenoApi = openapi
         query: ({movieId}) => ({url: `/characters?movieId=${movieId}`}),
       }),
       // Feature endpoints
-      listFeatures: builder.query<ListResponse<Feature>, {status?: string} | void>({
+      listFeatures: builder.query<ListResponse<Feature>, {status?: string} | undefined>({
         providesTags: ["Features" as any],
         query: (args) => {
           const params = new URLSearchParams();
@@ -260,17 +260,11 @@ export const terrenoApi = openapi
         query: ({id, body}) => ({body, method: "PATCH", url: `/features/${id}`}),
       }),
       resumeFeature: builder.mutation<Feature, string>({
-        invalidatesTags: (_result, _err, id) => [
-          {type: "Features" as any, id},
-          "Features" as any,
-        ],
+        invalidatesTags: (_result, _err, id) => [{type: "Features" as any, id}, "Features" as any],
         query: (id) => ({method: "POST", url: `/feature-actions/${id}/resume`}),
       }),
       pauseFeature: builder.mutation<Feature, string>({
-        invalidatesTags: (_result, _err, id) => [
-          {type: "Features" as any, id},
-          "Features" as any,
-        ],
+        invalidatesTags: (_result, _err, id) => [{type: "Features" as any, id}, "Features" as any],
         query: (id) => ({method: "POST", url: `/feature-actions/${id}/pause`}),
       }),
       startFeatureStep: builder.mutation<Feature, {id: string; stepIndex?: number}>({

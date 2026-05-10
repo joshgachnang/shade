@@ -80,8 +80,7 @@ const FeatureDetailScreen: React.FC = () => {
             {item.startedAt && (
               <Text size="sm" color="secondaryLight">
                 Started: {new Date(item.startedAt).toLocaleString()}
-                {item.completedAt &&
-                  ` | Completed: ${new Date(item.completedAt).toLocaleString()}`}
+                {item.completedAt && ` | Completed: ${new Date(item.completedAt).toLocaleString()}`}
               </Text>
             )}
           </Box>

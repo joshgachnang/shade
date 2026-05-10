@@ -77,12 +77,11 @@ const FeatureListScreen: React.FC = () => {
                   </Text>
                 </Box>
               )}
-              {item.status === "in_progress" &&
-                item.currentStepIndex < item.steps.length && (
-                  <Text size="sm" color="link">
-                    Current: {item.steps[item.currentStepIndex].name}
-                  </Text>
-                )}
+              {item.status === "in_progress" && item.currentStepIndex < item.steps.length && (
+                <Text size="sm" color="link">
+                  Current: {item.steps[item.currentStepIndex].name}
+                </Text>
+              )}
               {item.errorMessage && (
                 <Text size="sm" color="error">
                   {item.errorMessage}
