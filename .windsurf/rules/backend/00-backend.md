@@ -1,3 +1,9 @@
+---
+title: Shade backend guidelines
+trigger: glob
+globs:
+  - backend/**/*
+---
 # Shade Backend
 
 Express/Mongoose backend using @terreno/api.
