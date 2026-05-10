@@ -72,6 +72,15 @@ export interface AppConfigNotifications {
   slackChannel: string;
 }
 
+export interface AppConfigRichResponses {
+  enabled: boolean;
+  autoTruncate: boolean;
+}
+
+export interface AppConfigMaps {
+  mapboxAccessToken: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -86,6 +95,8 @@ export interface AppConfigFields {
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;
   notifications: AppConfigNotifications;
+  richResponses: AppConfigRichResponses;
+  maps: AppConfigMaps;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;

@@ -78,6 +78,15 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       enabled: {type: Boolean, default: true},
       slackChannel: {type: String, default: "general"},
     },
+
+    richResponses: {
+      enabled: {type: Boolean, default: true},
+      autoTruncate: {type: Boolean, default: true},
+    },
+
+    maps: {
+      mapboxAccessToken: {type: String, default: ""},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );
