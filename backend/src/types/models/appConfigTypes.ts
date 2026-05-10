@@ -67,6 +67,11 @@ export interface AppConfigTriviaStats {
   blueskyPassword: string;
 }
 
+export interface AppConfigNotifications {
+  enabled: boolean;
+  slackChannel: string;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -80,6 +85,7 @@ export interface AppConfigFields {
   prWatch: AppConfigPrWatch;
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;
+  notifications: AppConfigNotifications;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;
