@@ -12,8 +12,8 @@ test.describe("Feature: Logout", () => {
     await openProfileTabAndWaitForMe(page);
 
     // Verify profile data is displayed
-    await expect(page.getByTestId("profile-name-text")).toBeVisible();
-    await expect(page.getByTestId("profile-email-text")).toBeVisible();
+    await expect(page.getByTestId("profile-name-input")).toBeVisible();
+    await expect(page.getByTestId("profile-email-input")).toBeVisible();
 
     // Logout
     await page.getByTestId("profile-logout-button").click();

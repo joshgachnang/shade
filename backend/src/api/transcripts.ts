@@ -18,9 +18,9 @@ export const transcriptRoutes = modelRouter("/transcripts", Transcript, {
 
 export class RecordingsPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
-    app.get("/static/recordings/*", (req: express.Request, res: express.Response) => {
+    app.get("/static/recordings/*path", (req: express.Request, res: express.Response) => {
       const recordingsDir = path.join(paths.data, "recordings");
-      const resolved = path.resolve(recordingsDir, (req.params as Record<string, string>)[0]);
+      const resolved = path.resolve(recordingsDir, (req.params as Record<string, string>).path);
       if (!resolved.startsWith(path.resolve(recordingsDir))) {
         res.status(403).json({error: "Forbidden"});
         return;
