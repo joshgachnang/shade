@@ -20,8 +20,8 @@ export const movieRoutes = modelRouter("/movies", Movie, {
 export class MovieActionsPlugin implements TerrenoPlugin {
   register(app: express.Application): void {
     // Serve extracted frame images statically with path traversal protection
-    app.get("/static/movies/*", (req: express.Request, res: express.Response) => {
-      const resolved = path.resolve(paths.movies, (req.params as Record<string, string>)[0]);
+    app.get("/static/movies/*path", (req: express.Request, res: express.Response) => {
+      const resolved = path.resolve(paths.movies, (req.params as Record<string, string>).path);
       if (!resolved.startsWith(path.resolve(paths.movies))) {
         res.status(403).json({error: "Forbidden"});
         return;
