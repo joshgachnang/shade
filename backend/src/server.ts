@@ -10,6 +10,7 @@ import {channelRoutes} from "./api/channels";
 import {characterRoutes} from "./api/characters";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
+import {FeatureActionsPlugin, featureRoutes} from "./api/features";
 import {frameAnalysisRoutes} from "./api/frameAnalyses";
 import {frameRoutes} from "./api/frames";
 import {groupRoutes} from "./api/groups";
@@ -106,6 +107,8 @@ export const start = async (skipListen = false) => {
     .register(new RecordingsPlugin())
     .register(webhookSourceRoutes)
     .register(movieRoutes)
+    .register(featureRoutes)
+    .register(new FeatureActionsPlugin())
     .register(frameRoutes)
     .register(frameAnalysisRoutes)
     .register(characterRoutes)

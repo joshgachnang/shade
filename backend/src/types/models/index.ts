@@ -5,6 +5,7 @@ export * from "./calendarConfigTypes";
 export * from "./channelTypes";
 export * from "./characterTypes";
 export * from "./commandClassificationTypes";
+export * from "./featureTypes";
 export * from "./frameAnalysisTypes";
 export * from "./frameTypes";
 export * from "./groupTypes";

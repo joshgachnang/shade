@@ -5,6 +5,7 @@ export * from "./calendarConfig";
 export * from "./channel";
 export * from "./character";
 export * from "./commandClassification";
+export * from "./feature";
 export * from "./frame";
 export * from "./frameAnalysis";
 export * from "./group";
