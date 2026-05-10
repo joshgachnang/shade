@@ -5,6 +5,7 @@ import {paths} from "../config";
 import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
 import {ScheduledTask} from "../models/scheduledTask";
+import type {RichResponse} from "./responses/schema";
 
 export interface IpcMessage {
   type: "send_message";
@@ -12,6 +13,17 @@ export interface IpcMessage {
   channelId: string;
   content: string;
   targetGroupId?: string;
+  /** Set by respond_with_card / send_message MCP tools — enables dedupe in the same agent run. */
+  agentRunId?: string;
+}
+
+export interface IpcRichResponse {
+  type: "rich_response";
+  groupId: string;
+  channelId: string;
+  agentRunId?: string;
+  threadTs?: string;
+  payload: RichResponse;
 }
 
 export interface IpcTaskAction {
@@ -52,6 +64,7 @@ export interface IpcTriviaToggle {
 
 type IpcFile =
   | IpcMessage
+  | IpcRichResponse
   | IpcTaskAction
   | IpcReaction
   | IpcCreateFeature
@@ -62,6 +75,12 @@ type SendMessageFn = (
   channelId: string,
   targetGroupExternalId: string,
   content: string
+) => Promise<void>;
+
+type SendRichMessageFn = (
+  groupId: string,
+  payload: RichResponse,
+  opts: {threadTs?: string}
 ) => Promise<void>;
 
 type AddReactionFn = (
@@ -75,16 +94,27 @@ type CreateFeatureFn = (data: IpcCreateFeature) => Promise<void>;
 type RadioStreamFn = (data: IpcRadioStream) => Promise<void>;
 type TriviaToggleFn = (data: IpcTriviaToggle) => Promise<void>;
 
+/** Time window in ms during which a rich_response for a given agentRunId
+ *  preempts a co-arriving send_message. Plenty for an IPC poll cycle. */
+const DEDUPE_WINDOW_MS = 60_000;
+
 export class IpcWatcher {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private sendMessage: SendMessageFn | null = null;
+  private sendRichMessage: SendRichMessageFn | null = null;
   private addReaction: AddReactionFn | null = null;
   private createFeature: CreateFeatureFn | null = null;
   private radioStream: RadioStreamFn | null = null;
   private triviaToggle: TriviaToggleFn | null = null;
+  /** Map of (groupId|agentRunId) -> expiry ts for rich responses that preempt plain sends. */
+  private richEmittedRuns = new Map<string, number>();
 
   setSendMessage(fn: SendMessageFn): void {
     this.sendMessage = fn;
+  }
+
+  setSendRichMessage(fn: SendRichMessageFn): void {
+    this.sendRichMessage = fn;
   }
 
   setAddReaction(fn: AddReactionFn): void {
@@ -198,6 +228,13 @@ export class IpcWatcher {
       return targetGroupId === ipcData.groupId;
     }
 
+    if (ipcData.type === "rich_response") {
+      // Rich responses always target the source group (the schema has no
+      // targetGroupId today). Allowing only same-group keeps parity with
+      // send_message's authorization rule.
+      return true;
+    }
+
     // Feature channel creation, radio stream control, and trivia toggle require main group
     if (
       ipcData.type === "create_feature" ||
@@ -227,6 +264,9 @@ export class IpcWatcher {
     switch (ipcData.type) {
       case "send_message":
         await this.handleSendMessage(ipcData);
+        break;
+      case "rich_response":
+        await this.handleRichResponse(ipcData);
         break;
       case "add_reaction":
         await this.handleAddReaction(ipcData);
@@ -297,6 +337,19 @@ export class IpcWatcher {
       return;
     }
 
+    // Dedupe: if a rich_response with the same agentRunId was processed in
+    // the same window, drop this plain send. The card already covered it.
+    if (data.agentRunId) {
+      const key = `${data.groupId}|${data.agentRunId}`;
+      const expiry = this.richEmittedRuns.get(key);
+      if (expiry && expiry > Date.now()) {
+        logger.debug(
+          `IPC: dropping send_message for agentRunId=${data.agentRunId} — rich_response already emitted`
+        );
+        return;
+      }
+    }
+
     const targetGroupId = data.targetGroupId ?? data.groupId;
     const targetGroup = await Group.findById(targetGroupId);
     if (!targetGroup) {
@@ -306,6 +359,34 @@ export class IpcWatcher {
 
     await this.sendMessage(data.channelId, targetGroup.externalId, data.content);
     logger.info(`IPC: sent message to group ${targetGroupId}`);
+  }
+
+  private async handleRichResponse(data: IpcRichResponse): Promise<void> {
+    if (!this.sendRichMessage) {
+      logger.warn("No sendRichMessage handler registered for IPC");
+      return;
+    }
+
+    // Mark this run so a co-arriving send_message gets deduped.
+    if (data.agentRunId) {
+      this.richEmittedRuns.set(`${data.groupId}|${data.agentRunId}`, Date.now() + DEDUPE_WINDOW_MS);
+      // Opportunistic cleanup: every N inserts, drop expired entries.
+      if (this.richEmittedRuns.size > 256) {
+        const now = Date.now();
+        for (const [k, v] of this.richEmittedRuns) {
+          if (v <= now) this.richEmittedRuns.delete(k);
+        }
+      }
+    }
+
+    try {
+      await this.sendRichMessage(data.groupId, data.payload, {threadTs: data.threadTs});
+      logger.info(
+        `IPC: sent rich response to group ${data.groupId} (${data.payload.cards.length} card(s))`
+      );
+    } catch (err) {
+      logger.error(`IPC: rich_response handler failed for group ${data.groupId}: ${err}`);
+    }
   }
 
   private async handleCreateTask(data: IpcTaskAction): Promise<void> {

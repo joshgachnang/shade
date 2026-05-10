@@ -23,8 +23,13 @@ export interface FallbackRenderResult {
   text: string;
 }
 
+export interface RenderContext {
+  /** Mapbox Static API token; when present, MapCard renders as an image block. */
+  mapboxAccessToken?: string;
+}
+
 export interface CardRenderer<TOutput> {
   readonly channelType: ChannelType | "terreno";
   readonly supportsRich: boolean;
-  render(response: RichResponse): TOutput;
+  render(response: RichResponse, context?: RenderContext): TOutput;
 }

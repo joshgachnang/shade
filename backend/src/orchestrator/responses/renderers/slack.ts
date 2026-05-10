@@ -8,11 +8,13 @@ import type {
   PlainTextElement,
   SectionBlock,
 } from "@slack/types";
+import {mapStaticUrl} from "../mapbox";
 import type {Action, Card, RichResponse} from "../schema";
 import {
   type CardRenderer,
   type ChannelType,
   placeholderActionId,
+  type RenderContext,
   type SlackRenderResult,
 } from "./types";
 
@@ -142,21 +144,40 @@ const renderCodeCard = (card: Extract<Card, {kind: "code"}>): KnownBlock[] => {
 };
 
 /**
- * Phase 1 map rendering is a placeholder. Phase 4.2 swaps this for a Mapbox
- * Static image_url when AppConfig.maps.mapboxAccessToken is configured.
+ * MapCard rendering: when AppConfig.maps.mapboxAccessToken is configured,
+ * render as a Slack image block backed by Mapbox Static. When the token is
+ * absent, fall back to a text section so the user still sees the coordinates.
  */
-const renderMapCard = (card: Extract<Card, {kind: "map"}>): KnownBlock[] => {
-  const markers =
-    card.markers.length > 0
-      ? `\n${card.markers.length} marker${card.markers.length > 1 ? "s" : ""}`
-      : "";
-  const text = `*Map* — (${card.latitude.toFixed(4)}, ${card.longitude.toFixed(4)}), zoom ${card.zoom}${markers}`;
-  const blocks: KnownBlock[] = [{type: "section", text: mrkdwn(text)} as SectionBlock];
-  if (card.caption) {
-    blocks.push({
-      type: "context",
-      elements: [mrkdwn(`_${card.caption}_`, 150)],
-    } as ContextBlock);
+const renderMapCard = (
+  card: Extract<Card, {kind: "map"}>,
+  context?: RenderContext
+): KnownBlock[] => {
+  const blocks: KnownBlock[] = [];
+  if (context?.mapboxAccessToken) {
+    const url = mapStaticUrl(card, {token: context.mapboxAccessToken});
+    const alt = card.caption ?? `Map at ${card.latitude}, ${card.longitude}`;
+    const imageBlock: ImageBlock = {
+      type: "image",
+      image_url: url,
+      alt_text: alt,
+    };
+    if (card.caption) {
+      imageBlock.title = plainText(card.caption);
+    }
+    blocks.push(imageBlock);
+  } else {
+    const markers =
+      card.markers.length > 0
+        ? `\n${card.markers.length} marker${card.markers.length > 1 ? "s" : ""}`
+        : "";
+    const text = `*Map* — (${card.latitude.toFixed(4)}, ${card.longitude.toFixed(4)}), zoom ${card.zoom}${markers}`;
+    blocks.push({type: "section", text: mrkdwn(text)} as SectionBlock);
+    if (card.caption) {
+      blocks.push({
+        type: "context",
+        elements: [mrkdwn(`_${card.caption}_`, 150)],
+      } as ContextBlock);
+    }
   }
   if (card.actions?.length) blocks.push(actionsBlock(card.actions) as KnownBlock);
   return blocks;
@@ -252,7 +273,7 @@ const renderTableCard = (card: Extract<Card, {kind: "table"}>): KnownBlock[] => 
   return blocks;
 };
 
-const renderCard = (card: Card): KnownBlock[] => {
+const renderCard = (card: Card, context?: RenderContext): KnownBlock[] => {
   switch (card.kind) {
     case "text":
       return renderTextCard(card);
@@ -263,7 +284,7 @@ const renderCard = (card: Card): KnownBlock[] => {
     case "code":
       return renderCodeCard(card);
     case "map":
-      return renderMapCard(card);
+      return renderMapCard(card, context);
     case "list":
       return renderListCard(card);
     case "error":
@@ -279,11 +300,11 @@ export class SlackBlockKitRenderer implements CardRenderer<SlackRenderResult> {
   readonly channelType: ChannelType = "slack";
   readonly supportsRich = true;
 
-  render(response: RichResponse): SlackRenderResult {
+  render(response: RichResponse, context?: RenderContext): SlackRenderResult {
     const blocks: KnownBlock[] = [];
     for (let i = 0; i < response.cards.length; i++) {
       const card = response.cards[i];
-      const cardBlocks = renderCard(card);
+      const cardBlocks = renderCard(card, context);
       // Add a divider between cards (not before the first, not after the last)
       if (i > 0) blocks.push({type: "divider"} as DividerBlock);
       blocks.push(...cardBlocks);

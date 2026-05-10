@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../config";
+import {loadAppConfig} from "../models/appConfig";
+import {richResponseSystemPromptBlock} from "./responses/promptBlock";
 
 const MEMORY_FILENAME = "CLAUDE.md";
 const SOUL_FILENAME = "SOUL.md";
@@ -86,6 +88,15 @@ export const buildSystemPrompt = async (groupFolder: string, fallback: string): 
 
   if (parts.length === 0) {
     parts.push(fallback);
+  }
+
+  // Append the rich-response prompt block when the feature flag is enabled.
+  const appConfig = await loadAppConfig();
+  const richBlock = richResponseSystemPromptBlock({
+    enabled: appConfig.richResponses?.enabled ?? true,
+  });
+  if (richBlock) {
+    parts.push(richBlock);
   }
 
   return parts.join("\n\n---\n\n");

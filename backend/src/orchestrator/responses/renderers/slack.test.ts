@@ -118,7 +118,7 @@ describe("SlackBlockKitRenderer — per-kind output", () => {
     expect(blocks[1].type).toBe("context");
   });
 
-  test("map card placeholder includes coordinates and zoom", () => {
+  test("map card placeholder includes coordinates and zoom when no token", () => {
     const {blocks} = renderer.render(
       wrap({
         kind: "map",
@@ -133,6 +133,25 @@ describe("SlackBlockKitRenderer — per-kind output", () => {
     expect(section.text.text).toContain("-122.4194");
     expect(section.text.text).toContain("zoom 12");
     expect(section.text.text).toContain("1 marker");
+  });
+
+  test("map card with Mapbox token renders as an image block", () => {
+    const {blocks} = renderer.render(
+      wrap({
+        kind: "map",
+        latitude: 37.7749,
+        longitude: -122.4194,
+        zoom: 12,
+        markers: [{lat: 37.78, lng: -122.41, color: "primary"}],
+      }),
+      {mapboxAccessToken: "pk.test"}
+    );
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].type).toBe("image");
+    const img = blocks[0] as {image_url: string; alt_text: string};
+    expect(img.image_url).toContain("api.mapbox.com");
+    expect(img.image_url).toContain("pin-s+3B82F6(-122.41,37.78)");
+    expect(img.image_url).toContain("access_token=pk.test");
   });
 
   test("list card with title, items, and onPress accessory", () => {

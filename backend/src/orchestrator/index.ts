@@ -86,6 +86,13 @@ export const startOrchestrator = async (
       );
     }
   });
+  ipcWatcher.setSendRichMessage(async (groupId, payload, opts) => {
+    try {
+      await channelManager.sendRichMessageToGroup(groupId, payload, opts);
+    } catch (err) {
+      logger.error(`IPC sendRichMessage failed (group=${groupId}): ${err}`);
+    }
+  });
   ipcWatcher.setAddReaction(async (channelId, groupExternalId, messageTs, emoji) => {
     try {
       await channelManager.addReaction(channelId, groupExternalId, messageTs, emoji);

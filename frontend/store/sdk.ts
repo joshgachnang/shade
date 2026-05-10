@@ -111,6 +111,25 @@ export interface SearchSuggestions {
   suggestions: string[];
 }
 
+// Rich response (IP-005) — kept loose; the backend Zod schema is the source of truth.
+export interface PreviewCardRequest {
+  v: string;
+  cards: Array<Record<string, unknown>>;
+  fallbackText: string;
+}
+
+export interface PreviewCardResponse {
+  slackBlocks: Array<Record<string, unknown>> | null;
+  fallbackText: string | null;
+  validation: Array<Record<string, unknown>> | null;
+}
+
+export interface MessageRichResponse {
+  message: Record<string, unknown>;
+  richPayload: Record<string, unknown> | null;
+  slackBlocks: Array<Record<string, unknown>> | null;
+}
+
 // Feature types
 export interface FeatureStep {
   _id: string;
@@ -319,6 +338,15 @@ export const terrenoApi = openapi
       searchSuggest: builder.query<SearchSuggestions, string>({
         query: (q) => ({url: `/search/suggest?q=${encodeURIComponent(q)}`}),
       }),
+      // Rich-response admin endpoints (IP-005).
+      // Note: hand-defined here per Movie-Scene-Analyzer precedent. Run
+      // `bun run sdk` once the backend is live to reconcile with openApiSdk.ts.
+      previewCard: builder.mutation<PreviewCardResponse, PreviewCardRequest>({
+        query: (body) => ({body, method: "POST", url: "/orchestrator/preview-card"}),
+      }),
+      getMessageRich: builder.query<MessageRichResponse, string>({
+        query: (id) => ({url: `/orchestrator/messages/${id}/rich`}),
+      }),
     }),
   })
   .enhanceEndpoints({
@@ -358,5 +386,7 @@ export const {
   useFailFeatureStepMutation,
   useGetFeatureProgressQuery,
   useListResumableFeaturesQuery,
+  usePreviewCardMutation,
+  useGetMessageRichQuery,
 } = terrenoApi;
 export * from "./openApiSdk";

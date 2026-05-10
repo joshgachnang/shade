@@ -18,6 +18,7 @@ import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
 import {MovieActionsPlugin, movieRoutes} from "./api/movies";
 import {NotificationsPlugin} from "./api/notifications";
+import {OrchestratorPreviewPlugin} from "./api/orchestratorPreview";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
@@ -120,6 +121,7 @@ export const start = async (skipListen = false) => {
     .register(new AppleContactsPlugin())
     .register(new TriviaAutoSearchPlugin())
     .register(new NotificationsPlugin())
+    .register(new OrchestratorPreviewPlugin())
     .register(appConfigRoutes)
     .register(adminApp)
     .start();
