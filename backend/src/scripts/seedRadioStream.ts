@@ -1,29 +1,45 @@
-// biome-ignore-all lint/suspicious/noConsole: CLI script
+import type {ScriptResult, ScriptRunner} from "@terreno/api";
 import mongoose from "mongoose";
 import {RadioStream} from "../models/radioStream";
 import {connectToMongoDB} from "../utils/database";
 
-const main = async () => {
-  await connectToMongoDB();
+const STREAM_URL = "https://a6.asurahosting.com:8210/radio.mp3";
 
-  const existing = await RadioStream.findOne({
-    streamUrl: "https://a6.asurahosting.com:8210/radio.mp3",
-  });
+export const seedRadioStreamRunner: ScriptRunner = async (wetRun, ctx): Promise<ScriptResult> => {
+  const results: string[] = [];
+  const log = async (message: string) => {
+    results.push(message);
+    await ctx?.addLog("info", message);
+  };
+
+  if (mongoose.connection.readyState === 0) {
+    await connectToMongoDB();
+  }
+
+  const existing = await RadioStream.findOne({streamUrl: STREAM_URL});
   if (existing) {
-    console.log(`Radio stream already exists: ${existing._id} (status: ${existing.status})`);
+    await log(`Radio stream already exists: ${existing._id} (status: ${existing.status})`);
     if (existing.status !== "active") {
-      await RadioStream.findByIdAndUpdate(existing._id, {
-        $set: {status: "active", errorMessage: undefined, reconnectCount: 0},
-      });
-      console.log("Set to active");
+      if (wetRun) {
+        await RadioStream.findByIdAndUpdate(existing._id, {
+          $set: {status: "active", errorMessage: undefined, reconnectCount: 0},
+        });
+        await log("Set to active");
+      } else {
+        await log("Dry run: would set status to active");
+      }
     }
-    await mongoose.disconnect();
-    return;
+    return {results, success: true};
+  }
+
+  if (!wetRun) {
+    await log("Dry run: would create 90FM Trivia radio stream");
+    return {results, success: true};
   }
 
   const stream = await RadioStream.create({
     name: "90FM Trivia",
-    streamUrl: "https://a6.asurahosting.com:8210/radio.mp3",
+    streamUrl: STREAM_URL,
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL,
     status: "active",
     deepgramConfig: {
@@ -35,17 +51,25 @@ const main = async () => {
     transcriptBatchIntervalMs: 15000,
   });
 
-  console.log(`Created radio stream: ${stream._id}`);
-  console.log(`  Name: ${stream.name}`);
-  console.log(`  URL: ${stream.streamUrl}`);
-  console.log(`  Status: ${stream.status}`);
-  console.log(`  Webhook: ${stream.slackWebhookUrl}`);
-  console.log("\nStream will start transcribing on next server restart.");
-
-  await mongoose.disconnect();
+  await log(`Created radio stream: ${stream._id}`);
+  await log(`  Name: ${stream.name}`);
+  await log(`  URL: ${stream.streamUrl}`);
+  await log(`  Status: ${stream.status}`);
+  await log("Stream will start transcribing on next server restart.");
+  return {results, success: true};
 };
 
-main().catch((err) => {
-  console.error("Error:", err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  seedRadioStreamRunner(true)
+    .then(async ({results}) => {
+      for (const line of results) {
+        // biome-ignore lint/suspicious/noConsole: CLI script
+        console.log(line);
+      }
+      await mongoose.disconnect();
+    })
+    .catch((err) => {
+      console.error("Error:", err);
+      process.exit(1);
+    });
+}

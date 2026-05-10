@@ -1,3 +1,4 @@
+import type {ScriptResult, ScriptRunner} from "@terreno/api";
 import mongoose from "mongoose";
 import {connectToMongoDB} from "../utils/database";
 
@@ -10,9 +11,24 @@ import {connectToMongoDB} from "../utils/database";
  * not on local MongoDB instances. If running locally, the search endpoints
  * will fall back to regex-based queries.
  */
+export const createSearchIndexesRunner: ScriptRunner = async (
+  wetRun,
+  ctx
+): Promise<ScriptResult> => {
+  const results: string[] = [];
+  const log = async (message: string) => {
+    results.push(message);
+    await ctx?.addLog("info", message);
+  };
 
-const createSearchIndexes = async () => {
-  await connectToMongoDB();
+  if (!wetRun) {
+    await log("Dry run: would create frame_analysis_search and frame_analysis_autocomplete");
+    return {results, success: true};
+  }
+
+  if (mongoose.connection.readyState === 0) {
+    await connectToMongoDB();
+  }
 
   const db = mongoose.connection.db;
   if (!db) {
@@ -20,8 +36,7 @@ const createSearchIndexes = async () => {
   }
   const collection = db.collection("frameanalyses");
 
-  console.info("Creating Atlas Search index: frame_analysis_search");
-
+  await log("Creating Atlas Search index: frame_analysis_search");
   try {
     await collection.createSearchIndex({
       name: "frame_analysis_search",
@@ -42,13 +57,12 @@ const createSearchIndexes = async () => {
         },
       },
     });
-    console.info("Created frame_analysis_search index");
+    await log("Created frame_analysis_search index");
   } catch (err) {
-    console.error("Failed to create search index (may already exist):", err);
+    await log(`Failed (may already exist): ${(err as Error).message}`);
   }
 
-  console.info("Creating Atlas Search index: frame_analysis_autocomplete");
-
+  await log("Creating Atlas Search index: frame_analysis_autocomplete");
   try {
     await collection.createSearchIndex({
       name: "frame_analysis_autocomplete",
@@ -81,16 +95,25 @@ const createSearchIndexes = async () => {
         },
       },
     });
-    console.info("Created frame_analysis_autocomplete index");
+    await log("Created frame_analysis_autocomplete index");
   } catch (err) {
-    console.error("Failed to create autocomplete index (may already exist):", err);
+    await log(`Failed (may already exist): ${(err as Error).message}`);
   }
 
-  console.info("Done. Indexes may take a few minutes to become active on Atlas.");
-  await mongoose.disconnect();
+  await log("Done. Indexes may take a few minutes to become active on Atlas.");
+  return {results, success: true};
 };
 
-createSearchIndexes().catch((err) => {
-  console.error("Script failed:", err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  createSearchIndexesRunner(true)
+    .then(async ({results}) => {
+      for (const line of results) {
+        console.info(line);
+      }
+      await mongoose.disconnect();
+    })
+    .catch((err) => {
+      console.error("Script failed:", err);
+      process.exit(1);
+    });
+}

@@ -54,6 +54,8 @@ import {User} from "./models/user";
 import {WebhookSource} from "./models/webhookSource";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
+import {createSearchIndexesRunner} from "./scripts/createSearchIndex";
+import {seedRadioStreamRunner} from "./scripts/seedRadioStream";
 import {connectToMongoDB} from "./utils/database";
 import {initDirectories} from "./utils/directories";
 
@@ -238,6 +240,19 @@ export const start = async (skipListen = false) => {
         routePath: "/webhook-sources",
         displayName: "Webhook Sources",
         listFields: ["name", "type", "groupId", "endpoint"],
+      },
+    ],
+    scripts: [
+      {
+        name: "createSearchIndexes",
+        description:
+          "Create MongoDB Atlas Search indexes for FrameAnalysis (requires Atlas cluster).",
+        runner: createSearchIndexesRunner,
+      },
+      {
+        name: "seedRadioStream",
+        description: "Seed the 90FM Trivia radio stream if it does not already exist.",
+        runner: seedRadioStreamRunner,
       },
     ],
   });
