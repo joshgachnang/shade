@@ -73,6 +73,11 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       blueskyIdentifier: {type: String, default: ""},
       blueskyPassword: {type: String, default: ""},
     },
+
+    notifications: {
+      enabled: {type: Boolean, default: true},
+      slackChannel: {type: String, default: "general"},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

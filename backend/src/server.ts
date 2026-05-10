@@ -17,6 +17,7 @@ import {groupRoutes} from "./api/groups";
 import {HealthPlugin} from "./api/health";
 import {messageRoutes} from "./api/messages";
 import {MovieActionsPlugin, movieRoutes} from "./api/movies";
+import {NotificationsPlugin} from "./api/notifications";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
 import {remoteAgentRoutes} from "./api/remoteAgents";
@@ -118,6 +119,7 @@ export const start = async (skipListen = false) => {
     .register(calendarConfigRoutes)
     .register(new AppleContactsPlugin())
     .register(new TriviaAutoSearchPlugin())
+    .register(new NotificationsPlugin())
     .register(appConfigRoutes)
     .register(adminApp)
     .start();
