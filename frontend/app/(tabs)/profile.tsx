@@ -59,15 +59,15 @@ const ProfileScreen: React.FC = () => {
       <Box padding={4} gap={4} testID="profile-screen">
         <Heading>Profile</Heading>
         <TextField
-          label="Name"
+          title="Name"
           value={name}
-          onChangeText={handleNameChange}
+          onChange={handleNameChange}
           testID="profile-name-input"
         />
         <TextField
-          label="Email"
+          title="Email"
           value={email}
-          onChangeText={handleEmailChange}
+          onChange={handleEmailChange}
           testID="profile-email-input"
         />
         {isDirty && (
