@@ -1,79 +1,27 @@
-import FontAwesome from "@expo/vector-icons/FontAwesome";
-import {Tabs} from "expo-router";
+import {SidebarNavigation} from "@terreno/ui";
 import type React from "react";
-import {useCallback} from "react";
-import {colors} from "@/constants/theme";
 
-const TabBarIcon: React.FC<{
-  name: React.ComponentProps<typeof FontAwesome>["name"];
-  color: string;
-}> = ({name, color}) => {
-  return <FontAwesome color={color} name={name} size={24} style={{marginBottom: -3}} />;
-};
-
-const TabLayout: React.FC = () => {
-  const renderHomeIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="home" />,
-    []
-  );
-
-  const renderSearchIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="search" />,
-    []
-  );
-
-  const renderProfileIcon = useCallback(
-    ({color}: {color: string}): React.ReactElement => <TabBarIcon color={color} name="user" />,
-    []
-  );
-
+const SidebarLayout: React.FC = () => {
   return (
-    <Tabs
-      detachInactiveScreens={false}
-      screenOptions={{
-        tabBarActiveTintColor: colors.tint,
-      }}
+    <SidebarNavigation
+      topItems={[
+        {label: "Home", route: "index", iconName: "house"},
+        {label: "Search", route: "search", iconName: "magnifying-glass"},
+        {label: "Movies", route: "movies", iconName: "film"},
+      ]}
+      bottomItems={[
+        {label: "Admin", route: "admin", iconName: "gear"},
+        {label: "Profile", route: "profile", iconName: "user"},
+      ]}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          tabBarIcon: renderHomeIcon,
-          title: "Home",
-        }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{
-          headerShown: false,
-          tabBarIcon: renderSearchIcon,
-          title: "Search",
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          headerShown: false,
-          tabBarIcon: renderProfileIcon,
-          title: "Profile",
-        }}
-      />
-      <Tabs.Screen
-        name="movies"
-        options={{
-          headerShown: false,
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="admin"
-        options={{
-          headerShown: false,
-          href: null,
-        }}
-      />
-    </Tabs>
+      <SidebarNavigation.Screen name="index" options={{title: "Home"}} />
+      <SidebarNavigation.Screen name="search" options={{headerShown: false}} />
+      <SidebarNavigation.Screen name="profile" options={{headerShown: false}} />
+      <SidebarNavigation.Screen name="movies" options={{headerShown: false}} />
+      <SidebarNavigation.Screen name="admin" options={{headerShown: false}} />
+    </SidebarNavigation>
   );
 };
 
 // Expo Router requires default export for route files
-export default TabLayout;
+export default SidebarLayout;
