@@ -28,8 +28,30 @@ import {RecordingsPlugin, transcriptRoutes} from "./api/transcripts";
 import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
+import {AgentSession} from "./models/agentSession";
+import {AIRequest} from "./models/aiRequest";
 import {AppConfig, loadAppConfig} from "./models/appConfig";
+import {CalendarConfig} from "./models/calendarConfig";
+import {Channel} from "./models/channel";
+import {Character} from "./models/character";
+import {CommandClassification} from "./models/commandClassification";
+import {Feature} from "./models/feature";
+import {Frame} from "./models/frame";
+import {FrameAnalysis} from "./models/frameAnalysis";
+import {Group} from "./models/group";
+import {Message} from "./models/message";
+import {Movie} from "./models/movie";
+import {Plugin} from "./models/plugin";
+import {PrWatch} from "./models/prWatch";
+import {RadioStream} from "./models/radioStream";
+import {RemoteAgent} from "./models/remoteAgent";
+import {ScheduledTask} from "./models/scheduledTask";
+import {TaskRunLog} from "./models/taskRunLog";
+import {Transcript} from "./models/transcript";
+import {TriviaQuestion} from "./models/triviaQuestion";
+import {TriviaScore} from "./models/triviaScore";
 import {User} from "./models/user";
+import {WebhookSource} from "./models/webhookSource";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
 import {connectToMongoDB} from "./utils/database";
@@ -77,6 +99,145 @@ export const start = async (skipListen = false) => {
         routePath: "/app-configs",
         displayName: "App Config",
         listFields: ["assistantName", "triggerPattern", "created"],
+      },
+      {
+        model: User,
+        routePath: "/users",
+        displayName: "Users",
+        listFields: ["email", "name", "admin", "created"],
+        hiddenFields: ["hash", "salt"],
+      },
+      {
+        model: Group,
+        routePath: "/groups",
+        displayName: "Groups",
+        listFields: ["name", "folder", "trigger", "isMain"],
+      },
+      {
+        model: Channel,
+        routePath: "/channels",
+        displayName: "Channels",
+        listFields: ["name", "type", "status", "privileged"],
+      },
+      {
+        model: Message,
+        routePath: "/messages",
+        displayName: "Messages",
+        listFields: ["sender", "content", "isFromBot", "processedAt"],
+      },
+      {
+        model: Feature,
+        routePath: "/features",
+        displayName: "Features",
+        listFields: ["name", "status", "order", "completedAt"],
+      },
+      {
+        model: Movie,
+        routePath: "/movies",
+        displayName: "Movies",
+        listFields: ["title", "duration", "fps", "frameCount"],
+      },
+      {
+        model: Plugin,
+        routePath: "/plugins",
+        displayName: "Plugins",
+        listFields: ["name", "enabled", "version", "path"],
+      },
+      {
+        model: Character,
+        routePath: "/characters",
+        displayName: "Characters",
+        listFields: ["name", "actorName", "movieId", "firstSeen"],
+      },
+      {
+        model: RadioStream,
+        routePath: "/radio-streams",
+        displayName: "Radio Streams",
+        listFields: ["name", "streamUrl", "status", "targetGroupId"],
+      },
+      {
+        model: AgentSession,
+        routePath: "/agent-sessions",
+        displayName: "Agent Sessions",
+        listFields: ["sessionId", "status", "messageCount", "lastActivityAt"],
+      },
+      {
+        model: AIRequest,
+        routePath: "/ai-requests",
+        displayName: "AI Requests",
+        listFields: ["aiModel", "costUsd", "error", "created"],
+      },
+      {
+        model: CalendarConfig,
+        routePath: "/calendar-configs",
+        displayName: "Calendar Configs",
+        listFields: ["name", "enabledCalendars", "owner", "created"],
+      },
+      {
+        model: CommandClassification,
+        routePath: "/command-classifications",
+        displayName: "Command Classifications",
+        listFields: ["pattern", "routeTo", "priority", "description"],
+      },
+      {
+        model: Frame,
+        routePath: "/frames",
+        displayName: "Frames",
+        listFields: ["movieId", "frameNumber", "timestamp", "imagePath"],
+      },
+      {
+        model: FrameAnalysis,
+        routePath: "/frame-analyses",
+        displayName: "Frame Analyses",
+        listFields: ["frameId", "movieId", "timestamp", "sceneDescription"],
+      },
+      {
+        model: PrWatch,
+        routePath: "/pr-watches",
+        displayName: "PR Watches",
+        listFields: ["reviewer", "state", "isBot", "submittedAt"],
+      },
+      {
+        model: RemoteAgent,
+        routePath: "/remote-agents",
+        displayName: "Remote Agents",
+        listFields: ["name", "status", "lastHeartbeatAt", "created"],
+      },
+      {
+        model: ScheduledTask,
+        routePath: "/scheduled-tasks",
+        displayName: "Scheduled Tasks",
+        listFields: ["name", "scheduleType", "schedule", "status"],
+      },
+      {
+        model: TaskRunLog,
+        routePath: "/task-run-logs",
+        displayName: "Task Run Logs",
+        listFields: ["taskId", "modelBackend", "modelName", "created"],
+      },
+      {
+        model: Transcript,
+        routePath: "/transcripts",
+        displayName: "Transcripts",
+        listFields: ["radioStreamId", "content", "durationMs", "created"],
+      },
+      {
+        model: TriviaQuestion,
+        routePath: "/trivia-questions",
+        displayName: "Trivia Questions",
+        listFields: ["year", "hour", "questionNumber", "answer"],
+      },
+      {
+        model: TriviaScore,
+        routePath: "/trivia-scores",
+        displayName: "Trivia Scores",
+        listFields: ["year", "hour", "place", "teamName", "score"],
+      },
+      {
+        model: WebhookSource,
+        routePath: "/webhook-sources",
+        displayName: "Webhook Sources",
+        listFields: ["name", "type", "groupId", "endpoint"],
       },
     ],
   });
