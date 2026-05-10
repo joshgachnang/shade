@@ -8,7 +8,7 @@ const SidebarLayout: React.FC = () => {
         {label: "Home", route: "index", iconName: "house"},
         {label: "Search", route: "search", iconName: "magnifying-glass"},
         {label: "Movies", route: "movies", iconName: "film"},
-        {label: "Features", route: "features", iconName: "check-square"},
+        {label: "Features", route: "features", iconName: "list-check"},
       ]}
       bottomItems={[
         {label: "Admin", route: "admin", iconName: "gear"},

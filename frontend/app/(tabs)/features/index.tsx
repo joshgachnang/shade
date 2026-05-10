@@ -15,7 +15,7 @@ const statusToVariant: Record<string, "info" | "success" | "error" | "warning" |
 
 const FeatureListScreen: React.FC = () => {
   const router = useRouter();
-  const {data, isLoading, refetch} = useListFeaturesQuery();
+  const {data, isLoading, refetch} = useListFeaturesQuery(undefined);
   const [createFeature] = useCreateFeatureMutation();
 
   const features = data?.results || [];
