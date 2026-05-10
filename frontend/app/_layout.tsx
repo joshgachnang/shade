@@ -11,7 +11,7 @@ import {baseUrl, useSelectCurrentUserId} from "@terreno/rtk";
 import {TerrenoProvider} from "@terreno/ui";
 import {Provider, useSelector} from "react-redux";
 import {PersistGate} from "redux-persist/integration/react";
-import {persistor, type RootState, store} from "@/store";
+import {persistor, type RootState, store, useGetMeQuery} from "@/store";
 
 Sentry.init({
   dsn: "https://73dfd26d7a1d38d500ae6a136ab5a0b0@o106257.ingest.us.sentry.io/4511082700341248",
@@ -43,6 +43,10 @@ const RootLayoutNav: React.FC = () => {
   const hasRehydrated = useSelector(selectHasRehydrated);
   const segments = useSegments();
   const router = useRouter();
+
+  // Fetch the user profile as soon as the user is authenticated.
+  // This populates the RTK Query cache so profile data is available app-wide.
+  useGetMeQuery(undefined, {skip: !userId});
 
   // After persisted auth is loaded, send unauthenticated users to login and
   // keep signed-in users off the login route (including deep links).
