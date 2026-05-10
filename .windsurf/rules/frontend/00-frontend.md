@@ -1,3 +1,9 @@
+---
+title: Shade frontend guidelines
+trigger: glob
+globs:
+  - frontend/**/*
+---
 # Shade Frontend
 
 Expo/React Native frontend using @terreno/ui and @terreno/rtk.
