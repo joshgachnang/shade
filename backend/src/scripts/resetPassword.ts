@@ -20,7 +20,7 @@ const run = async () => {
   }
   await user.setPassword(newPassword);
   await user.save();
-  console.log(`Password reset for ${email}`);
+  console.info(`Password reset for ${email}`);
   await mongoose.disconnect();
 };
 
