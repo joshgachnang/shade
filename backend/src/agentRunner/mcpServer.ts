@@ -10,6 +10,7 @@ import {Channel} from "../models/channel";
 import {Message} from "../models/message";
 import {RadioStream} from "../models/radioStream";
 import {ScheduledTask} from "../models/scheduledTask";
+import {RichResponse} from "../orchestrator/responses/schema";
 import {
   addShadeContext,
   createContact,
@@ -27,8 +28,13 @@ interface McpContext {
   channelId: string;
   ipcDir: string;
   groupFolder: string;
+  /** Slack ts of the triggering message; used both for reactions and as thread_ts on rich-response replies. */
   messageTs?: string;
   senderExternalId?: string;
+  /** Stable per-agent-run identifier; lets the IPC consumer dedupe send_message + rich_response in the same run. */
+  agentRunId?: string;
+  /** Slack thread_ts to use when replying. Falls back to messageTs when omitted by the runner. */
+  threadTs?: string;
 }
 
 const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Promise<string> => {
@@ -62,9 +68,50 @@ const buildTools = (ctx: McpContext) => {
         channelId: ctx.channelId,
         content: args.content,
         targetGroupId: args.targetGroupId,
+        agentRunId: ctx.agentRunId,
       });
       return {
         content: [{type: "text" as const, text: `Message queued (${fileId})`}],
+      };
+    }
+  );
+
+  const respondWithCardTool = tool(
+    "respond_with_card",
+    "Reply to the user with a structured RichResponse card payload (text, yes/no buttons, weather, code, map, list, error, image, or table). " +
+      "Use this when structure materially helps comprehension. Always include fallbackText for non-rich channels. " +
+      "Do NOT call this in addition to send_message in the same response — choose one.",
+    RichResponse.shape,
+    async (args) => {
+      // Defensive parse — the SDK already validates against shape, but discriminated
+      // union refinements (e.g. table row consistency) need the full parser.
+      const parsed = RichResponse.safeParse(args);
+      if (!parsed.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `respond_with_card validation failed: ${parsed.error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "rich_response",
+        groupId: ctx.groupId,
+        channelId: ctx.channelId,
+        agentRunId: ctx.agentRunId,
+        threadTs: ctx.threadTs ?? ctx.messageTs,
+        payload: parsed.data,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Rich response queued (${fileId}, ${parsed.data.cards.length} card(s))`,
+          },
+        ],
       };
     }
   );
@@ -1154,6 +1201,7 @@ const buildTools = (ctx: McpContext) => {
 
   return [
     sendMessageTool,
+    respondWithCardTool,
     addReactionTool,
     createFeatureTool,
     scheduleTaskTool,

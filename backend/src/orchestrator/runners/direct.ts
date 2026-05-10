@@ -58,6 +58,8 @@ export class DirectAgentRunner implements AgentRunner {
         groupFolder: config.groupFolder,
         messageTs: config.messageTs,
         senderExternalId: config.senderExternalId,
+        agentRunId: config.sessionId,
+        threadTs: config.messageTs,
       });
       mcpServers["shade-orchestrator"] = shadeMcp;
 
