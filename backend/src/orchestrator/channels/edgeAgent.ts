@@ -6,6 +6,7 @@ import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
 
 export class EdgeAgentChannelConnector implements ChannelConnector {
   readonly channelDoc: ChannelDocument;
+  readonly supportsRichMessages = false;
   private connected = false;
 
   constructor(channelDoc: ChannelDocument) {
