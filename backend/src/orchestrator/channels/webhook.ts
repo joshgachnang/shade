@@ -9,6 +9,7 @@ import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
 
 export class WebhookChannelConnector implements ChannelConnector {
   readonly channelDoc: ChannelDocument;
+  readonly supportsRichMessages = false;
   private connected = false;
   private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
 

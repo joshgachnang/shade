@@ -7,6 +7,7 @@ export * from "./character";
 export * from "./commandClassification";
 export * from "./edgeAgent";
 export * from "./edgeAgentEvent";
+export * from "./feature";
 export * from "./frame";
 export * from "./frameAnalysis";
 export * from "./group";

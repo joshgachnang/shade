@@ -1,13 +1,14 @@
 import type {Page} from "@playwright/test";
 
 /**
- * Open the Profile tab and wait for profile content (lazy tab + RTK; allow CI bundling).
+ * Open the Profile nav item and wait for profile content (lazy nav + RTK; allow CI bundling).
+ * The sidebar navigation renders nav items as accessibilityRole="button" (not "tab").
  */
 export const openProfileTabAndWaitForMe = async (page: Page): Promise<void> => {
-  const profileTab = page.getByRole("tab", {name: "Profile"});
+  const profileTab = page.getByRole("button", {name: "Profile", exact: true});
   await profileTab.waitFor({state: "visible", timeout: 15000});
   await profileTab.click();
-  await page.getByTestId("profile-name-text").waitFor({state: "visible", timeout: 45000});
+  await page.getByTestId("profile-name-input").waitFor({state: "visible", timeout: 45000});
 };
 
 /**

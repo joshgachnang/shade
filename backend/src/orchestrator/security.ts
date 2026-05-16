@@ -46,6 +46,11 @@ export const createPreToolUseHook = (): string => {
   return unsetCommands;
 };
 
+// Mapbox tokens appear in Static Map URLs as ?access_token=pk.eyJ...
+// Match anywhere in a URL; preserve the surrounding query so logs still
+// describe what was being fetched.
+const MAPBOX_TOKEN_RE = /\baccess_token=([^&\s"'<>]+)/gi;
+
 export const redactSecrets = (text: string): string => {
   let redacted = text;
   for (const varName of SENSITIVE_ENV_VARS) {
@@ -54,5 +59,7 @@ export const redactSecrets = (text: string): string => {
       redacted = redacted.replaceAll(value, `[REDACTED:${varName}]`);
     }
   }
+  // Scrub any access_token=... pattern, regardless of host. Cheap and safe.
+  redacted = redacted.replace(MAPBOX_TOKEN_RE, "access_token=<redacted>");
   return redacted;
 };

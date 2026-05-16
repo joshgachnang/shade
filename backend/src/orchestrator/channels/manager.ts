@@ -1,5 +1,7 @@
 import {logger} from "@terreno/api";
 import type express from "express";
+import {nanoid} from "nanoid";
+import {loadAppConfig} from "../../models/appConfig";
 import {Channel} from "../../models/channel";
 import {Group} from "../../models/group";
 import {Message} from "../../models/message";
@@ -7,6 +9,10 @@ import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
 import {handleMovieSearch} from "../movieSearch";
 import {createEdgeAgentConnector} from "./edgeAgent";
+import {pickRenderer} from "../responses/renderers";
+import type {RenderContext, SlackRenderResult} from "../responses/renderers/types";
+import {RichResponse} from "../responses/schema";
+import {truncateRichResponse} from "../responses/truncate";
 import {createEmailConnector} from "./email";
 import {createSlackConnector} from "./slack";
 import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
@@ -144,7 +150,16 @@ export class ChannelManager {
       return;
     }
 
-    // Store the message
+    // If this is an action round-trip (Slack button click), the connector
+    // attached metadata.action — promote it to dedicated Message fields so
+    // the router can render <user_action> and so future queries can index it.
+    const meta = (inbound.metadata ?? {}) as Record<string, unknown>;
+    const actionRaw = meta.action as
+      | {actionId?: string; value?: string; parentCorrelationId?: string}
+      | undefined;
+    const isAction =
+      typeof actionRaw === "object" && actionRaw !== null && typeof actionRaw.actionId === "string";
+
     try {
       await Message.create({
         groupId: group._id,
@@ -154,7 +169,16 @@ export class ChannelManager {
         senderExternalId: inbound.senderExternalId,
         content: inbound.content,
         isFromBot: false,
-        metadata: inbound.metadata ?? {},
+        metadata: meta,
+        ...(isAction
+          ? {
+              parentCorrelationId: actionRaw?.parentCorrelationId,
+              actionMetadata: {
+                actionId: actionRaw!.actionId!,
+                value: actionRaw?.value,
+              },
+            }
+          : {}),
       });
       logger.debug(`Stored message from ${inbound.sender} in group ${group.name}`);
     } catch (err) {
@@ -286,9 +310,112 @@ export class ChannelManager {
         content,
         isFromBot: true,
         metadata: {},
+        correlationId: nanoid(12),
       });
     } catch (err) {
       logger.error(`Failed to store outbound message for group ${group.name}: ${err}`);
+    }
+  }
+
+  /**
+   * Send a structured RichResponse to a group.
+   *
+   * - Validates the payload (defense-in-depth — the MCP tool already did once).
+   * - Truncates to MAX_CARDS per AppConfig.richResponses.autoTruncate.
+   * - Generates a correlationId and persists the Message with richPayload.
+   * - Enforces the same PRIVILEGED_ALLOWED_BACKENDS gate as plain sendMessageToGroup.
+   * - If the channel doesn't support rich messages, falls back to sending fallbackText.
+   * - If AppConfig.richResponses.enabled === false, falls back to fallbackText.
+   */
+  async sendRichMessageToGroup(
+    groupId: string,
+    payload: RichResponse,
+    opts: {threadTs?: string} = {}
+  ): Promise<void> {
+    const group = this.groupCache.get(groupId);
+    if (!group) {
+      logger.error(`Group ${groupId} not found in cache (sendRichMessageToGroup)`);
+      return;
+    }
+
+    const channelId = group.channelId.toString();
+    const connector = this.connectors.get(channelId);
+    if (!connector) {
+      logger.error(`No connector for channel ${channelId} (sendRichMessageToGroup)`);
+      return;
+    }
+
+    // Privileged-channel gate: parity with sendMessageToGroup.
+    if (connector.channelDoc.privileged) {
+      const backend = group.modelConfig?.defaultBackend || "claude";
+      if (!PRIVILEGED_ALLOWED_BACKENDS.has(backend)) {
+        logger.error(
+          `Blocked rich send to privileged channel "${connector.channelDoc.name}" — ` +
+            `group "${group.name}" uses backend "${backend}" (allowed: ${[...PRIVILEGED_ALLOWED_BACKENDS].join(", ")})`
+        );
+        return;
+      }
+    }
+
+    // Defense-in-depth parse.
+    const parsed = RichResponse.safeParse(payload);
+    if (!parsed.success) {
+      logger.warn(`Invalid RichResponse for group ${group.name}: ${parsed.error.message}`);
+      return;
+    }
+
+    const appConfig = await loadAppConfig();
+    const truncated = truncateRichResponse(parsed.data, {
+      autoTruncate: appConfig.richResponses?.autoTruncate ?? true,
+    });
+
+    const correlationId = nanoid(12);
+    const flagEnabled = appConfig.richResponses?.enabled ?? true;
+    const useRich = flagEnabled && connector.supportsRichMessages && connector.sendRichMessage;
+
+    if (useRich) {
+      const renderer = pickRenderer(connector.channelDoc.type) as {
+        render: (r: RichResponse, ctx?: RenderContext) => SlackRenderResult;
+      };
+      const renderContext: RenderContext = {
+        mapboxAccessToken: appConfig.maps?.mapboxAccessToken || undefined,
+      };
+      const rendered = renderer.render(truncated, renderContext);
+      try {
+        await connector.sendRichMessage!(group.externalId, rendered, {
+          groupId,
+          correlationId,
+          threadTs: opts.threadTs,
+        });
+      } catch (err) {
+        logger.error(`Failed to send rich message to group ${group.name}: ${err}`);
+      }
+    } else {
+      // Fallback: send only fallbackText via the plain path.
+      try {
+        await connector.sendMessage(group.externalId, truncated.fallbackText);
+      } catch (err) {
+        logger.error(
+          `Failed to send fallbackText for rich response to group ${group.name}: ${err}`
+        );
+      }
+    }
+
+    // Persist the outbound Message with the rich payload (for audit even when
+    // the flag is off or the channel can't render).
+    try {
+      await Message.create({
+        groupId: group._id,
+        channelId: group.channelId,
+        sender: "Shade",
+        content: truncated.fallbackText,
+        isFromBot: true,
+        metadata: {},
+        richPayload: truncated,
+        correlationId,
+      });
+    } catch (err) {
+      logger.error(`Failed to store outbound rich message for group ${group.name}: ${err}`);
     }
   }
 

@@ -13,6 +13,10 @@ const messageSchema = new mongoose.Schema<MessageDocument, MessageModel>(
     isFromBot: {type: Boolean, default: false},
     processedAt: {type: Date},
     metadata: {type: mongoose.Schema.Types.Mixed, default: {}},
+    richPayload: {type: mongoose.Schema.Types.Mixed, default: undefined},
+    correlationId: {type: String, index: true},
+    parentCorrelationId: {type: String, index: true},
+    actionMetadata: {type: mongoose.Schema.Types.Mixed, default: undefined},
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

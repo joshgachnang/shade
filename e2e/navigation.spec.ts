@@ -11,11 +11,13 @@ test.describe("Feature: Tab Navigation", () => {
 
   test("user can switch from Home to Profile tab", async ({page}) => {
     await openProfileTabAndWaitForMe(page);
-    await expect(page.getByTestId("profile-name-text")).toBeVisible();
+    await expect(page.getByTestId("profile-name-input")).toBeVisible();
   });
 
   test("user can switch from Home to Search tab", async ({page}) => {
-    await page.getByRole("tab", {name: "Search"}).click();
+    const searchNav = page.getByRole("button", {name: "Search", exact: true});
+    await searchNav.waitFor({state: "visible", timeout: 15000});
+    await searchNav.click();
     await page.getByTestId("search-screen").waitFor({state: "visible", timeout: 15000});
     await expect(page.getByTestId("search-input")).toBeVisible({timeout: 15000});
   });
@@ -23,7 +25,9 @@ test.describe("Feature: Tab Navigation", () => {
   test("user can switch from Profile back to Home tab", async ({page}) => {
     await openProfileTabAndWaitForMe(page);
 
-    await page.getByRole("tab", {name: "Home"}).click();
+    const homeNav = page.getByRole("button", {name: "Home", exact: true});
+    await homeNav.waitFor({state: "visible", timeout: 15000});
+    await homeNav.click();
     await page.getByTestId("home-screen").waitFor({state: "visible", timeout: 15000});
   });
 });
@@ -43,11 +47,11 @@ test.describe("Feature: Tab Navigation — profile API", () => {
     await page.goto("/", {timeout: 60000});
     await page.waitForLoadState("networkidle");
 
-    const profileTab = page.getByRole("tab", {name: "Profile"});
+    const profileTab = page.getByRole("button", {name: "Profile", exact: true});
     await profileTab.waitFor({state: "visible", timeout: 15000});
     await profileTab.click();
     await profileMeResponse;
-    await expect(page.getByTestId("profile-name-text")).toBeVisible({timeout: 45000});
+    await expect(page.getByTestId("profile-name-input")).toBeVisible({timeout: 45000});
   });
 });
 

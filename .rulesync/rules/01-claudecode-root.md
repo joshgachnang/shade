@@ -1,5 +1,5 @@
 ---
-localRoot: true
+root: true
 targets: ["claudecode"]
 description: "Shade Claude Code guidelines"
 globs: ["**/*"]
