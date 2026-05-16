@@ -1,27 +1,22 @@
 [Unit]
 Description=Shade Backend
-After=network.target mongod.service
-Wants=mongod.service
+After=network-online.target mongod.service
+Wants=network-online.target mongod.service
 
 [Service]
 Type=simple
-User=shade
-Group=shade
-WorkingDirectory=/opt/shade
-ExecStart=/opt/shade/shade-backend
-EnvironmentFile=/opt/shade/.env
+User=josh
+Group=josh
+WorkingDirectory=/opt/shade/src/backend
+EnvironmentFile=/opt/shade/backend.env
+Environment=PATH=/home/josh/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/josh/.bun/bin/bun run src/index.ts
 Restart=on-failure
 RestartSec=5
+LimitNOFILE=65536
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=shade-backend
-
-# Hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/data/shade /var/log/shade /opt/shade
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
