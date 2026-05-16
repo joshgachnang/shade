@@ -28,7 +28,8 @@ jobs:
 
       - name: Build binaries
         run: |
-          ./shade build backend
+          # Build platform-independent JS bundles for all services
+          ./shade build
           # Cross-compile for Linux x64 (for remote servers)
           bun build backend/src/index.ts \
             --compile \
@@ -44,6 +45,8 @@ jobs:
           name: Latest Build
           files: |
             dist/shade-backend-linux
+            dist/shade-backend.js
+            dist/shade-worker.js
           prerelease: false
           make_latest: true
           body: |
