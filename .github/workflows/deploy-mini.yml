@@ -1,0 +1,65 @@
+name: Deploy to Mini
+
+# Deploys the JS bundles published by `Build & Release Binary` to the mini host
+# via SSH/launchd. Chained to the binary build via workflow_run so we always pick
+# up the freshest bundles.
+
+on:
+  workflow_run:
+    workflows: ["Build & Release Binary"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy-mini:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Download JS bundles from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download latest --repo ${{ github.repository }} --pattern 'shade-backend.js' --dir /tmp --clobber
+          gh release download latest --repo ${{ github.repository }} --pattern 'shade-worker.js' --dir /tmp --clobber
+
+      - name: Deploy to mini
+        env:
+          MINI_SSH_KEY: ${{ secrets.MINI_SSH_KEY }}
+          MINI_HOST: ${{ secrets.MINI_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "$MINI_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no $MINI_HOST"
+
+          # Copy bundles to mini
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no /tmp/shade-backend.js /tmp/shade-worker.js "$MINI_HOST:/opt/shade/dist/"
+
+          # Restart launchd services
+          $SSH "launchctl unload ~/Library/LaunchAgents/com.shade.backend.plist 2>/dev/null || true; \
+                launchctl unload ~/Library/LaunchAgents/com.shade.worker.plist 2>/dev/null || true; \
+                launchctl load ~/Library/LaunchAgents/com.shade.backend.plist; \
+                launchctl load ~/Library/LaunchAgents/com.shade.worker.plist"
+
+          # Verify both services are running from /opt/shade
+          sleep 3
+          $SSH "launchctl list | grep -q com.shade.backend && launchctl list | grep -q com.shade.worker"
+          echo "Mini deploy complete"
+
+      - name: Notify Slack on success
+        if: success()
+        run: |
+          COMMIT_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Shade deployed to mini :computer:\\n\`${SHORT_SHA}\`\"}"
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Shade mini deploy failed :x: — <${RUN_URL}|View logs>\"}"

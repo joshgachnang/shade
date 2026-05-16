@@ -45,7 +45,7 @@ service_after() {
 # Packages that fail to bundle (CJS interop issues) and must resolve from node_modules at runtime
 service_externals() {
   case "$1" in
-    backend) echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk ws" ;;
+    backend) echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk" ;;
     *)       echo "" ;;
   esac
 }
@@ -460,7 +460,9 @@ cmd_deploy() {
   fi
 }
 
-# --- Remote Deploy (Tailscale SSH or plain SSH) ---
+# --- Remote Deploy: source-based (default) ---
+# Pulls origin/master on /opt/shade/src, runs bun install, restarts service(s).
+# Matches the production reality where the systemd unit runs `bun run src/index.ts`.
 cmd_remote_deploy() {
   local host="${1:-}"
   shift || true
@@ -472,9 +474,44 @@ cmd_remote_deploy() {
     exit 1
   fi
 
-  echo "=== Remote Deploy to $host ==="
+  echo "=== Remote Deploy to $host (source-based) ==="
+  echo "Pulling origin/master on /opt/shade/src..."
+  ssh "$host" 'set -euo pipefail
+cd /opt/shade/src
+git fetch origin master
+git reset --hard origin/master
+/home/josh/.bun/bin/bun install'
 
-  # Build locally for Linux target
+  for name in $names; do
+    echo "Restarting shade-${name}..."
+    ssh "$host" "sudo systemctl restart shade-${name}" || echo "  Warning: restart failed for shade-${name}"
+  done
+
+  echo ""
+  echo "=== Remote deploy complete ==="
+  echo "Check: ssh $host 'sudo systemctl status shade-backend'"
+  echo "Logs:  ssh $host 'sudo journalctl -u shade-backend -f'"
+}
+
+# --- Remote Deploy: binary-based (legacy, not currently used) ---
+# Cross-compiles a bun binary for linux-x64 and rsyncs it to /opt/shade/shade-${name}.
+# Preserved for future use if the systemd unit is ever switched to ExecStart=/opt/shade/shade-backend.
+# Note: bun --compile externals don't resolve from cwd at runtime — passport-local-mongoose
+# and @anthropic-ai/claude-agent-sdk fail to load from the binary's virtual FS. Resolve that
+# before flipping the unit. See deploy/shade-backend.service for the binary-mode unit template.
+cmd_remote_deploy_binary() {
+  local host="${1:-}"
+  shift || true
+  local names
+  names="$(resolve_services "$@")"
+
+  if [[ -z "$host" ]]; then
+    echo "Usage: shade remote-deploy-binary <host> [service...]" >&2
+    exit 1
+  fi
+
+  echo "=== Remote Deploy to $host (binary-based, legacy) ==="
+
   mkdir -p "$PROJECT_DIR/dist"
   for name in $names; do
     local entry
@@ -635,8 +672,9 @@ case "$COMMAND" in
   status)            cmd_status "$@" ;;
   logs)              cmd_logs "$@" ;;
   uninstall)         cmd_uninstall "$@" ;;
-  remote-deploy)     cmd_remote_deploy "$@" ;;
-  remote-setup)      cmd_remote_setup "$@" ;;
+  remote-deploy)        cmd_remote_deploy "$@" ;;
+  remote-deploy-binary) cmd_remote_deploy_binary "$@" ;;
+  remote-setup)         cmd_remote_setup "$@" ;;
   search)            cmd_search "$@" ;;
   scrape-scores)     cmd_scrape_scores "$@" ;;
   scrape-scores-loop) cmd_scrape_scores_loop "$@" ;;
@@ -648,7 +686,8 @@ case "$COMMAND" in
     echo "Local:   deploy, build, install, start, stop, restart, status, logs, uninstall"
     echo "Movie:   search <query> [--type objects|characters|text|tags]"
     echo "Trivia:  scrape-scores, scrape-scores-loop, scrape-vault, trivia-answer"
-    echo "Remote:  remote-setup <host>, remote-deploy <host> [service...]"
+    echo "Remote:  remote-setup <host>, remote-deploy <host> [service...] (source-based)"
+    echo "         remote-deploy-binary <host> [service...] (binary-based, legacy)"
     echo ""
     echo "Services: $ALL_SERVICES"
     exit 1
