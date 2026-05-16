@@ -116,6 +116,49 @@ interface ListResponse<T> {
   count: number;
 }
 
+// Edge Agent types
+export interface EdgeAgent {
+  _id: string;
+  id: string;
+  name: string;
+  agentType: string;
+  status: "pending" | "approved" | "online" | "offline" | "error";
+  platform?: "darwin" | "linux" | "windows";
+  arch?: string;
+  version?: string;
+  hostname?: string;
+  lastHeartbeatAt?: string;
+  config: Record<string, unknown>;
+  secrets: Record<string, unknown>;
+  capabilities: string[];
+  channelId?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  pendingCommands: Array<{
+    commandId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    queuedAt: string;
+  }>;
+  lastCommandResults: Array<{
+    commandId: string;
+    success: boolean;
+    error?: string;
+    completedAt?: string;
+  }>;
+  created: string;
+  updated: string;
+}
+
+export interface EdgeAgentEvent {
+  _id: string;
+  id: string;
+  agentId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  created: string;
+}
+
 export const terrenoApi = openapi
   .injectEndpoints({
     endpoints: (builder) => ({
@@ -209,10 +252,64 @@ export const terrenoApi = openapi
       searchSuggest: builder.query<SearchSuggestions, string>({
         query: (q) => ({url: `/search/suggest?q=${encodeURIComponent(q)}`}),
       }),
+      // Edge Agent endpoints
+      listEdgeAgents: builder.query<
+        ListResponse<EdgeAgent>,
+        {status?: string; agentType?: string} | undefined
+      >({
+        providesTags: ["EdgeAgents" as any],
+        query: (params) => {
+          const qs = new URLSearchParams();
+          if (params?.status) {
+            qs.set("status", params.status);
+          }
+          if (params?.agentType) {
+            qs.set("agentType", params.agentType);
+          }
+          const q = qs.toString();
+          return {url: `/edgeAgents${q ? `?${q}` : ""}`};
+        },
+      }),
+      getEdgeAgent: builder.query<EdgeAgent, string>({
+        providesTags: (_result, _err, id) => [{type: "EdgeAgents" as any, id}],
+        query: (id) => ({url: `/edgeAgents/${id}`}),
+      }),
+      updateEdgeAgent: builder.mutation<EdgeAgent, {id: string; body: Partial<EdgeAgent>}>({
+        invalidatesTags: (_result, _err, {id}) => [
+          {type: "EdgeAgents" as any, id},
+          "EdgeAgents" as any,
+        ],
+        query: ({id, body}) => ({body, method: "PATCH", url: `/edgeAgents/${id}`}),
+      }),
+      approveEdgeAgent: builder.mutation<{status: string}, string>({
+        invalidatesTags: (_result, _err, id) => [
+          {type: "EdgeAgents" as any, id},
+          "EdgeAgents" as any,
+        ],
+        query: (id) => ({method: "POST", url: `/api/edge/agents/${id}/approve`}),
+      }),
+      revokeEdgeAgent: builder.mutation<{status: string}, string>({
+        invalidatesTags: (_result, _err, id) => [
+          {type: "EdgeAgents" as any, id},
+          "EdgeAgents" as any,
+        ],
+        query: (id) => ({method: "POST", url: `/api/edge/agents/${id}/revoke`}),
+      }),
+      sendEdgeAgentCommand: builder.mutation<
+        {commandId: string},
+        {id: string; type: string; payload: Record<string, unknown>}
+      >({
+        invalidatesTags: (_result, _err, {id}) => [{type: "EdgeAgents" as any, id}],
+        query: ({id, ...body}) => ({body, method: "POST", url: `/api/edge/agents/${id}/command`}),
+      }),
+      listEdgeAgentEvents: builder.query<ListResponse<EdgeAgentEvent>, {agentId: string}>({
+        providesTags: ["EdgeAgentEvents" as any],
+        query: ({agentId}) => ({url: `/edgeAgentEvents?agentId=${agentId}`}),
+      }),
     }),
   })
   .enhanceEndpoints({
-    addTagTypes: ["profile", "Movies"],
+    addTagTypes: ["profile", "Movies", "EdgeAgents", "EdgeAgentEvents"],
     endpoints: {
       ...generateTags(openapi, [...addTagTypes]),
     },
@@ -237,5 +334,12 @@ export const {
   useListCharactersQuery,
   useSearchQuery,
   useSearchSuggestQuery,
+  useListEdgeAgentsQuery,
+  useGetEdgeAgentQuery,
+  useUpdateEdgeAgentMutation,
+  useApproveEdgeAgentMutation,
+  useRevokeEdgeAgentMutation,
+  useSendEdgeAgentCommandMutation,
+  useListEdgeAgentEventsQuery,
 } = terrenoApi;
 export * from "./openApiSdk";

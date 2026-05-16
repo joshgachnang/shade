@@ -1,6 +1,6 @@
 # Implementation Plan: Edge Agents
 
-**Status:** Open
+**Status:** Pending Verification
 **Priority:** High
 **Effort:** Big batch (1-2 weeks)
 **IP:** IP-005

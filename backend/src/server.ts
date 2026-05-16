@@ -10,6 +10,9 @@ import {channelRoutes} from "./api/channels";
 import {characterRoutes} from "./api/characters";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
+import {edgeAgentEventRoutes} from "./api/edgeAgentEvents";
+import {edgeAgentRoutes} from "./api/edgeAgents";
+import {EdgePlugin} from "./api/edgePlugin";
 import {frameAnalysisRoutes} from "./api/frameAnalyses";
 import {frameRoutes} from "./api/frames";
 import {groupRoutes} from "./api/groups";
@@ -18,7 +21,6 @@ import {messageRoutes} from "./api/messages";
 import {MovieActionsPlugin, movieRoutes} from "./api/movies";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
-import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
 import {SearchPlugin} from "./api/search";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
@@ -26,6 +28,7 @@ import {RecordingsPlugin, transcriptRoutes} from "./api/transcripts";
 import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
+import {startHealthMonitor} from "./edge/healthMonitor";
 import {AppConfig, loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
@@ -98,7 +101,8 @@ export const start = async (skipListen = false) => {
     .register(taskRunLogRoutes)
     .register(agentSessionRoutes)
     .register(aiRequestRoutes)
-    .register(remoteAgentRoutes)
+    .register(edgeAgentRoutes)
+    .register(edgeAgentEventRoutes)
     .register(commandClassificationRoutes)
     .register(pluginRoutes)
     .register(radioStreamRoutes)
@@ -116,6 +120,7 @@ export const start = async (skipListen = false) => {
     .register(new AppleContactsPlugin())
     .register(new TriviaAutoSearchPlugin())
     .register(appConfigRoutes)
+    .register(new EdgePlugin())
     .register(adminApp)
     .start();
 
@@ -123,6 +128,7 @@ export const start = async (skipListen = false) => {
     startOrchestrator(app).catch((err) => {
       logError("Failed to start orchestrator", err);
     });
+    startHealthMonitor();
   }
 
   return app;

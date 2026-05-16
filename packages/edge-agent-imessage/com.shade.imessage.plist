@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.shade.imessage</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/shade-imessage</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SHADE_URL</key>
+        <string>__SHADE_URL__</string>
+        <key>SHADE_BOOTSTRAP_SECRET</key>
+        <string>__SHADE_BOOTSTRAP_SECRET__</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/shade-imessage.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/shade-imessage.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>

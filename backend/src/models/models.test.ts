@@ -10,7 +10,8 @@ describe("models", () => {
     expect(models.ScheduledTask).toBeDefined();
     expect(models.TaskRunLog).toBeDefined();
     expect(models.AgentSession).toBeDefined();
-    expect(models.RemoteAgent).toBeDefined();
+    expect(models.EdgeAgent).toBeDefined();
+    expect(models.EdgeAgentEvent).toBeDefined();
     expect(models.CommandClassification).toBeDefined();
     expect(models.Plugin).toBeDefined();
     expect(models.WebhookSource).toBeDefined();
