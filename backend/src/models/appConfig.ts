@@ -20,6 +20,7 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     },
 
     radioTranscriber: {
+      enabled: {type: Boolean, default: false},
       defaultBatchIntervalMs: {type: Number, default: 15000},
       maxReconnectAttempts: {type: Number, default: 50},
       reconnectDelayMs: {type: Number, default: 5000},

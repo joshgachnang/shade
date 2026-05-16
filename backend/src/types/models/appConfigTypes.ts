@@ -13,6 +13,7 @@ export interface AppConfigConcurrency {
 }
 
 export interface AppConfigRadioTranscriber {
+  enabled: boolean;
   defaultBatchIntervalMs: number;
   maxReconnectAttempts: number;
   reconnectDelayMs: number;

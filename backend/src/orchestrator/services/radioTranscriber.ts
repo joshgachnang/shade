@@ -91,6 +91,12 @@ export class RadioTranscriber {
   }
 
   async start(): Promise<void> {
+    const appConfig = await loadAppConfig();
+    if (!appConfig.radioTranscriber.enabled) {
+      logger.info("Radio transcriber disabled via AppConfig — skipping start");
+      return;
+    }
+
     // Check prerequisites
     if (!process.env.DEEPGRAM_API_KEY) {
       logger.warn("DEEPGRAM_API_KEY not set — radio transcriber disabled");
