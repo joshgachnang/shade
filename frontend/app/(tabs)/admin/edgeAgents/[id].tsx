@@ -152,7 +152,7 @@ const EdgeAgentDetailScreen: React.FC = () => {
                   <Button
                     testID="edge-agent-revoke-button"
                     text="Revoke"
-                    color="red"
+                    variant="outline"
                     onClick={handleRevoke}
                   />
                 )}
@@ -169,7 +169,6 @@ const EdgeAgentDetailScreen: React.FC = () => {
                   <Button
                     testID="edge-agent-config-edit-button"
                     text="Edit"
-                    size="sm"
                     onClick={() => {
                       setConfigJson(JSON.stringify(agent.config, null, 2));
                       setConfigEditing(true);
@@ -180,13 +179,11 @@ const EdgeAgentDetailScreen: React.FC = () => {
                     <Button
                       testID="edge-agent-config-save-button"
                       text="Save"
-                      size="sm"
                       onClick={handleSaveConfig}
                     />
                     <Button
                       text="Cancel"
-                      size="sm"
-                      color="gray"
+                      variant="outline"
                       onClick={() => setConfigEditing(false)}
                     />
                   </Box>
@@ -195,7 +192,7 @@ const EdgeAgentDetailScreen: React.FC = () => {
               {configEditing ? (
                 <TextField
                   testID="edge-agent-config-input"
-                  label=""
+                  placeholder="Config JSON"
                   value={configJson}
                   onChange={setConfigJson}
                   rows={8}
@@ -214,13 +211,15 @@ const EdgeAgentDetailScreen: React.FC = () => {
               <Heading size="sm">Send Command</Heading>
               <TextField
                 testID="edge-agent-command-type-input"
-                label="Command Type"
+                placeholder="Command Type"
+                title="Command Type"
                 value={commandType}
                 onChange={setCommandType}
               />
               <TextField
                 testID="edge-agent-command-payload-input"
-                label="Payload (JSON)"
+                placeholder="Payload (JSON)"
+                title="Payload (JSON)"
                 value={commandPayload}
                 onChange={setCommandPayload}
                 rows={4}
@@ -274,10 +273,9 @@ const EdgeAgentDetailScreen: React.FC = () => {
                       testID={`edge-agent-event-${item._id}`}
                       padding={2}
                       gap={1}
-                      borderStyle="bottom"
                     >
                       <Box direction="row" justifyContent="between">
-                        <Text size="sm" weight="bold">
+                        <Text size="sm">
                           {item.eventType}
                         </Text>
                         <Text size="sm" color="secondaryLight">

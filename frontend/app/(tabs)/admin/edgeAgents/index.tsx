@@ -15,7 +15,7 @@ const statusMap: Record<string, "info" | "success" | "error" | "warning" | "neut
 
 const EdgeAgentListScreen: React.FC = () => {
   const router = useRouter();
-  const {data, isLoading} = useListEdgeAgentsQuery();
+  const {data, isLoading} = useListEdgeAgentsQuery(undefined);
 
   const agents = data?.results || [];
 
