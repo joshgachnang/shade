@@ -269,15 +269,9 @@ const EdgeAgentDetailScreen: React.FC = () => {
                   keyExtractor={(item) => item._id}
                   scrollEnabled={false}
                   renderItem={({item}: {item: EdgeAgentEvent}) => (
-                    <Box
-                      testID={`edge-agent-event-${item._id}`}
-                      padding={2}
-                      gap={1}
-                    >
+                    <Box testID={`edge-agent-event-${item._id}`} padding={2} gap={1}>
                       <Box direction="row" justifyContent="between">
-                        <Text size="sm">
-                          {item.eventType}
-                        </Text>
+                        <Text size="sm">{item.eventType}</Text>
                         <Text size="sm" color="secondaryLight">
                           {new Date(item.created).toLocaleString()}
                         </Text>
