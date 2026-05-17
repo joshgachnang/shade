@@ -12,8 +12,8 @@ import {pickRenderer} from "../responses/renderers";
 import type {RenderContext, SlackRenderResult} from "../responses/renderers/types";
 import {RichResponse} from "../responses/schema";
 import {truncateRichResponse} from "../responses/truncate";
+import {createEdgeAgentConnector} from "./edgeAgent";
 import {createEmailConnector} from "./email";
-import {createIMessageConnector} from "./imessage";
 import {createSlackConnector} from "./slack";
 import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
 import {createWebhookConnector} from "./webhook";
@@ -24,7 +24,7 @@ const PRIVILEGED_ALLOWED_BACKENDS = new Set(["ollama", "gemini"]);
 const defaultConnectorFactories: Record<string, ConnectorFactory> = {
   slack: createSlackConnector,
   webhook: createWebhookConnector,
-  imessage: createIMessageConnector,
+  imessage: createEdgeAgentConnector,
   email: createEmailConnector,
 };
 

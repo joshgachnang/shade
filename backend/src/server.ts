@@ -10,6 +10,9 @@ import {channelRoutes} from "./api/channels";
 import {characterRoutes} from "./api/characters";
 import {CommandPlugin} from "./api/command";
 import {commandClassificationRoutes} from "./api/commandClassifications";
+import {edgeAgentEventRoutes} from "./api/edgeAgentEvents";
+import {edgeAgentRoutes} from "./api/edgeAgents";
+import {EdgePlugin} from "./api/edgePlugin";
 import {FeatureActionsPlugin, featureRoutes} from "./api/features";
 import {frameAnalysisRoutes} from "./api/frameAnalyses";
 import {frameRoutes} from "./api/frames";
@@ -21,7 +24,6 @@ import {NotificationsPlugin} from "./api/notifications";
 import {OrchestratorPreviewPlugin} from "./api/orchestratorPreview";
 import {pluginRoutes} from "./api/plugins";
 import {radioStreamRoutes} from "./api/radioStreams";
-import {remoteAgentRoutes} from "./api/remoteAgents";
 import {scheduledTaskRoutes} from "./api/scheduledTasks";
 import {SearchPlugin} from "./api/search";
 import {taskRunLogRoutes} from "./api/taskRunLogs";
@@ -29,6 +31,7 @@ import {RecordingsPlugin, transcriptRoutes} from "./api/transcripts";
 import {TriviaAutoSearchPlugin} from "./api/triviaAutoSearch";
 import {userRoutes} from "./api/users";
 import {webhookSourceRoutes} from "./api/webhookSources";
+import {startHealthMonitor} from "./edge/healthMonitor";
 import {AgentSession} from "./models/agentSession";
 import {AIRequest} from "./models/aiRequest";
 import {AppConfig, loadAppConfig} from "./models/appConfig";
@@ -36,6 +39,8 @@ import {CalendarConfig} from "./models/calendarConfig";
 import {Channel} from "./models/channel";
 import {Character} from "./models/character";
 import {CommandClassification} from "./models/commandClassification";
+import {EdgeAgent} from "./models/edgeAgent";
+import {EdgeAgentEvent} from "./models/edgeAgentEvent";
 import {Feature} from "./models/feature";
 import {Frame} from "./models/frame";
 import {FrameAnalysis} from "./models/frameAnalysis";
@@ -45,7 +50,6 @@ import {Movie} from "./models/movie";
 import {Plugin} from "./models/plugin";
 import {PrWatch} from "./models/prWatch";
 import {RadioStream} from "./models/radioStream";
-import {RemoteAgent} from "./models/remoteAgent";
 import {ScheduledTask} from "./models/scheduledTask";
 import {TaskRunLog} from "./models/taskRunLog";
 import {Transcript} from "./models/transcript";
@@ -201,10 +205,16 @@ export const start = async (skipListen = false) => {
         listFields: ["reviewer", "state", "isBot", "submittedAt"],
       },
       {
-        model: RemoteAgent,
-        routePath: "/remote-agents",
-        displayName: "Remote Agents",
-        listFields: ["name", "status", "lastHeartbeatAt", "created"],
+        model: EdgeAgent,
+        routePath: "/edge-agents",
+        displayName: "Edge Agents",
+        listFields: ["name", "agentType", "status", "lastHeartbeatAt", "created"],
+      },
+      {
+        model: EdgeAgentEvent,
+        routePath: "/edge-agent-events",
+        displayName: "Edge Agent Events",
+        listFields: ["agentId", "eventType", "created"],
       },
       {
         model: ScheduledTask,
@@ -277,7 +287,8 @@ export const start = async (skipListen = false) => {
     .register(taskRunLogRoutes)
     .register(agentSessionRoutes)
     .register(aiRequestRoutes)
-    .register(remoteAgentRoutes)
+    .register(edgeAgentRoutes)
+    .register(edgeAgentEventRoutes)
     .register(commandClassificationRoutes)
     .register(pluginRoutes)
     .register(radioStreamRoutes)
@@ -299,6 +310,7 @@ export const start = async (skipListen = false) => {
     .register(new NotificationsPlugin())
     .register(new OrchestratorPreviewPlugin())
     .register(appConfigRoutes)
+    .register(new EdgePlugin())
     .register(adminApp)
     .start();
 
@@ -306,6 +318,7 @@ export const start = async (skipListen = false) => {
     startOrchestrator(app).catch((err) => {
       logError("Failed to start orchestrator", err);
     });
+    startHealthMonitor();
   }
 
   return app;

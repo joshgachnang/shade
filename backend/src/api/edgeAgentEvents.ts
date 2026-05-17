@@ -1,7 +1,7 @@
 import {modelRouter, Permissions} from "@terreno/api";
-import {RemoteAgent} from "../models";
+import {EdgeAgentEvent} from "../models";
 
-export const remoteAgentRoutes = modelRouter("/remoteAgents", RemoteAgent, {
+export const edgeAgentEventRoutes = modelRouter("/edgeAgentEvents", EdgeAgentEvent, {
   permissions: {
     create: [Permissions.IsAdmin],
     delete: [Permissions.IsAdmin],
@@ -9,6 +9,6 @@ export const remoteAgentRoutes = modelRouter("/remoteAgents", RemoteAgent, {
     read: [Permissions.IsAuthenticated],
     update: [Permissions.IsAdmin],
   },
-  queryFields: ["status", "capabilities"],
-  sort: "name",
+  queryFields: ["agentId", "eventType"],
+  sort: "-created",
 });
