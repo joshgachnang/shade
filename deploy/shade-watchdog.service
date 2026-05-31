@@ -1,0 +1,22 @@
+[Unit]
+Description=Shade Watchdog (restarts shade-backend on dead Slack socket or hung process)
+After=network-online.target shade-backend.service
+Wants=shade-backend.service
+
+[Service]
+Type=simple
+User=josh
+Group=josh
+# Script lives in the repo and is kept current by the deploy (git reset --hard).
+ExecStart=/opt/shade/src/deploy/shade-watchdog.sh
+Environment=SERVICE=shade-backend
+Environment=SLACK_HEALTH_URL=http://localhost:3000/health/slack
+Environment=BASE_HEALTH_URL=http://localhost:3000/health
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shade-watchdog
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,7 @@ import type {DefaultDoc, DefaultModel, DefaultStatics} from "./userTypes";
 export interface AppConfigPollIntervals {
   message: number;
   task: number;
+  scheduler: number;
   ipc: number;
   imessage: number;
 }

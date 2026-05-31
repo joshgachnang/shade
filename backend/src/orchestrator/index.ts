@@ -12,6 +12,7 @@ import {DirectAgentRunner} from "./runners/direct";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
+import {SchedulerService} from "./services/scheduler";
 import {TriviaAutoSearch} from "./services/triviaAutoSearch";
 import {TriviaMonitor} from "./services/triviaMonitor";
 
@@ -25,6 +26,7 @@ export interface OrchestratorState {
   triviaAutoSearch: TriviaAutoSearch;
   prWatcher: PrWatcher;
   triviaMonitor: TriviaMonitor;
+  scheduler: SchedulerService;
   isRunning: boolean;
 }
 
@@ -177,6 +179,14 @@ export const startOrchestrator = async (
     logError("Trivia monitor start error (non-fatal)", err);
   }
 
+  // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks
+  const scheduler = new SchedulerService(groupQueue);
+  try {
+    await scheduler.start();
+  } catch (err) {
+    logError("Scheduler start error (non-fatal)", err);
+  }
+
   ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {
     const {AppConfig, reloadAppConfig} = await import("../models/appConfig");
     await AppConfig.findOneAndUpdate({}, {$set: {"triviaAutoSearch.enabled": data.enabled}});
@@ -221,6 +231,7 @@ export const startOrchestrator = async (
     triviaAutoSearch,
     prWatcher,
     triviaMonitor,
+    scheduler,
     isRunning: true,
   };
 
@@ -243,6 +254,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.triviaAutoSearch.stop();
   state.prWatcher.stop();
   state.triviaMonitor.stop();
+  state.scheduler.stop();
 
   try {
     await state.radioTranscriber.stop();
