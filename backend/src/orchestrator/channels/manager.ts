@@ -15,7 +15,7 @@ import {truncateRichResponse} from "../responses/truncate";
 import {createEdgeAgentConnector} from "./edgeAgent";
 import {createEmailConnector} from "./email";
 import {createSlackConnector} from "./slack";
-import type {ChannelConnector, ConnectorFactory, InboundMessage} from "./types";
+import type {ChannelConnector, ChannelHealth, ConnectorFactory, InboundMessage} from "./types";
 import {createWebhookConnector} from "./webhook";
 
 /** Model backends allowed to send through privileged channels (e.g. iMessage) */
@@ -448,6 +448,24 @@ export class ChannelManager {
       }
     }
     return count;
+  }
+
+  /** Per-channel liveness for health endpoints / watchdogs. */
+  getHealthSnapshot(): ChannelHealth[] {
+    const snapshot: ChannelHealth[] = [];
+    for (const connector of this.connectors.values()) {
+      if (connector.getHealth) {
+        snapshot.push(connector.getHealth());
+        continue;
+      }
+      snapshot.push({
+        name: connector.channelDoc.name,
+        type: connector.channelDoc.type,
+        connected: connector.isConnected(),
+        healthy: connector.isConnected(),
+      });
+    }
+    return snapshot;
   }
 
   getGroup(groupId: string): GroupDocument | undefined {

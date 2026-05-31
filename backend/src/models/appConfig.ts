@@ -11,6 +11,7 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     pollIntervals: {
       message: {type: Number, default: 2000},
       task: {type: Number, default: 60000},
+      scheduler: {type: Number, default: 5 * 60 * 1000},
       ipc: {type: Number, default: 1000},
       imessage: {type: Number, default: 5000},
     },

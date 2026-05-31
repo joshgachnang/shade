@@ -19,6 +19,23 @@ export interface RichSendOpts {
   threadTs?: string;
 }
 
+export interface ChannelHealth {
+  name: string;
+  type: string;
+  /** Coarse connection flag (set on connect, cleared on disconnect). */
+  connected: boolean;
+  /** True when the underlying transport is verifiably live right now. */
+  healthy: boolean;
+  /** Transport-specific state, e.g. Slack socket-mode state ("connected", "reconnecting"). */
+  state?: string;
+  /** Seconds since the transport last reached a connected state. */
+  secondsSinceConnected?: number;
+  /** Seconds since the last inbound event from the server. */
+  secondsSinceEvent?: number;
+  /** Human-readable reason when healthy is false. */
+  detail?: string;
+}
+
 export interface ChannelConnector {
   readonly channelDoc: ChannelDocument;
   /** Whether this channel can render structured cards (Slack only at v1). */
@@ -27,6 +44,8 @@ export interface ChannelConnector {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
+  /** Optional richer liveness for watchdogs; connectors without it report only isConnected(). */
+  getHealth?(): ChannelHealth;
 
   sendMessage(groupExternalId: string, content: string): Promise<void>;
   sendMessageWithTs(groupExternalId: string, content: string): Promise<string>;

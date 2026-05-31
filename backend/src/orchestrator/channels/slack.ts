@@ -5,7 +5,13 @@ import {Channel} from "../../models/channel";
 import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
 import {SHADE_CORR_PLACEHOLDER, SHADE_GROUP_PLACEHOLDER} from "../responses/renderers/types";
-import type {ChannelConnector, ConnectorFactory, InboundMessage, RichSendOpts} from "./types";
+import type {
+  ChannelConnector,
+  ChannelHealth,
+  ConnectorFactory,
+  InboundMessage,
+  RichSendOpts,
+} from "./types";
 
 const SLACK_ACTION_ID_MAX = 255;
 
@@ -15,6 +21,11 @@ export class SlackChannelConnector implements ChannelConnector {
   private app: App | null = null;
   private connected = false;
   private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
+  // Socket-mode liveness, tracked from the underlying client's lifecycle events.
+  // `connected` above stays true across silent socket deaths; these don't.
+  private socketState = "initializing";
+  private lastConnectedAt: Date | null = null;
+  private lastEventAt: Date | null = null;
 
   constructor(channelDoc: ChannelDocument) {
     this.channelDoc = channelDoc;
@@ -222,6 +233,9 @@ export class SlackChannelConnector implements ChannelConnector {
 
     await this.app.start();
     this.connected = true;
+    this.socketState = "connected";
+    this.lastConnectedAt = new Date();
+    this.attachSocketLifecycle();
     logger.info(`Slack channel "${this.channelDoc.name}" socket connected`);
 
     try {
@@ -256,6 +270,7 @@ export class SlackChannelConnector implements ChannelConnector {
       this.app = null;
     }
     this.connected = false;
+    this.socketState = "disconnected";
 
     try {
       await Channel.findByIdAndUpdate(this.channelDoc._id, {
@@ -270,6 +285,62 @@ export class SlackChannelConnector implements ChannelConnector {
 
   isConnected(): boolean {
     return this.connected;
+  }
+
+  /**
+   * Subscribe to the socket-mode client's lifecycle events so we have a true
+   * liveness signal. Bolt's App keeps `connected` true even when the websocket
+   * silently dies; the client's state transitions do not. Defensive about the
+   * internal shape — if bolt changes it, health degrades to the coarse flag.
+   */
+  private attachSocketLifecycle(): void {
+    const client = (this.app as unknown as {receiver?: {client?: NodeJS.EventEmitter}})?.receiver
+      ?.client;
+    if (!client || typeof client.on !== "function") {
+      logger.warn(
+        `Could not attach socket-mode lifecycle listeners for "${this.channelDoc.name}"; health will use the coarse connected flag`
+      );
+      return;
+    }
+
+    const setState = (state: string) => {
+      this.socketState = state;
+      if (state === "connected") {
+        this.lastConnectedAt = new Date();
+      }
+      logger.debug(`Slack socket "${this.channelDoc.name}" → ${state}`);
+    };
+
+    client.on("connected", () => setState("connected"));
+    client.on("connecting", () => setState("connecting"));
+    client.on("reconnecting", () => setState("reconnecting"));
+    client.on("disconnecting", () => setState("disconnecting"));
+    client.on("disconnected", () => setState("disconnected"));
+    client.on("slack_event", () => {
+      this.lastEventAt = new Date();
+    });
+  }
+
+  getHealth(): ChannelHealth {
+    const now = Date.now();
+    const secondsSinceConnected = this.lastConnectedAt
+      ? Math.round((now - this.lastConnectedAt.getTime()) / 1000)
+      : undefined;
+    const secondsSinceEvent = this.lastEventAt
+      ? Math.round((now - this.lastEventAt.getTime()) / 1000)
+      : undefined;
+    const healthy = this.connected && this.socketState === "connected";
+
+    return {
+      name: this.channelDoc.name,
+      type: this.channelDoc.type,
+      connected: this.connected,
+      healthy,
+      state: this.socketState,
+      secondsSinceConnected,
+      secondsSinceEvent,
+      detail: healthy ? undefined : `socket state is "${this.socketState}"`,
+    };
   }
 
   async sendMessage(groupExternalId: string, content: string): Promise<void> {
