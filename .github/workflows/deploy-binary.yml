@@ -1,5 +1,14 @@
 name: Build & Release Binary
 
+# Builds release artifacts (JS bundles + linux-x64 binary) and publishes them as a
+# GitHub release. The JS bundles are consumed by the `deploy-mini` job in
+# deploy-server.yml. The linux-x64 binary is no longer used by the active shade-backend
+# deploy (that's now source-based — see deploy-server.yml's `deploy` job), but is
+# preserved here in case the systemd unit is ever switched to ExecStart=/opt/shade/shade-backend
+# (see deploy/shade-backend.service.binary for that template). Note: bun --compile externals
+# currently fail to resolve at runtime (`Cannot find package 'passport-local-mongoose'`),
+# so the binary path needs that resolved before being viable.
+
 on:
   push:
     branches: [master]
@@ -28,7 +37,8 @@ jobs:
 
       - name: Build binaries
         run: |
-          ./shade build backend
+          # Build platform-independent JS bundles for all services
+          ./shade build
           # Cross-compile for Linux x64 (for remote servers)
           bun build backend/src/index.ts \
             --compile \
@@ -44,6 +54,8 @@ jobs:
           name: Latest Build
           files: |
             dist/shade-backend-linux
+            dist/shade-backend.js
+            dist/shade-worker.js
           prerelease: false
           make_latest: true
           body: |

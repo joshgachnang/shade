@@ -46,6 +46,7 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     pollIntervals: {
       message: {type: Number, default: 2000},
       task: {type: Number, default: 60000},
+      scheduler: {type: Number, default: 5 * 60 * 1000},
       ipc: {type: Number, default: 1000},
       imessage: {type: Number, default: 5000},
     },
@@ -55,6 +56,7 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     },
 
     radioTranscriber: {
+      enabled: {type: Boolean, default: false},
       defaultBatchIntervalMs: {type: Number, default: 15000},
       maxReconnectAttempts: {type: Number, default: 50},
       reconnectDelayMs: {type: Number, default: 5000},
@@ -173,6 +175,20 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       slackWebhook: {type: String, default: ""},
       blueskyIdentifier: {type: String, default: ""},
       blueskyPassword: {type: String, default: ""},
+    },
+
+    notifications: {
+      enabled: {type: Boolean, default: true},
+      slackChannel: {type: String, default: "general"},
+    },
+
+    richResponses: {
+      enabled: {type: Boolean, default: true},
+      autoTruncate: {type: Boolean, default: true},
+    },
+
+    maps: {
+      mapboxAccessToken: {type: String, default: ""},
     },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}

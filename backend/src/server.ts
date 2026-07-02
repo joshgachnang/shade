@@ -7,13 +7,19 @@ import {AppleCalendarPlugin} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
 import {CommandPlugin} from "./api/command";
 import {crudRoutes} from "./api/crudRoutes";
+import {EdgePlugin} from "./api/edgePlugin";
+import {FeatureActionsPlugin} from "./api/features";
 import {HealthPlugin} from "./api/health";
 import {MovieActionsPlugin} from "./api/movies";
+import {NotificationsPlugin} from "./api/notifications";
+import {OrchestratorPreviewPlugin} from "./api/orchestratorPreview";
 import {SearchPlugin} from "./api/search";
 import {RecordingsPlugin} from "./api/transcripts";
 import {TriviaMonitorPlugin} from "./api/triviaMonitor";
+import {startHealthMonitor} from "./edge/healthMonitor";
 import {loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
+import {WebhookSource} from "./models/webhookSource";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
 import {hydrateEnvFromConfig} from "./utils/configEnv";
@@ -100,11 +106,15 @@ export const start = async (skipListen = false) => {
 
   const app = builder
     .register(new RecordingsPlugin())
+    .register(new FeatureActionsPlugin())
     .register(new MovieActionsPlugin())
     .register(new SearchPlugin())
     .register(new AppleCalendarPlugin())
     .register(new AppleContactsPlugin())
     .register(new TriviaMonitorPlugin())
+    .register(new NotificationsPlugin())
+    .register(new OrchestratorPreviewPlugin())
+    .register(new EdgePlugin())
     .register(adminPlugin)
     .start();
 
@@ -112,6 +122,7 @@ export const start = async (skipListen = false) => {
     startOrchestrator(app).catch((err) => {
       logError("Failed to start orchestrator", err);
     });
+    startHealthMonitor();
   }
 
   return app;

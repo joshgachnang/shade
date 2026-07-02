@@ -6,7 +6,7 @@ export interface TaskRunLogFields {
   groupId: mongoose.Types.ObjectId;
   trigger: "scheduled" | "message" | "webhook" | "websocket" | "manual";
   classification: "public" | "internal" | "sensitive" | "critical";
-  modelBackend: "claude" | "ollama" | "codex";
+  modelBackend: "claude" | "ollama" | "codex" | "gemini";
   modelName?: string;
   status: "running" | "completed" | "failed" | "timeout";
   prompt?: string;
@@ -15,6 +15,12 @@ export interface TaskRunLogFields {
   durationMs?: number;
   startedAt: Date;
   completedAt?: Date;
+  /** Whether this run produced a structured RichResponse via respond_with_card. */
+  richPayloadEmitted?: boolean;
+  /** Number of cards in the emitted RichResponse (0 when none). */
+  cardCount?: number;
+  /** Whether truncation kicked in (cards > MAX_CARDS). */
+  truncated?: boolean;
 }
 
 export type TaskRunLogDocument = DefaultDoc & TaskRunLogFields;

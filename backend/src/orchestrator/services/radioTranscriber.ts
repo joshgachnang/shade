@@ -103,6 +103,12 @@ export class RadioTranscriber {
   }
 
   async start(): Promise<void> {
+    const appConfig = await loadAppConfig();
+    if (!appConfig.radioTranscriber.enabled) {
+      logger.info("Radio transcriber disabled via AppConfig — skipping start");
+      return;
+    }
+
     // Credential is hydrated from AppConfig.apiKeys.deepgram if not set in
     // the process environment. See utils/configEnv.ts.
     if (!process.env.DEEPGRAM_API_KEY) {

@@ -18,6 +18,7 @@ import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
+import {SchedulerService} from "./services/scheduler";
 import {TriviaMonitor} from "./services/triviaMonitor";
 
 const FEATURE_CHANNEL_MEMORY = (featureName: string, description?: string): string => {
@@ -103,6 +104,7 @@ export interface OrchestratorState {
   radioTranscriber: RadioTranscriber;
   prWatcher: PrWatcher;
   triviaMonitor: TriviaMonitor;
+  scheduler: SchedulerService;
   isRunning: boolean;
 }
 
@@ -180,6 +182,13 @@ export const startOrchestrator = async (
       logger.error(
         `IPC sendMessage failed (channel=${channelId}, group=${targetGroupExternalId}): ${err}`
       );
+    }
+  });
+  ipcWatcher.setSendRichMessage(async (groupId, payload, opts) => {
+    try {
+      await channelManager.sendRichMessageToGroup(groupId, payload, opts);
+    } catch (err) {
+      logger.error(`IPC sendRichMessage failed (group=${groupId}): ${err}`);
     }
   });
   ipcWatcher.setAddReaction(async (channelId, groupExternalId, messageTs, emoji) => {
@@ -282,6 +291,14 @@ export const startOrchestrator = async (
     logError("Trivia monitor start error (non-fatal)", err);
   }
 
+  // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks
+  const scheduler = new SchedulerService(groupQueue);
+  try {
+    await scheduler.start();
+  } catch (err) {
+    logError("Scheduler start error (non-fatal)", err);
+  }
+
   ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {
     const {AppConfig, reloadAppConfig} = await import("../models/appConfig");
     await AppConfig.findOneAndUpdate({}, {$set: {"triviaMonitor.enabled": data.enabled}});
@@ -325,6 +342,7 @@ export const startOrchestrator = async (
     radioTranscriber,
     prWatcher,
     triviaMonitor,
+    scheduler,
     isRunning: true,
   };
 
@@ -346,6 +364,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.ipcWatcher.stop();
   state.prWatcher.stop();
   state.triviaMonitor.stop();
+  state.scheduler.stop();
 
   try {
     await state.radioTranscriber.stop();

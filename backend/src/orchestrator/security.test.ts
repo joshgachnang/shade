@@ -150,3 +150,33 @@ describe("redactSecrets", () => {
     expect(result).toContain("[REDACTED:ANTHROPIC_API_KEY]");
   });
 });
+
+describe("redactSecrets — Mapbox token scrubbing", () => {
+  test("redacts a Mapbox Static URL token", () => {
+    const input =
+      "Fetching https://api.mapbox.com/styles/v1/x/static/0,0,1/600x400?access_token=pk.eyJabc123def456";
+    const out = redactSecrets(input);
+    expect(out).toContain("access_token=<redacted>");
+    expect(out).not.toContain("pk.eyJabc123def456");
+  });
+
+  test("redacts even when access_token is not the first query param", () => {
+    const input = "https://example.com/path?foo=bar&access_token=pk.zzz";
+    const out = redactSecrets(input);
+    expect(out).toContain("access_token=<redacted>");
+    expect(out).not.toContain("pk.zzz");
+  });
+
+  test("redacts multiple occurrences", () => {
+    const input =
+      "url1=https://a.com?access_token=pk.first url2=https://b.com?access_token=pk.second";
+    const out = redactSecrets(input);
+    expect(out).not.toContain("pk.first");
+    expect(out).not.toContain("pk.second");
+    expect((out.match(/<redacted>/g) || []).length).toBe(2);
+  });
+
+  test("leaves non-token text untouched", () => {
+    expect(redactSecrets("hello world")).toBe("hello world");
+  });
+});

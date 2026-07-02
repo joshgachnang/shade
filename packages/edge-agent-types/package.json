@@ -1,0 +1,18 @@
+{
+	"name": "@shade/edge-agent-types",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.13",
+		"typescript": "5.8.2"
+	}
+}

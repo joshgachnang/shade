@@ -12,6 +12,8 @@ import type {ChannelConnector, InboundMessage} from "./types";
  */
 export abstract class BaseChannelConnector implements ChannelConnector {
   readonly channelDoc: ChannelDocument;
+  /** Only Slack renders structured cards at v1; overridden to true there. */
+  readonly supportsRichMessages: boolean = false;
   protected connected = false;
   protected messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
 

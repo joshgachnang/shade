@@ -111,9 +111,110 @@ export interface SearchSuggestions {
   suggestions: string[];
 }
 
+// Rich response (IP-005) — kept loose; the backend Zod schema is the source of truth.
+export interface PreviewCardRequest {
+  v: string;
+  cards: Array<Record<string, unknown>>;
+  fallbackText: string;
+}
+
+export interface PreviewCardResponse {
+  slackBlocks: Array<Record<string, unknown>> | null;
+  fallbackText: string | null;
+  validation: Array<Record<string, unknown>> | null;
+}
+
+export interface MessageRichResponse {
+  message: Record<string, unknown>;
+  richPayload: Record<string, unknown> | null;
+  slackBlocks: Array<Record<string, unknown>> | null;
+}
+
+// Feature types
+export interface FeatureStep {
+  _id: string;
+  name: string;
+  description?: string;
+  order: number;
+  status: "pending" | "in_progress" | "complete" | "error" | "skipped";
+  startedAt?: string;
+  completedAt?: string;
+  result?: string;
+  errorMessage?: string;
+}
+
+export interface Feature {
+  _id: string;
+  id: string;
+  name: string;
+  description?: string;
+  groupId?: string;
+  status: "planned" | "in_progress" | "paused" | "complete" | "error";
+  steps: FeatureStep[];
+  currentStepIndex: number;
+  startedAt?: string;
+  completedAt?: string;
+  errorMessage?: string;
+  created: string;
+  updated: string;
+}
+
+export interface FeatureProgress {
+  status: string;
+  totalSteps: number;
+  completedSteps: number;
+  percentage: number;
+  currentStepIndex: number;
+  currentStepName: string | null;
+  currentStepStatus: string | null;
+}
+
 interface ListResponse<T> {
   results: T[];
   count: number;
+}
+
+// Edge Agent types
+export interface EdgeAgent {
+  _id: string;
+  id: string;
+  name: string;
+  agentType: string;
+  status: "pending" | "approved" | "online" | "offline" | "error";
+  platform?: "darwin" | "linux" | "windows";
+  arch?: string;
+  version?: string;
+  hostname?: string;
+  lastHeartbeatAt?: string;
+  config: Record<string, unknown>;
+  secrets: Record<string, unknown>;
+  capabilities: string[];
+  channelId?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  pendingCommands: Array<{
+    commandId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    queuedAt: string;
+  }>;
+  lastCommandResults: Array<{
+    commandId: string;
+    success: boolean;
+    error?: string;
+    completedAt?: string;
+  }>;
+  created: string;
+  updated: string;
+}
+
+export interface EdgeAgentEvent {
+  _id: string;
+  id: string;
+  agentId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  created: string;
 }
 
 export const terrenoApi = openapi
@@ -193,6 +294,77 @@ export const terrenoApi = openapi
       listCharacters: builder.query<ListResponse<Character>, {movieId: string}>({
         query: ({movieId}) => ({url: `/characters?movieId=${movieId}`}),
       }),
+      // Feature endpoints
+      listFeatures: builder.query<ListResponse<Feature>, {status?: string} | undefined>({
+        providesTags: ["Features" as any],
+        query: (args) => {
+          const params = new URLSearchParams();
+          if (args && "status" in args && args.status) {
+            params.set("status", args.status);
+          }
+          const qs = params.toString();
+          return {url: `/features${qs ? `?${qs}` : ""}`};
+        },
+      }),
+      getFeature: builder.query<Feature, string>({
+        providesTags: (_result, _err, id) => [{type: "Features" as any, id}],
+        query: (id) => ({url: `/features/${id}`}),
+      }),
+      createFeature: builder.mutation<Feature, Partial<Feature>>({
+        invalidatesTags: ["Features" as any],
+        query: (body) => ({body, method: "POST", url: "/features"}),
+      }),
+      updateFeature: builder.mutation<Feature, {id: string; body: Partial<Feature>}>({
+        invalidatesTags: (_result, _err, {id}) => [
+          {type: "Features" as any, id},
+          "Features" as any,
+        ],
+        query: ({id, body}) => ({body, method: "PATCH", url: `/features/${id}`}),
+      }),
+      resumeFeature: builder.mutation<Feature, string>({
+        invalidatesTags: (_result, _err, id) => [{type: "Features" as any, id}, "Features" as any],
+        query: (id) => ({method: "POST", url: `/feature-actions/${id}/resume`}),
+      }),
+      pauseFeature: builder.mutation<Feature, string>({
+        invalidatesTags: (_result, _err, id) => [{type: "Features" as any, id}, "Features" as any],
+        query: (id) => ({method: "POST", url: `/feature-actions/${id}/pause`}),
+      }),
+      startFeatureStep: builder.mutation<Feature, {id: string; stepIndex?: number}>({
+        invalidatesTags: (_result, _err, {id}) => [{type: "Features" as any, id}],
+        query: ({id, stepIndex}) => ({
+          body: stepIndex !== undefined ? {stepIndex} : {},
+          method: "POST",
+          url: `/feature-actions/${id}/start-step`,
+        }),
+      }),
+      completeFeatureStep: builder.mutation<
+        Feature,
+        {id: string; stepIndex?: number; result?: string}
+      >({
+        invalidatesTags: (_result, _err, {id}) => [{type: "Features" as any, id}],
+        query: ({id, stepIndex, result}) => ({
+          body: {stepIndex, result},
+          method: "POST",
+          url: `/feature-actions/${id}/complete-step`,
+        }),
+      }),
+      failFeatureStep: builder.mutation<
+        Feature,
+        {id: string; stepIndex?: number; errorMessage?: string}
+      >({
+        invalidatesTags: (_result, _err, {id}) => [{type: "Features" as any, id}],
+        query: ({id, stepIndex, errorMessage}) => ({
+          body: {stepIndex, errorMessage},
+          method: "POST",
+          url: `/feature-actions/${id}/fail-step`,
+        }),
+      }),
+      getFeatureProgress: builder.query<FeatureProgress, string>({
+        query: (id) => ({url: `/feature-actions/${id}/progress`}),
+      }),
+      listResumableFeatures: builder.query<ListResponse<Feature>, void>({
+        query: () => ({url: "/feature-actions/resumable"}),
+      }),
       // Search endpoints
       search: builder.query<SearchResult, {q: string; movieId?: string; type?: string}>({
         query: ({q, movieId, type}) => {
@@ -209,10 +381,71 @@ export const terrenoApi = openapi
       searchSuggest: builder.query<SearchSuggestions, string>({
         query: (q) => ({url: `/search/suggest?q=${encodeURIComponent(q)}`}),
       }),
+      // Edge Agent endpoints
+      listEdgeAgents: builder.query<
+        ListResponse<EdgeAgent>,
+        {status?: string; agentType?: string} | undefined
+      >({
+        providesTags: ["EdgeAgents" as any],
+        query: (params) => {
+          const qs = new URLSearchParams();
+          if (params?.status) {
+            qs.set("status", params.status);
+          }
+          if (params?.agentType) {
+            qs.set("agentType", params.agentType);
+          }
+          const q = qs.toString();
+          return {url: `/edgeAgents${q ? `?${q}` : ""}`};
+        },
+      }),
+      getEdgeAgent: builder.query<EdgeAgent, string>({
+        providesTags: (_result, _err, id) => [{type: "EdgeAgents" as any, id}],
+        query: (id) => ({url: `/edgeAgents/${id}`}),
+      }),
+      updateEdgeAgent: builder.mutation<EdgeAgent, {id: string; body: Partial<EdgeAgent>}>({
+        invalidatesTags: (_result, _err, {id}) => [
+          {type: "EdgeAgents" as any, id},
+          "EdgeAgents" as any,
+        ],
+        query: ({id, body}) => ({body, method: "PATCH", url: `/edgeAgents/${id}`}),
+      }),
+      approveEdgeAgent: builder.mutation<{status: string}, string>({
+        invalidatesTags: (_result, _err, id) => [
+          {type: "EdgeAgents" as any, id},
+          "EdgeAgents" as any,
+        ],
+        query: (id) => ({method: "POST", url: `/api/edge/agents/${id}/approve`}),
+      }),
+      revokeEdgeAgent: builder.mutation<{status: string}, string>({
+        invalidatesTags: (_result, _err, id) => [
+          {type: "EdgeAgents" as any, id},
+          "EdgeAgents" as any,
+        ],
+        query: (id) => ({method: "POST", url: `/api/edge/agents/${id}/revoke`}),
+      }),
+      sendEdgeAgentCommand: builder.mutation<
+        {commandId: string},
+        {id: string; type: string; payload: Record<string, unknown>}
+      >({
+        invalidatesTags: (_result, _err, {id}) => [{type: "EdgeAgents" as any, id}],
+        query: ({id, ...body}) => ({body, method: "POST", url: `/api/edge/agents/${id}/command`}),
+      }),
+      listEdgeAgentEvents: builder.query<ListResponse<EdgeAgentEvent>, {agentId: string}>({
+        providesTags: ["EdgeAgentEvents" as any],
+        query: ({agentId}) => ({url: `/edgeAgentEvents?agentId=${agentId}`}),
+      }),
+      // Rich-response admin endpoints (IP-005).
+      previewCard: builder.mutation<PreviewCardResponse, PreviewCardRequest>({
+        query: (body) => ({body, method: "POST", url: "/orchestrator/preview-card"}),
+      }),
+      getMessageRich: builder.query<MessageRichResponse, string>({
+        query: (id) => ({url: `/orchestrator/messages/${id}/rich`}),
+      }),
     }),
   })
   .enhanceEndpoints({
-    addTagTypes: ["profile", "Movies"],
+    addTagTypes: ["profile", "Movies", "EdgeAgents", "EdgeAgentEvents", "Features"],
     endpoints: {
       ...generateTags(openapi, [...addTagTypes]),
     },
@@ -237,5 +470,25 @@ export const {
   useListCharactersQuery,
   useSearchQuery,
   useSearchSuggestQuery,
+  useListEdgeAgentsQuery,
+  useGetEdgeAgentQuery,
+  useUpdateEdgeAgentMutation,
+  useApproveEdgeAgentMutation,
+  useRevokeEdgeAgentMutation,
+  useSendEdgeAgentCommandMutation,
+  useListEdgeAgentEventsQuery,
+  useListFeaturesQuery,
+  useGetFeatureQuery,
+  useCreateFeatureMutation,
+  useUpdateFeatureMutation,
+  useResumeFeatureMutation,
+  usePauseFeatureMutation,
+  useStartFeatureStepMutation,
+  useCompleteFeatureStepMutation,
+  useFailFeatureStepMutation,
+  useGetFeatureProgressQuery,
+  useListResumableFeaturesQuery,
+  usePreviewCardMutation,
+  useGetMessageRichQuery,
 } = terrenoApi;
 export * from "./openApiSdk";

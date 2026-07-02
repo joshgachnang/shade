@@ -26,6 +26,19 @@ export const formatMessagesAsXml = (messages: MessageDocument[], assistantName: 
   const lines: string[] = ["<conversation>"];
 
   for (const msg of messages) {
+    // Action-driven inbound messages (Slack button clicks) get a dedicated
+    // <user_action> element so the model can disambiguate them from prose.
+    if (!msg.isFromBot && msg.actionMetadata?.actionId) {
+      const sender = escapeXml(msg.sender);
+      const actionId = escapeXml(msg.actionMetadata.actionId);
+      const value = msg.actionMetadata.value ?? "";
+      const parent = msg.parentCorrelationId ?? "";
+      lines.push(
+        `  <user_action sender="${sender}" actionId="${actionId}" value="${escapeXml(value)}" parentCorrelationId="${escapeXml(parent)}"/>`
+      );
+      continue;
+    }
+
     const role = msg.isFromBot ? "assistant" : "user";
     const sender = msg.isFromBot ? assistantName : msg.sender;
     lines.push(`  <message role="${role}" sender="${escapeXml(sender)}">`);
