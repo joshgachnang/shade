@@ -19,7 +19,6 @@ import {TriviaMonitorPlugin} from "./api/triviaMonitor";
 import {startHealthMonitor} from "./edge/healthMonitor";
 import {loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
-import {WebhookSource} from "./models/webhookSource";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
 import {hydrateEnvFromConfig} from "./utils/configEnv";

@@ -11,10 +11,10 @@ import {Transcript} from "../../models/transcript";
 import type {RadioStreamDocument} from "../../types";
 import {getRecordingPublicBaseUrl} from "../../utils/publicUrl";
 import type {ChannelManager} from "../channels/manager";
-import {MUSIC_END_SENTINEL, MUSIC_START_SENTINEL} from "./trivia/prompts";
 import {queryAcrCloud} from "./radio/acrCloud";
 import {pcmToMp3, wrapPcmAsWav} from "./radio/audioEncoding";
 import {postMessageToSlack, sendToSlackWebhook} from "./radio/slackNotifier";
+import {MUSIC_END_SENTINEL, MUSIC_START_SENTINEL} from "./trivia/prompts";
 
 /** How often to check ACRCloud (ms) */
 const SONG_ID_INTERVAL_MS = 30_000;
@@ -199,11 +199,7 @@ export class RadioTranscriber {
     // AppConfig.radioTranscriber.songIdentification so operators can disable
     // both the polling and the "Now Playing" Slack post.
     const songIdEnabled = appConfig.radioTranscriber.songIdentification !== false;
-    if (
-      songIdEnabled &&
-      process.env.ACRCLOUD_ACCESS_KEY &&
-      process.env.ACRCLOUD_SECRET_KEY
-    ) {
+    if (songIdEnabled && process.env.ACRCLOUD_ACCESS_KEY && process.env.ACRCLOUD_SECRET_KEY) {
       active.songId.timer = setInterval(() => {
         this.identifySong(active).catch((err) => {
           logger.error(`Song ID error for stream "${doc.name}": ${err}`);

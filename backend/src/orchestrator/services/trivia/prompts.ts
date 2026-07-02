@@ -13,7 +13,6 @@
  *   the MUSIC_START one to finalize pending questions.
  */
 
-
 /**
  * System prompt used by the Haiku detector in TriviaMonitor to find questions
  * and answers in a rolling transcript window. Tolerates the music sentinels

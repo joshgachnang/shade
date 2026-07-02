@@ -225,10 +225,7 @@ export class OpenAIAgentRunner implements AgentRunner {
         config.prompt
       );
 
-      const messages: OpenAIMessage[] = [
-        {role: "system", content: systemPrompt},
-        ...history,
-      ];
+      const messages: OpenAIMessage[] = [{role: "system", content: systemPrompt}, ...history];
 
       logger.info(
         `Planner run: session=${config.sessionId}, model=${plannerConfig.model}, turns=${messages.length}`

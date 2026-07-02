@@ -6,12 +6,7 @@ import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
 import type {IpcCreateFeature, IpcRadioStream, IpcTriviaToggle} from "./ipc";
 import {IpcWatcher} from "./ipc";
-import {
-  ensureGroupDirectory,
-  getGroupMemoryPath,
-  initGlobalMemory,
-  writeMemory,
-} from "./memory";
+import {ensureGroupDirectory, getGroupMemoryPath, initGlobalMemory, writeMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
 import {OpenAIAgentRunner} from "./runners/openai";
@@ -153,9 +148,7 @@ export const startOrchestrator = async (
       {$set: {requiresTrigger: false}}
     );
     if (result.modifiedCount > 0) {
-      logger.info(
-        `Normalized ${result.modifiedCount} feature group(s) to requiresTrigger=false`
-      );
+      logger.info(`Normalized ${result.modifiedCount} feature group(s) to requiresTrigger=false`);
     }
   } catch (err) {
     logError("Failed to normalize feature group triggers (non-fatal)", err);

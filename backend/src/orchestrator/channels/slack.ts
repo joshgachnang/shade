@@ -260,9 +260,11 @@ export class SlackChannelConnector extends BaseChannelConnector {
       // receiving load-balanced events from Slack for ~30-60s, which is
       // exactly the "sometimes the bot doesn't see untagged messages"
       // symptom we were debugging.
-      const socketClient = (this.app as unknown as {
-        receiver?: {client?: {disconnect?: () => Promise<void>}};
-      }).receiver?.client;
+      const socketClient = (
+        this.app as unknown as {
+          receiver?: {client?: {disconnect?: () => Promise<void>}};
+        }
+      ).receiver?.client;
       try {
         await this.app.stop();
       } catch (err) {

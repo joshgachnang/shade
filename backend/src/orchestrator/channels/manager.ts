@@ -1,6 +1,6 @@
-import {nanoid} from "nanoid";
 import {logger} from "@terreno/api";
 import type express from "express";
+import {nanoid} from "nanoid";
 import {CHANNEL_STATUS} from "../../constants/statuses";
 import {loadAppConfig} from "../../models/appConfig";
 import {Channel} from "../../models/channel";

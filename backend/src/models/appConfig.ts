@@ -133,7 +133,6 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       },
     },
 
-
     prWatch: {
       enabled: {type: Boolean, default: false},
       groupId: {type: String, default: ""},

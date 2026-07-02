@@ -187,7 +187,9 @@ export class TriviaMonitor {
           });
         });
       } catch (err) {
-        logger.warn(`Trivia DB not available, monitor will work without past-question lookup: ${err}`);
+        logger.warn(
+          `Trivia DB not available, monitor will work without past-question lookup: ${err}`
+        );
       }
     }
 
@@ -281,9 +283,7 @@ export class TriviaMonitor {
       return true;
     }
 
-    logger.info(
-      `Manual trivia question from ${senderExternalId}: ${raw.substring(0, 100)}`
-    );
+    logger.info(`Manual trivia question from ${senderExternalId}: ${raw.substring(0, 100)}`);
     this.processManualQuestion(raw).catch((err) => {
       logger.error(`Manual trivia question error: ${err}`);
     });
@@ -403,22 +403,25 @@ export class TriviaMonitor {
 
       const parsed = JSON.parse(jsonMatch[0]);
       return {
-        questions: (parsed.questions || []).filter(
-          (q: any) =>
-            typeof q.hour === "number" &&
-            typeof q.questionNumber === "number" &&
-            typeof q.questionText === "string" &&
-            q.hour >= 1 &&
-            q.hour <= 54 &&
-            q.questionNumber >= 1 &&
-            q.questionNumber <= 12
-        ).map((q: any) => ({
-          hour: q.hour,
-          questionNumber: q.questionNumber,
-          questionText: q.questionText,
-          skipReason: typeof q.skipReason === "string" && q.skipReason.trim() ? q.skipReason.trim() : null,
-          readComplete: q.readComplete === true,
-        })),
+        questions: (parsed.questions || [])
+          .filter(
+            (q: any) =>
+              typeof q.hour === "number" &&
+              typeof q.questionNumber === "number" &&
+              typeof q.questionText === "string" &&
+              q.hour >= 1 &&
+              q.hour <= 54 &&
+              q.questionNumber >= 1 &&
+              q.questionNumber <= 12
+          )
+          .map((q: any) => ({
+            hour: q.hour,
+            questionNumber: q.questionNumber,
+            questionText: q.questionText,
+            skipReason:
+              typeof q.skipReason === "string" && q.skipReason.trim() ? q.skipReason.trim() : null,
+            readComplete: q.readComplete === true,
+          })),
         answers: (parsed.answers || []).filter(
           (a: any) =>
             typeof a.hour === "number" &&
@@ -487,9 +490,7 @@ export class TriviaMonitor {
    * finalizes entries older than PENDING_MAX_AGE_MS — the safety net for
    * when music detection fails or is delayed.
    */
-  private async finalizePendingQuestions(
-    trigger: "music" | "timeout" = "music"
-  ): Promise<void> {
+  private async finalizePendingQuestions(trigger: "music" | "timeout" = "music"): Promise<void> {
     if (this.pendingQuestions.size === 0) {
       return;
     }
@@ -624,13 +625,9 @@ export class TriviaMonitor {
         : `Question ${q.questionNumber}, Hour ${q.hour}:\n\n${q.questionText}`;
 
     const pastContext = await this.findSimilarPastQuestions(q.questionText);
-    const userPrompt = pastContext
-      ? `${questionHeader}\n\n---\n\n${pastContext}`
-      : questionHeader;
+    const userPrompt = pastContext ? `${questionHeader}\n\n---\n\n${pastContext}` : questionHeader;
 
-    logger.info(
-      `[TriviaMonitor] Researching ${key}. Prompt to Claude:\n---\n${userPrompt}\n---`
-    );
+    logger.info(`[TriviaMonitor] Researching ${key}. Prompt to Claude:\n---\n${userPrompt}\n---`);
 
     const config = await loadAppConfig();
     const systemPrompt = config.triviaResearchSystemPrompt?.trim() || TRIVIA_ANSWERER_PROMPT;
@@ -738,9 +735,7 @@ export class TriviaMonitor {
       },
     ];
 
-    const messages: Anthropic.Messages.MessageParam[] = [
-      {role: "user", content: userPrompt},
-    ];
+    const messages: Anthropic.Messages.MessageParam[] = [{role: "user", content: userPrompt}];
 
     let finalText = "";
 
@@ -790,10 +785,7 @@ export class TriviaMonitor {
     return finalText;
   }
 
-  private async executeToolCall(
-    key: string,
-    use: Anthropic.ToolUseBlock
-  ): Promise<string> {
+  private async executeToolCall(key: string, use: Anthropic.ToolUseBlock): Promise<string> {
     if (use.name === "combined_search") {
       const input = (use.input ?? {}) as {query?: string; count?: number};
       const query = (input.query ?? "").toString();
