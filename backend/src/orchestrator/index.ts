@@ -24,8 +24,10 @@ const FEATURE_CHANNEL_MEMORY = (featureName: string, description?: string): stri
   return `# Feature Channel: ${featureName}
 
 You are driving a feature-development workflow inside a dedicated Slack
-channel. This channel is split between two runners, configured by the
-orchestrator based on \`Group.featurePhase\`:
+channel. Every message in this channel is routed to you automatically —
+the user does **not** need to \`@Shade\`-mention you to trigger a reply,
+so don't tell them they have to. This channel is split between two
+runners, configured by the orchestrator based on \`Group.featurePhase\`:
 ${description ? `\n**Initial description:** ${description}\n` : ""}
 ## Runners
 
@@ -83,6 +85,7 @@ runner follows the part that applies to it:
 const FEATURE_CHANNEL_GREETING = (featureName: string, plannerModel: string): string => {
   return (
     `Feature channel ready for *${featureName}*! :sparkles:\n\n` +
+    `*You don't need to \`@Shade\` me in this channel* — every message you send here goes straight to me.\n\n` +
     `Here's how we'll work in this channel:\n` +
     `1. *Planning phase* — I'll drive the \`/ip\` workflow with you using OpenAI \`${plannerModel}\` (research, shape, tasks, acceptance criteria, adversarial review). You describe the idea; I ask clarifying questions and produce a plan draft you can review.\n` +
     `2. *Handoff* — when you're happy with the plan, type \`/implement\` (or \`!implement\`). That flips this channel to implementation mode.\n` +
@@ -135,6 +138,25 @@ export const startOrchestrator = async (
   const channelManager = new ChannelManager();
   if (expressApp) {
     channelManager.setExpressApp(expressApp);
+  }
+
+  // Feature channels must auto-trigger on every message — the whole point is
+  // a focused channel where the user doesn't have to @Shade me on every reply.
+  // Normalize any pre-existing feature group whose `requiresTrigger` drifted
+  // to true before this was enforced (or before feature channels existed at
+  // all). We key off `featurePhase` since that's what marks a feature group.
+  try {
+    const result = await Group.updateMany(
+      {featurePhase: {$exists: true}, requiresTrigger: true},
+      {$set: {requiresTrigger: false}}
+    );
+    if (result.modifiedCount > 0) {
+      logger.info(
+        `Normalized ${result.modifiedCount} feature group(s) to requiresTrigger=false`
+      );
+    }
+  } catch (err) {
+    logError("Failed to normalize feature group triggers (non-fatal)", err);
   }
 
   try {
@@ -194,6 +216,8 @@ export const startOrchestrator = async (
       channelId: sourceGroup.channelId,
       externalId: slackChannelId,
       trigger: "@Shade",
+      // Feature channels are always "addressed" implicitly — every message in
+      // the dedicated channel is meant for Shade, so don't require a mention.
       requiresTrigger: false,
       isMain: false,
       modelConfig: sourceGroup.modelConfig,

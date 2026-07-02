@@ -1,10 +1,26 @@
-import {App} from "@slack/bolt";
+import {App, LogLevel} from "@slack/bolt";
 import type {GenericMessageEvent} from "@slack/types";
 import {logger} from "@terreno/api";
 import {logError} from "../errors";
 import {BaseChannelConnector} from "./baseConnector";
 import type {ConnectorFactory} from "./types";
 
+/**
+ * Slack Socket Mode connector.
+ *
+ * Reliability note: Slack load-balances events across every socket open for
+ * the app token. If a previous `bun --watch` restart leaves a zombie socket
+ * alive for ~30-60s, Slack will route some events to it and we lose them
+ * silently (symptom: "sometimes the bot doesn't reply to untagged messages
+ * in feature channels"). Mitigations here:
+ *   1. Enable Bolt DEBUG logs so socket lifecycle (connected / reconnecting /
+ *      disconnected) is visible in our log stream.
+ *   2. Listen to SocketModeClient lifecycle events and surface them at info
+ *      level so operators can correlate missing events with socket flaps.
+ *   3. Make `disconnect()` actually wait for the socket to close so a clean
+ *      SIGTERM (what `bun --watch` sends on file change) fully tears it down
+ *      before the replacement process opens a new one.
+ */
 export class SlackChannelConnector extends BaseChannelConnector {
   private app: App | null = null;
 
@@ -34,7 +50,39 @@ export class SlackChannelConnector extends BaseChannelConnector {
       appToken: config.appToken,
       signingSecret: config.signingSecret,
       socketMode: true,
+      // INFO surfaces socket lifecycle (connect/reconnect/disconnect) and
+      // rate-limit warnings without flooding the log with every Web API
+      // request body. Our own `logger.info` lifecycle wrapper below gives us
+      // the bulk of what's useful on top of this.
+      logLevel: LogLevel.INFO,
     });
+
+    // Surface socket lifecycle at info level via @slack/socket-mode's
+    // EventEmitter, which Bolt exposes via `app.receiver.client`. We cast to
+    // loose types because Bolt doesn't export the receiver type directly.
+    const receiver = (this.app as unknown as {receiver?: {client?: {on?: Function}}})
+      .receiver;
+    const socketClient = receiver?.client;
+    if (socketClient && typeof socketClient.on === "function") {
+      const on = socketClient.on.bind(socketClient);
+      for (const state of [
+        "connecting",
+        "connected",
+        "authenticated",
+        "reconnecting",
+        "disconnecting",
+        "disconnected",
+        "error",
+      ] as const) {
+        on(state, (arg: unknown) => {
+          const detail =
+            state === "error" && arg instanceof Error ? `: ${arg.message}` : "";
+          logger.info(
+            `Slack socket "${this.channelDoc.name}" state=${state}${detail}`
+          );
+        });
+      }
+    }
 
     this.app.use(async ({body, next}) => {
       const eventType = "event" in body ? (body.event as {type?: string})?.type : undefined;
@@ -132,10 +180,26 @@ export class SlackChannelConnector extends BaseChannelConnector {
   async disconnect(): Promise<void> {
     logger.info(`Disconnecting Slack channel "${this.channelDoc.name}"...`);
     if (this.app) {
+      // Directly close the underlying SocketModeClient as well as stopping
+      // the Bolt app. `app.stop()` alone has been observed to leave the WS
+      // half-open across a `bun --watch` restart; the ghost socket keeps
+      // receiving load-balanced events from Slack for ~30-60s, which is
+      // exactly the "sometimes the bot doesn't see untagged messages"
+      // symptom we were debugging.
+      const socketClient = (this.app as unknown as {
+        receiver?: {client?: {disconnect?: () => Promise<void>}};
+      }).receiver?.client;
       try {
         await this.app.stop();
       } catch (err) {
         logger.error(`Error stopping Slack app for "${this.channelDoc.name}": ${err}`);
+      }
+      if (socketClient && typeof socketClient.disconnect === "function") {
+        try {
+          await socketClient.disconnect();
+        } catch (err) {
+          logger.warn(`Error force-closing Slack socket for "${this.channelDoc.name}": ${err}`);
+        }
       }
       this.app = null;
     }

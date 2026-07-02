@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
+import {logger} from "@terreno/api";
 import {z} from "zod";
 import {loadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
@@ -531,12 +532,18 @@ const buildTools = (ctx: McpContext) => {
         .describe("Brief description of the feature for the channel topic"),
     },
     async (args) => {
+      logger.info(
+        `MCP create_feature invoked: name="${args.name}" group=${ctx.groupId} sender=${ctx.senderExternalId ?? "<none>"}`
+      );
       if (!ctx.senderExternalId) {
+        logger.warn(
+          `MCP create_feature aborted: no senderExternalId in context (group=${ctx.groupId})`
+        );
         return {
           content: [
             {
               type: "text" as const,
-              text: "Error: No sender information available to invite to the channel.",
+              text: "Error: No sender information available to invite to the channel. The feature channel was NOT created.",
             },
           ],
         };
@@ -545,22 +552,40 @@ const buildTools = (ctx: McpContext) => {
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, "-")
         .slice(0, 80);
-      const fileId = await writeIpcFile(ctx.ipcDir, {
-        type: "create_feature",
-        groupId: ctx.groupId,
-        channelId: ctx.channelId,
-        name: channelName,
-        description: args.description,
-        senderExternalId: ctx.senderExternalId,
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Feature channel creation queued (${fileId}). Creating #${channelName} and inviting you...`,
-          },
-        ],
-      };
+      try {
+        const fileId = await writeIpcFile(ctx.ipcDir, {
+          type: "create_feature",
+          groupId: ctx.groupId,
+          channelId: ctx.channelId,
+          name: channelName,
+          description: args.description,
+          senderExternalId: ctx.senderExternalId,
+        });
+        logger.info(
+          `MCP create_feature queued IPC ${fileId} for #${channelName} (dir=${ctx.ipcDir})`
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Feature channel creation queued (${fileId}). Creating #${channelName} and inviting you...`,
+            },
+          ],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(
+          `MCP create_feature failed to queue IPC for #${channelName} (dir=${ctx.ipcDir}): ${msg}`
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to queue feature channel creation: ${msg}. The channel was NOT created — ask the operator to check the backend logs.`,
+            },
+          ],
+        };
+      }
     }
   );
 

@@ -21,12 +21,16 @@ import {
 import type {ChannelManager} from "../channels/manager";
 import type {AgentRunner} from "../runners/types";
 
-const BOT_RESPONSE_MODEL = "claude-haiku-4-5-20251001";
 const anthropic = new Anthropic();
 
-// ── Skill prompts (loaded from disk at start) ─────────────────────────────
+// ── Default prompts (used when AppConfig.prWatch.prompts.* is empty) ──────
+//
+// These constants are the fallback values for the corresponding fields on
+// `AppConfig.prWatch.prompts`. Operators should edit the AppConfig copies via
+// the admin UI — we only reach for the constants when the config value is
+// unset or blank (e.g. on a fresh install).
 
-const FIX_CONFLICTS_PROMPT = `Pull latest from master, resolve merge conflicts, validate with lint/compile checks, and push.
+const DEFAULT_FIX_CONFLICTS_PROMPT = `Pull latest from master, resolve merge conflicts, validate with lint/compile checks, and push.
 
 Instructions:
 1. Ensure the working tree is clean (git status). If there are uncommitted changes, stash them.
@@ -40,7 +44,7 @@ Instructions:
 7. If fixes were needed, commit them.
 8. Push: git push origin HEAD`;
 
-const CHECK_WATCHER_PROMPT = `Monitor GitHub Actions checks and auto-fix failures.
+const DEFAULT_CHECK_WATCHER_PROMPT = `Monitor GitHub Actions checks and auto-fix failures.
 
 Instructions:
 1. Get the PR number: gh pr view --json number -q .number
@@ -51,6 +55,25 @@ Instructions:
 4. If failure is flaky (not in changed code + flaky signals), rerun: gh run rerun <run-id> --failed
 5. If failure IS related to PR changes: fix the code, run lint/compile, commit and push, then repeat from step 2
 6. Cap fix attempts at 5.`;
+
+const DEFAULT_BOT_REVIEW_SYSTEM_PROMPT =
+  "You are responding to an automated code review bot comment on a GitHub PR. " +
+  "Generate a brief, appropriate response acknowledging the feedback. " +
+  "If the bot is reporting a lint/formatting issue that should be fixed, say you'll fix it. " +
+  "If the bot is reporting something informational, acknowledge it briefly. " +
+  'Return JSON: { "response": "your response text", "shouldFix": true/false, "fixType": "lint"|"format"|"other" }';
+
+const DEFAULT_BOT_RESPONSE_MODEL = "claude-haiku-4-5-20251001";
+
+/**
+ * Resolve a PR-watcher prompt from AppConfig, falling back to the module-level
+ * default when the configured value is empty. Keeps the callsite terse while
+ * respecting the "AppConfig is the source of truth" project rule.
+ */
+const resolvePrompt = (configured: string | undefined, fallback: string): string => {
+  const trimmed = (configured ?? "").trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+};
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -436,15 +459,17 @@ export class PrWatcher {
     }
 
     try {
+      const config = await loadAppConfig();
+      const model = resolvePrompt(config.prWatch.botResponseModel, DEFAULT_BOT_RESPONSE_MODEL);
+      const systemPrompt = resolvePrompt(
+        config.prWatch.prompts?.botReviewSystem,
+        DEFAULT_BOT_REVIEW_SYSTEM_PROMPT
+      );
+
       const response = await anthropic.messages.create({
-        model: BOT_RESPONSE_MODEL,
+        model,
         max_tokens: 512,
-        system:
-          "You are responding to an automated code review bot comment on a GitHub PR. " +
-          "Generate a brief, appropriate response acknowledging the feedback. " +
-          "If the bot is reporting a lint/formatting issue that should be fixed, say you'll fix it. " +
-          "If the bot is reporting something informational, acknowledge it briefly. " +
-          'Return JSON: { "response": "your response text", "shouldFix": true/false, "fixType": "lint"|"format"|"other" }',
+        system: systemPrompt,
         messages: [{role: "user", content: `Bot comment:\n${detail}`}],
       });
 
@@ -497,7 +522,10 @@ export class PrWatcher {
     await doc.save();
     await this.updateSlackMessage(doc);
 
-    const prompt = fixType === "conflicts" ? FIX_CONFLICTS_PROMPT : CHECK_WATCHER_PROMPT;
+    const prompt =
+      fixType === "conflicts"
+        ? resolvePrompt(config.prWatch.prompts?.fixConflicts, DEFAULT_FIX_CONFLICTS_PROMPT)
+        : resolvePrompt(config.prWatch.prompts?.checkWatcher, DEFAULT_CHECK_WATCHER_PROMPT);
 
     const sessionId = `pr-fix-${doc.repo.replace("/", "-")}-${doc.prNumber}-${Date.now()}`;
 

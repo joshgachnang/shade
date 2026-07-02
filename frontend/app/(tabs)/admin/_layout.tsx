@@ -1,8 +1,8 @@
-import {Stack, router} from "expo-router";
+import FontAwesome from "@expo/vector-icons/FontAwesome";
+import {router, Stack} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
 import {Platform, Pressable} from "react-native";
-import FontAwesome from "@expo/vector-icons/FontAwesome";
 import {colors} from "@/constants/theme";
 
 /**

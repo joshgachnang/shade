@@ -68,6 +68,7 @@ const RootLayoutNav: React.FC = () => {
       <Stack screenOptions={{headerShown: false}}>
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="console" />
       </Stack>
     </ThemeProvider>
   );

@@ -140,6 +140,24 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       autoRespondToBots: {type: Boolean, default: true},
       autoFixConflicts: {type: Boolean, default: true},
       reposBaseDir: {type: String, default: "data/repos"},
+      // Anthropic model used to draft auto-responses to bot reviews
+      // (e.g. dependabot, lint bots). Kept separate from `models.*` so
+      // operators can tune PR-watcher behavior without touching the
+      // trivia/answerer models.
+      botResponseModel: {type: String, default: "claude-haiku-4-5-20251001"},
+      // Prompts used by the PR watcher. Empty strings fall back to the
+      // module-level defaults in orchestrator/services/prWatcher.ts so a
+      // fresh AppConfig still produces working behavior. Operators can
+      // edit these via the admin UI to tune PR-watcher behavior without
+      // redeploying.
+      prompts: {
+        // Agent prompt for resolving merge conflicts on a PR branch.
+        fixConflicts: {type: String, default: ""},
+        // Agent prompt for watching CI and auto-fixing failures.
+        checkWatcher: {type: String, default: ""},
+        // System prompt for generating replies to bot review comments.
+        botReviewSystem: {type: String, default: ""},
+      },
     },
 
     triviaMonitor: {

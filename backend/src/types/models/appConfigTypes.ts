@@ -48,6 +48,12 @@ export interface AppConfigApiKeys {
   github: string;
 }
 
+export interface AppConfigPrWatchPrompts {
+  fixConflicts: string;
+  checkWatcher: string;
+  botReviewSystem: string;
+}
+
 export interface AppConfigPrWatch {
   enabled: boolean;
   groupId: string;
@@ -56,6 +62,8 @@ export interface AppConfigPrWatch {
   autoRespondToBots: boolean;
   autoFixConflicts: boolean;
   reposBaseDir: string;
+  botResponseModel: string;
+  prompts: AppConfigPrWatchPrompts;
 }
 
 export interface AppConfigTriviaMonitor {

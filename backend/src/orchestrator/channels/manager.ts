@@ -126,6 +126,23 @@ export class ChannelManager {
       return;
     }
 
+    // Dedupe by (groupId, externalId). Slack fires both `message` and
+    // `app_mention` events for a tagged message, so without this guard we
+    // were storing every tagged message twice and running the agent on each
+    // copy. The unique pair is (group, provider-side message id / ts).
+    if (inbound.externalId) {
+      const existing = await Message.findOne({
+        groupId: group._id,
+        externalId: inbound.externalId,
+      }).lean();
+      if (existing) {
+        logger.debug(
+          `Duplicate inbound message ${inbound.externalId} in group ${group.name} — skipping`
+        );
+        return;
+      }
+    }
+
     logger.debug(
       `Storing inbound message from ${inbound.sender} in group ${group.name} (${inbound.content.substring(0, 80)})`
     );
