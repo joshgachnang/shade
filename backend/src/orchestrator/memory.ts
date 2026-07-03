@@ -3,10 +3,13 @@ import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../config";
 import {loadAppConfig} from "../models/appConfig";
+import {memorySystemPromptBlock} from "./memoryPromptBlock";
 import {richResponseSystemPromptBlock} from "./responses/promptBlock";
+import {listSkills} from "./skills";
 
 const MEMORY_FILENAME = "CLAUDE.md";
 const SOUL_FILENAME = "SOUL.md";
+const USER_FILENAME = "USER.md";
 
 export const getSoulPath = (): string => {
   return path.join(paths.groups, SOUL_FILENAME);
@@ -14,6 +17,10 @@ export const getSoulPath = (): string => {
 
 export const getGlobalMemoryPath = (): string => {
   return path.join(paths.groups, MEMORY_FILENAME);
+};
+
+export const getUserProfilePath = (): string => {
+  return path.join(paths.groups, USER_FILENAME);
 };
 
 export const getGroupMemoryPath = (groupFolder: string): string => {
@@ -40,6 +47,43 @@ export const writeMemory = async (filePath: string, content: string): Promise<vo
     logger.error(`Failed to write memory to ${filePath}: ${err}`);
     throw err;
   }
+};
+
+export interface MemoryUpdateResult {
+  ok: boolean;
+  size: number;
+  error?: string;
+}
+
+/**
+ * Apply an update to a memory file, enforcing a character cap on the
+ * resulting content. `append` joins existing content (if any) with a newline;
+ * `replace` overwrites. Nothing is written when the cap would be exceeded.
+ */
+export const applyMemoryUpdate = async ({
+  filePath,
+  content,
+  mode,
+  maxChars,
+}: {
+  filePath: string;
+  content: string;
+  mode: "replace" | "append";
+  maxChars: number;
+}): Promise<MemoryUpdateResult> => {
+  const existing = mode === "append" ? await readMemory(filePath) : null;
+  const resulting = existing ? `${existing}\n${content}` : content;
+
+  if (resulting.length > maxChars) {
+    return {
+      ok: false,
+      size: resulting.length,
+      error: `Resulting file would be ${resulting.length} characters, over the ${maxChars} character limit. Condense the content and try again — nothing was written.`,
+    };
+  }
+
+  await writeMemory(filePath, resulting);
+  return {ok: true, size: resulting.length};
 };
 
 export const ensureGroupDirectory = async (groupFolder: string): Promise<string> => {
@@ -70,10 +114,19 @@ export const initGlobalMemory = async (): Promise<void> => {
 
 export const buildSystemPrompt = async (groupFolder: string, fallback: string): Promise<string> => {
   const parts: string[] = [];
+  const appConfig = await loadAppConfig();
+  const memoryEnabled = appConfig.memory?.enabled ?? true;
 
   const soul = await readMemory(getSoulPath());
   if (soul) {
     parts.push(soul);
+  }
+
+  if (memoryEnabled) {
+    const userProfile = await readMemory(getUserProfilePath());
+    if (userProfile) {
+      parts.push(userProfile);
+    }
   }
 
   const globalMemory = await readMemory(getGlobalMemoryPath());
@@ -91,12 +144,35 @@ export const buildSystemPrompt = async (groupFolder: string, fallback: string): 
   }
 
   // Append the rich-response prompt block when the feature flag is enabled.
-  const appConfig = await loadAppConfig();
   const richBlock = richResponseSystemPromptBlock({
     enabled: appConfig.richResponses?.enabled ?? true,
   });
   if (richBlock) {
     parts.push(richBlock);
+  }
+
+  // Teach the agent when to use memory/skills tools, then list the available
+  // skills (index only — bodies stay on disk until load_skill is called).
+  const memoryBlock = memorySystemPromptBlock({enabled: memoryEnabled});
+  if (memoryBlock) {
+    parts.push(memoryBlock);
+  }
+
+  if (memoryEnabled) {
+    const skills = await listSkills();
+    if (skills.length > 0) {
+      const skillLines = skills.map((skill) => `- ${skill.name} — ${skill.description}`);
+      parts.push(
+        [
+          "## Skills",
+          "",
+          "Saved skills (reusable procedures you authored). This index shows names and",
+          "descriptions only — call `load_skill` before using one.",
+          "",
+          ...skillLines,
+        ].join("\n")
+      );
+    }
   }
 
   return parts.join("\n\n---\n\n");

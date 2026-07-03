@@ -1,6 +1,6 @@
 # Implementation Plan: Agent Memory & Learning
 
-**Status:** Open
+**Status:** Pending Verification
 **Priority:** High
 **Effort:** Big batch (1-2 weeks)
 **IP:** IP-008
@@ -111,19 +111,19 @@ None in v1. Memory files are on-disk and skills are inspectable via `list_skills
 
 ### Phase 1: Config & Foundations
 
-- [ ] **Task 1.1**: Add `memory` config block
+- [x] **Task 1.1**: Add `memory` config block
   - Description: Add `memory {enabled, maxFileChars, maxSkillChars, historySearchLimit}` to the AppConfig schema and types.
   - Files: `backend/src/models/appConfig.ts`, `backend/src/types/models/appConfigTypes.ts`
   - Depends on: none
   - Acceptance: `bun run test` passes; config visible via `/app-configs` and editable in admin UI.
 
-- [ ] **Task 1.2**: Add `paths.skills` and `getUserProfilePath()`
+- [x] **Task 1.2**: Add `paths.skills` and `getUserProfilePath()`
   - Description: New lazy path getter (+ test setter, matching existing `paths.*` pattern) in `config.ts`; create dir in `server.ts` filesystem init; `getUserProfilePath()` in `orchestrator/memory.ts` returning `paths.groups/USER.md`.
   - Files: `backend/src/config.ts`, `backend/src/server.ts`, `backend/src/orchestrator/memory.ts`
   - Depends on: none
   - Acceptance: boot creates `data/skills/`; unit test for the path getters.
 
-- [ ] **Task 1.3**: Message text index
+- [x] **Task 1.3**: Message text index
   - Description: Add `schema.index({content: "text"})` to the Message model.
   - Files: `backend/src/models/message.ts`
   - Depends on: none
@@ -131,7 +131,7 @@ None in v1. Memory files are on-disk and skills are inspectable via `list_skills
 
 ### Phase 2: History Search
 
-- [ ] **Task 2.1**: `search_history` MCP tool
+- [x] **Task 2.1**: `search_history` MCP tool
   - Description: Implement per the APIs table; sort by `{score: {$meta: "textScore"}}`; scope to `ctx.groupId`; format results with Luxon ISO dates.
   - Files: `backend/src/agentRunner/mcpServer.ts` (+ colocated `mcpServer.test.ts` additions)
   - Depends on: 1.1, 1.3
@@ -139,13 +139,13 @@ None in v1. Memory files are on-disk and skills are inspectable via `list_skills
 
 ### Phase 3: Curated Memory
 
-- [ ] **Task 3.1**: `update_memory` MCP tool
+- [x] **Task 3.1**: `update_memory` MCP tool
   - Description: Implement scopes global/group/user with the existing permission gates, append vs replace, char-cap rejection message.
   - Files: `backend/src/agentRunner/mcpServer.ts`, `backend/src/orchestrator/memory.ts`
   - Depends on: 1.1, 1.2
   - Acceptance: unit tests cover all three scopes, both modes, permission rejection, and cap rejection.
 
-- [ ] **Task 3.2**: Load `USER.md` into the system prompt
+- [x] **Task 3.2**: Load `USER.md` into the system prompt
   - Description: In `buildSystemPrompt`, read the user profile after SOUL and before global memory; include only when `memory.enabled`.
   - Files: `backend/src/orchestrator/memory.ts`
   - Depends on: 1.2
@@ -153,19 +153,19 @@ None in v1. Memory files are on-disk and skills are inspectable via `list_skills
 
 ### Phase 4: Skills
 
-- [ ] **Task 4.1**: Skill file helpers
+- [x] **Task 4.1**: Skill file helpers
   - Description: `saveSkill/listSkills/loadSkill` helpers in a new `backend/src/orchestrator/skills.ts` — frontmatter parse/serialize (simple split on `---`, no new deps), kebab-name validation, char cap.
   - Files: `backend/src/orchestrator/skills.ts`, `backend/src/orchestrator/skills.test.ts`
   - Depends on: 1.1, 1.2
   - Acceptance: round-trip unit tests; invalid names rejected.
 
-- [ ] **Task 4.2**: `save_skill` / `list_skills` / `load_skill` MCP tools
+- [x] **Task 4.2**: `save_skill` / `list_skills` / `load_skill` MCP tools
   - Description: Thin tool wrappers over `skills.ts`.
   - Files: `backend/src/agentRunner/mcpServer.ts`
   - Depends on: 4.1
   - Acceptance: unit tests for the three handlers including not-found path.
 
-- [ ] **Task 4.3**: Skills index in the system prompt
+- [x] **Task 4.3**: Skills index in the system prompt
   - Description: Append a `## Skills` block to `buildSystemPrompt` listing `name — description` lines plus "Call load_skill before using one" (progressive disclosure — never inline bodies).
   - Files: `backend/src/orchestrator/memory.ts`
   - Depends on: 4.1
@@ -173,13 +173,13 @@ None in v1. Memory files are on-disk and skills are inspectable via `list_skills
 
 ### Phase 5: Prompt Wiring & Docs
 
-- [ ] **Task 5.1**: Memory prompt block
+- [x] **Task 5.1**: Memory prompt block
   - Description: Add a `memoryPromptBlock()` (pattern: `orchestrator/responses/promptBlock.ts`) teaching: search history before saying "I don't know", update USER.md on stable preferences, save a skill after solving a novel multi-step problem; append in `buildSystemPrompt` when enabled.
   - Files: `backend/src/orchestrator/memoryPromptBlock.ts` (new), `backend/src/orchestrator/memory.ts`
   - Depends on: 2.1, 3.1, 4.2
   - Acceptance: prompt contains the block when enabled; unit test.
 
-- [ ] **Task 5.2**: Update architecture docs
+- [x] **Task 5.2**: Update architecture docs
   - Description: Update `docs/architecture/agents-and-tools.md` (tool table + memory section) and the assessment doc's gap list.
   - Files: `docs/architecture/agents-and-tools.md`, `docs/architecture/assessment-and-hermes.md`
   - Depends on: 5.1

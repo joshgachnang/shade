@@ -86,6 +86,17 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       allowedTools: {type: [String], default: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]},
     },
 
+    memory: {
+      // Master switch for the agent memory tools and prompt block.
+      enabled: {type: Boolean, default: true},
+      // Character cap per memory file (global/group/user).
+      maxFileChars: {type: Number, default: 6000},
+      // Character cap per skill file.
+      maxSkillChars: {type: Number, default: 8000},
+      // Maximum results returned by the search_history tool.
+      historySearchLimit: {type: Number, default: 8},
+    },
+
     apiKeys: {
       braveSearch: {type: String, default: ""},
       exa: {type: String, default: ""},

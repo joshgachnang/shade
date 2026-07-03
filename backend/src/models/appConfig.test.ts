@@ -23,6 +23,27 @@ describe("AppConfig richResponses + maps additions", () => {
     expect(doc.maps.mapboxAccessToken).toBe("pk.test");
   });
 
+  test("loadAppConfig returns memory defaults", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.memory).toBeDefined();
+    expect(cfg.memory.enabled).toBe(true);
+    expect(cfg.memory.maxFileChars).toBe(6000);
+    expect(cfg.memory.maxSkillChars).toBe(8000);
+    expect(cfg.memory.historySearchLimit).toBe(8);
+  });
+
+  test("strict: throw accepts explicit memory values", async () => {
+    await AppConfig.deleteMany({});
+    const doc = await AppConfig.create({
+      memory: {enabled: false, maxFileChars: 1000, maxSkillChars: 2000, historySearchLimit: 3},
+    });
+    expect(doc.memory.enabled).toBe(false);
+    expect(doc.memory.maxFileChars).toBe(1000);
+    expect(doc.memory.maxSkillChars).toBe(2000);
+    expect(doc.memory.historySearchLimit).toBe(3);
+  });
+
   test("cache invalidates on save", async () => {
     await AppConfig.deleteMany({});
     const original = await loadAppConfig();

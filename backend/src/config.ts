@@ -16,7 +16,7 @@ const getDataDir = (): string => {
 };
 
 const overrides: Partial<
-  Record<"data" | "groups" | "sessions" | "ipc" | "plugins" | "movies", string>
+  Record<"data" | "groups" | "sessions" | "ipc" | "plugins" | "movies" | "skills", string>
 > = {};
 
 const makePathAccessor = (key: keyof typeof overrides, segment: string): PropertyDescriptor => ({
@@ -43,4 +43,5 @@ export const paths = Object.defineProperties({} as Record<keyof typeof overrides
   ipc: makePathAccessor("ipc", "ipc"),
   plugins: makePathAccessor("plugins", "plugins"),
   movies: makePathAccessor("movies", "movies"),
+  skills: makePathAccessor("skills", "skills"),
 });

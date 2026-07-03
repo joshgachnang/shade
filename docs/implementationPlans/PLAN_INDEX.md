@@ -15,7 +15,7 @@ See `CLAUDE.md` for IP lifecycle stages and management guidelines.
 | IP-005 | Rich Response UI | Open | Big batch (1-2 weeks) | High |
 | IP-006 | Edge Agents | Pending Verification | Big batch (1-2 weeks) | High |
 | IP-007 | Trivia Group | Open | Small batch (1-2 days) | Medium |
-| IP-008 | Agent Memory & Learning | Open | Big batch (1-2 weeks) | High |
+| IP-008 | Agent Memory & Learning | Pending Verification | Big batch (1-2 weeks) | High |
 | IP-009 | Agent Task Board & Worker Pool | Open | Big batch (1-2 weeks) | High |
 | IP-010 | Gateway/Worker Process Split | Open | Big batch (1-2 weeks) | Medium |
 | IP-011 | Channel & Scheduler Polish | Open | Small batch (1-2 days) | Medium |

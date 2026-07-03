@@ -6,7 +6,7 @@
 
 ## Verdict in one paragraph
 
-Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: there is none — agents are strictly sequential per group) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`). A third, structural risk is that **everything runs in one process**, so a watchdog restart kills in-flight agent runs, radio transcription, and movie processing together. None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
+Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: there is none — agents are strictly sequential per group) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`; since addressed by IP-008 — see gap #2 below). A third, structural risk is that **everything runs in one process**, so a watchdog restart kills in-flight agent runs, radio transcription, and movie processing together. None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
 
 ## What Shade gets right
 
@@ -26,16 +26,18 @@ Hermes's answer, worth copying nearly wholesale: a **Kanban task model** — dur
 
 **Recommendation:** add a `Task` model (decomposable, claimable, heartbeated) and turn `@shade/worker` into an agent worker pool that claims tasks. Expose `delegate_task` / `list_tasks`-style MCP tools so the orchestrator agent can fan work out. In the near term, enable Claude Agent SDK subagents inside `DirectAgentRunner` for intra-turn parallelism — it's the cheapest 80%.
 
-### 2. Memory and learning
+### 2. Memory and learning — ✅ addressed (IP-008)
 
-Per-turn context is the last ~2 hours of messages plus a static group `CLAUDE.md` and manual `save_data` blobs. Nothing is learned across sessions; nothing older than 2 hours is retrievable; there is no model of the user.
+*Original gap:* per-turn context was the last ~2 hours of messages plus a static group `CLAUDE.md` and manual `save_data` blobs. Nothing was learned across sessions; nothing older than 2 hours was retrievable; there was no model of the user.
 
 Hermes's signature feature is the closed learning loop: small curated memory docs (`MEMORY.md` ~800 tokens, `USER.md` ~500 tokens), **full-text search over all past session transcripts** (SQLite FTS5 + LLM summarization at query time), and **agent-authored skill documents** persisted after hard problems. Nous claims large speedups from accumulated skills; directionally this matches what we'd expect.
 
-**Recommendation:** three incremental steps, all cheap in Shade's stack:
-1. A `search_history` MCP tool over `Message` + session transcripts (Mongo text index or Atlas Search — already used for frame analyses).
-2. Agent-curated `MEMORY.md` / `USER.md` per group (the group folder already exists; add a `update_memory` tool with a token budget).
-3. A skills directory the agent can write to after solving novel problems, loaded progressively into the system prompt.
+**Shipped as IP-008** (see `docs/implementationPlans/Agent-Memory-And-Learning.md`), closely following the recommendation:
+1. `search_history` MCP tool over a Mongo text index on `Message.content` (per group, default 90 days, capped by `AppConfig.memory.historySearchLimit`).
+2. Agent-curated memory via `update_memory` — global/group `CLAUDE.md` plus a global `USER.md` user profile (main-group-only writes for global/user), all char-budgeted and loaded into the system prompt.
+3. A global skills directory (`SHADE_DATA_DIR/skills/`) the agent writes with `save_skill` after solving novel problems, surfaced as a name + description index in the system prompt and loaded progressively via `list_skills` / `load_skill`. A memory prompt block teaches when to use each tool; `AppConfig.memory.enabled` gates it all.
+
+*Still future:* transcript-file (JSONL) search, embeddings/semantic search, per-group skills, and automatic post-task "should I save a skill?" reflection.
 
 ### 3. Software building
 
@@ -63,7 +65,7 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 |---|---|---|
 | Cron agents | ✅ Same design (task → agent turn), Mongo-backed, audited | ✅ Fresh isolated session per job, 60s tick, deliver-to-any-channel |
 | Sub-agents | ❌ None (sequential per group) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
-| Memory/learning | ⚠️ 2h window + static CLAUDE.md + save_data | ✅ Curated memory docs + FTS session search + self-authored skills |
+| Memory/learning | ✅ Curated memory docs (global/group/USER.md) + message text search + self-authored skills (IP-008) | ✅ Curated memory docs + FTS session search + self-authored skills |
 | Channels | 5 (Slack, iMessage, email, webhook, edge) | 22 (incl. Telegram, WhatsApp, Signal, Discord…) |
 | iMessage | ✅ Local edge agent (private) | ⚠️ Third-party hosted relay (Photon Spectrum) |
 | Model support | Claude SDK + OpenAI planner, coarse routing | ~20 providers, local models, mid-session switching, fallbacks |
@@ -82,7 +84,7 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 
 Priority order for closing the gap:
 
-1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort.
+1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort. ✅ Shipped as IP-008.
 2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock.
 3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius.
 4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing).

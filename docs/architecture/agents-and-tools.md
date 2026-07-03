@@ -18,7 +18,10 @@ Used only for **feature channels** in their planning phase. Calls OpenAI Chat Co
 ## Sessions & memory
 
 - **`AgentSession`**: groupId, SDK session UUID, JSONL transcript path (under `SHADE_DATA_DIR/sessions/`), message count, resume checkpoint. `getOrCreateSession()` resumes the last active session or creates one.
-- **Group memory** (`orchestrator/memory.ts`): each group has a filesystem folder; a `CLAUDE.md` there becomes the agent's system context.
+- **Memory files** (`orchestrator/memory.ts`): the system prompt is assembled from `SOUL.md` (persona), `USER.md` (agent-curated user profile, single global file), the global `CLAUDE.md`, and the group's `CLAUDE.md`. Agents edit these at runtime via `update_memory` — scope `group` is writable by any group for its own file; scopes `global` and `user` are main-group-only. Writes are capped at `AppConfig.memory.maxFileChars`; oversized writes are rejected with a condense instruction.
+- **Searchable history**: `search_history` runs a MongoDB text-index search over stored `Message` docs for the current group (default 90 days back, results capped at `AppConfig.memory.historySearchLimit`), letting agents recall conversations far beyond the recent context window.
+- **Skills library** (`orchestrator/skills.ts`): agent-authored reusable procedures stored as frontmattered markdown in `SHADE_DATA_DIR/skills/` (global, kebab-case names, capped at `AppConfig.memory.maxSkillChars`). `save_skill` / `list_skills` / `load_skill` manage them; the system prompt includes a name + description index only — bodies are loaded on demand via `load_skill` (progressive disclosure).
+- **Memory flag**: `AppConfig.memory.enabled` (default true) gates all five memory/skills tools and the memory/skills prompt blocks; when false the tools report "Memory features are disabled".
 - **Conversation context**: rebuilt per turn from the last ~2 hours of `Message` docs, rendered as XML (`<message>`, `<user_action>` for Slack button clicks).
 - **Persistent data tools**: `save_data` / `load_data` / `list_data` / `delete_data` give agents durable per-group JSON storage.
 
@@ -29,6 +32,7 @@ Tool inputs are Zod-validated. Tools act by writing IPC files to `data/ipc/` (pi
 | Category | Tools |
 |---|---|
 | Messaging | `send_message`, `respond_with_card` (RichResponse cards), `add_reaction`, `get_channel_history` |
+| Memory & skills | `search_history`, `update_memory`, `save_skill`, `list_skills`, `load_skill` |
 | Scheduling | `schedule_task`, `list_tasks`, `pause_task`, `resume_task`, `cancel_task` |
 | Storage | `save_data`, `load_data`, `list_data`, `delete_data` |
 | Apple (macOS host) | `list_reminders`, `create_reminder`, `complete_reminder`, `delete_reminder`, `search_contacts`, `get_contact`, `match_contact`, `create_contact`, `update_contact`, `add_contact_context` |

@@ -37,6 +37,13 @@ export interface AppConfigAgent {
   allowedTools: string[];
 }
 
+export interface AppConfigMemory {
+  enabled: boolean;
+  maxFileChars: number;
+  maxSkillChars: number;
+  historySearchLimit: number;
+}
+
 export interface AppConfigApiKeys {
   braveSearch: string;
   exa: string;
@@ -149,6 +156,7 @@ export interface AppConfigFields {
   radioTranscriber: AppConfigRadioTranscriber;
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
+  memory: AppConfigMemory;
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;

@@ -23,6 +23,7 @@ const messageSchema = new mongoose.Schema<MessageDocument, MessageModel>(
 
 messageSchema.index({groupId: 1, created: 1});
 messageSchema.index({groupId: 1, processedAt: 1});
+messageSchema.index({content: "text"});
 
 addDefaultPlugins(messageSchema);
 

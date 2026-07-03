@@ -5,13 +5,23 @@ import path from "node:path";
 import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
+import {DateTime} from "luxon";
 import {z} from "zod";
 import {loadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
+import {Group} from "../models/group";
 import {Message} from "../models/message";
 import {RadioStream} from "../models/radioStream";
 import {ScheduledTask} from "../models/scheduledTask";
+import {
+  applyMemoryUpdate,
+  canWriteGlobalMemory,
+  getGlobalMemoryPath,
+  getGroupMemoryPath,
+  getUserProfilePath,
+} from "../orchestrator/memory";
 import {RichResponse} from "../orchestrator/responses/schema";
+import {listSkills, loadSkill, saveSkill} from "../orchestrator/skills";
 import {
   addShadeContext,
   createContact,
@@ -24,7 +34,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-interface McpContext {
+export interface McpContext {
   groupId: string;
   channelId: string;
   ipcDir: string;
@@ -51,7 +61,10 @@ const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Prom
   return fileId;
 };
 
-const buildTools = (ctx: McpContext) => {
+const MEMORY_DISABLED_TEXT = "Memory features are disabled";
+
+// Exported for tests; production code should use createShadeMcpServer.
+export const buildTools = (ctx: McpContext) => {
   const sendMessageTool = tool(
     "send_message",
     "Send a message to a channel. Use this to respond to users or communicate with other groups.",
@@ -405,6 +418,234 @@ const buildTools = (ctx: McpContext) => {
           },
         ],
       };
+    }
+  );
+
+  const searchHistoryTool = tool(
+    "search_history",
+    "Full-text search over this group's stored message history, reaching far beyond the recent context window (defaults to the last 90 days). Use this to recall older conversations before saying you don't know or don't remember something.",
+    {
+      query: z.string().describe("Full-text search query (keywords, not a regex)"),
+      days: z.number().min(1).default(90).describe("How many days back to search (default 90)"),
+      limit: z
+        .number()
+        .min(1)
+        .optional()
+        .describe("Maximum number of results (capped by server config)"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const configLimit = memory?.historySearchLimit ?? 8;
+        const limit = Math.min(args.limit ?? configLimit, configLimit);
+        const cutoff = DateTime.now()
+          .minus({days: args.days ?? 90})
+          .toJSDate();
+
+        const messages = await Message.find(
+          {
+            $text: {$search: args.query},
+            groupId: ctx.groupId,
+            created: {$gte: cutoff},
+          },
+          {score: {$meta: "textScore"}}
+        )
+          .sort({score: {$meta: "textScore"}})
+          .limit(limit);
+
+        if (messages.length === 0) {
+          return {content: [{type: "text" as const, text: "No matches."}]};
+        }
+
+        const lines = messages.map((msg) => {
+          const sender = msg.isFromBot ? "Shade" : msg.sender;
+          const time = DateTime.fromJSDate(msg.created).toISO();
+          return `[${time}] ${sender}: ${msg.content.slice(0, 300)}`;
+        });
+
+        return {content: [{type: "text" as const, text: lines.join("\n")}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error searching history: ${msg}`}]};
+      }
+    }
+  );
+
+  const updateMemoryTool = tool(
+    "update_memory",
+    "Update Shade's persistent memory files. Scopes: 'global' (shared across all groups; main group only), 'group' (this group's memory file), 'user' (the user profile USER.md; main group only). Mode 'append' adds to the existing file; 'replace' overwrites it. Content persists across sessions and is loaded into future system prompts.",
+    {
+      scope: z
+        .enum(["global", "group", "user"])
+        .describe("Which memory file to update: global, group, or user"),
+      content: z.string().describe("The memory content to write"),
+      mode: z
+        .enum(["replace", "append"])
+        .describe("'append' adds to the existing file; 'replace' overwrites it"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const group = await Group.findById(ctx.groupId);
+        if (!group) {
+          return {content: [{type: "text" as const, text: "Error: Group not found."}]};
+        }
+
+        const isMainGroup = group.isMain === true;
+        if (
+          (args.scope === "global" || args.scope === "user") &&
+          !canWriteGlobalMemory(isMainGroup)
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: only the main group can update ${args.scope} memory.`,
+              },
+            ],
+          };
+        }
+
+        let targetPath: string;
+        if (args.scope === "global") {
+          targetPath = getGlobalMemoryPath();
+        } else if (args.scope === "user") {
+          targetPath = getUserProfilePath();
+        } else {
+          targetPath = getGroupMemoryPath(group.folder);
+        }
+
+        const result = await applyMemoryUpdate({
+          filePath: targetPath,
+          content: args.content,
+          mode: args.mode,
+          maxChars: memory?.maxFileChars ?? 6000,
+        });
+
+        if (!result.ok) {
+          return {content: [{type: "text" as const, text: `Error: ${result.error}`}]};
+        }
+
+        logger.info(`update_memory: wrote ${args.scope} memory (${result.size} chars)`);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Memory updated (scope: ${args.scope}, ${result.size} chars).`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error updating memory: ${msg}`}]};
+      }
+    }
+  );
+
+  const saveSkillTool = tool(
+    "save_skill",
+    "Save a reusable skill to Shade's skills library. Skills are procedures you authored — save one after solving a novel multi-step problem so future sessions can reuse the approach instead of re-deriving it. Overwrites an existing skill of the same name.",
+    {
+      name: z
+        .string()
+        .describe(
+          'Kebab-case skill name: lowercase letters, digits, and hyphens (e.g. "check-plex-health")'
+        ),
+      description: z
+        .string()
+        .describe("One-line summary shown in the skills index (list_skills and the system prompt)"),
+      content: z.string().describe("The reusable procedure, as a markdown body"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const result = await saveSkill({
+          name: args.name,
+          description: args.description,
+          content: args.content,
+          maxChars: memory?.maxSkillChars ?? 8000,
+        });
+
+        if (!result.saved) {
+          return {content: [{type: "text" as const, text: `Error: ${result.error}`}]};
+        }
+
+        return {content: [{type: "text" as const, text: `Skill "${args.name}" saved.`}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error saving skill: ${msg}`}]};
+      }
+    }
+  );
+
+  const listSkillsTool = tool(
+    "list_skills",
+    "List saved skills (name and one-line description). Skills are reusable procedures you previously authored with save_skill. Check this before re-deriving a multi-step procedure, then call load_skill to get the full content.",
+    {},
+    async () => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const skills = await listSkills();
+        if (skills.length === 0) {
+          return {content: [{type: "text" as const, text: "No skills saved yet."}]};
+        }
+
+        const lines = skills.map((skill) => `${skill.name} — ${skill.description}`);
+        return {content: [{type: "text" as const, text: lines.join("\n")}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error listing skills: ${msg}`}]};
+      }
+    }
+  );
+
+  const loadSkillTool = tool(
+    "load_skill",
+    "Load the full content of a saved skill by name. Always load a skill before executing it — the skills index only shows names and descriptions.",
+    {
+      name: z.string().describe("The kebab-case name of the skill to load"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const result = await loadSkill({name: args.name});
+        if (!result.found) {
+          const names = result.validNames?.length ? result.validNames.join(", ") : "(none)";
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Skill "${args.name}" not found. Valid skills: ${names}`,
+              },
+            ],
+          };
+        }
+
+        return {content: [{type: "text" as const, text: result.content ?? ""}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error loading skill: ${msg}`}]};
+      }
     }
   );
 
@@ -1236,6 +1477,11 @@ const buildTools = (ctx: McpContext) => {
     cancelTaskTool,
     getWeatherTool,
     getChannelHistoryTool,
+    searchHistoryTool,
+    updateMemoryTool,
+    saveSkillTool,
+    listSkillsTool,
+    loadSkillTool,
     saveDataTool,
     loadDataTool,
     listDataTool,
