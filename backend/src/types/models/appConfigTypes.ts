@@ -35,6 +35,7 @@ export interface AppConfigAgent {
   maxTurns: number;
   progressIntervalMs: number;
   allowedTools: string[];
+  enableSubagents: boolean;
 }
 
 export interface AppConfigMemory {
@@ -42,6 +43,15 @@ export interface AppConfigMemory {
   maxFileChars: number;
   maxSkillChars: number;
   historySearchLimit: number;
+}
+
+export interface AppConfigTaskWorker {
+  enabled: boolean;
+  concurrency: number;
+  pollMs: number;
+  heartbeatMs: number;
+  staleMs: number;
+  taskTimeoutMs: number;
 }
 
 export interface AppConfigApiKeys {
@@ -157,6 +167,7 @@ export interface AppConfigFields {
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
   memory: AppConfigMemory;
+  taskWorker: AppConfigTaskWorker;
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;

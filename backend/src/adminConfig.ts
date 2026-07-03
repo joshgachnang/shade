@@ -1,6 +1,7 @@
 import type {AdminModelConfig} from "@terreno/admin-backend";
 import {
   AgentSession,
+  AgentTask,
   AIRequest,
   AppConfig,
   CalendarConfig,
@@ -94,6 +95,13 @@ export const adminModelConfigs: AdminModelConfig[] = [
       "startedAt",
     ],
     defaultSort: "-startedAt",
+  },
+  {
+    model: AgentTask,
+    routePath: "/agent-tasks",
+    displayName: "Agent Tasks",
+    listFields: ["title", "groupId", "status", "priority", "workerId", "attempts", "created"],
+    defaultSort: "-created",
   },
   {
     model: AgentSession,

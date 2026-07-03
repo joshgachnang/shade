@@ -9,7 +9,7 @@ const taskRunLogSchema = new mongoose.Schema<TaskRunLogDocument, TaskRunLogModel
     trigger: {
       type: String,
       required: true,
-      enum: ["scheduled", "message", "webhook", "websocket", "manual"],
+      enum: ["scheduled", "message", "webhook", "websocket", "manual", "delegated"],
     },
     classification: {
       type: String,

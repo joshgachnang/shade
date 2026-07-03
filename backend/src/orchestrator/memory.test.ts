@@ -177,6 +177,12 @@ describe("buildSystemPrompt", () => {
     await config.save();
   };
 
+  const setTaskWorkerEnabled = async (enabled: boolean): Promise<void> => {
+    const config = await reloadAppConfig();
+    config.set("taskWorker.enabled", enabled);
+    await config.save();
+  };
+
   const seedMemoryFiles = async (): Promise<void> => {
     await fs.writeFile(path.join(tmpDir, "SOUL.md"), "SOUL-CONTENT", "utf-8");
     await fs.writeFile(path.join(tmpDir, "USER.md"), "USER-CONTENT", "utf-8");
@@ -207,6 +213,7 @@ describe("buildSystemPrompt", () => {
     paths.skills = originalSkillsPath;
     await fs.rm(skillsTmpDir, {recursive: true, force: true});
     await setMemoryEnabled(true);
+    await setTaskWorkerEnabled(true);
   });
 
   test("orders sections SOUL, USER, global, group", async () => {
@@ -270,7 +277,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("ROTATE-SKILL-BODY");
   });
 
-  test("orders trailing blocks: rich responses, memory block, skills index", async () => {
+  test("orders trailing blocks: rich responses, memory block, skills index, task board block", async () => {
     await seedMemoryFiles();
     await seedSkills();
     // Other test files may leave richResponses disabled in the shared config.
@@ -283,9 +290,31 @@ describe("buildSystemPrompt", () => {
     const richIdx = prompt.indexOf("## Structured Card Responses");
     const memoryIdx = prompt.indexOf("## Memory & Learning");
     const skillsIdx = prompt.indexOf("## Skills");
+    const taskBoardIdx = prompt.indexOf("## Background Task Delegation");
     expect(richIdx).toBeGreaterThanOrEqual(0);
     expect(memoryIdx).toBeGreaterThan(richIdx);
     expect(skillsIdx).toBeGreaterThan(memoryIdx);
+    expect(taskBoardIdx).toBeGreaterThan(skillsIdx);
+  });
+
+  test("includes the task board prompt block when taskWorker.enabled is true", async () => {
+    await seedMemoryFiles();
+
+    const prompt = await buildSystemPrompt("test-group", "FALLBACK");
+
+    expect(prompt).toContain("## Background Task Delegation");
+    expect(prompt).toContain("delegate_task");
+    expect(prompt).toContain("get_task_result");
+  });
+
+  test("omits the task board prompt block when taskWorker.enabled is false", async () => {
+    await seedMemoryFiles();
+    await setTaskWorkerEnabled(false);
+
+    const prompt = await buildSystemPrompt("test-group", "FALLBACK");
+
+    expect(prompt).not.toContain("## Background Task Delegation");
+    expect(prompt).not.toContain("delegate_task");
   });
 
   test("omits the skills index when there are no skills", async () => {

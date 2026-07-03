@@ -16,6 +16,12 @@ export interface AgentRunConfig {
   messageTs?: string;
   /** External ID of the user who triggered this run (e.g., Slack user ID) */
   senderExternalId?: string;
+  /**
+   * True when this run executes an AgentTask from the task board (set by
+   * TaskWorkerService). Runners thread it into the MCP context so
+   * delegate_task can enforce the one-level delegation rule.
+   */
+  isBoardTask?: boolean;
   /** Called periodically with assistant text fragments for progress reporting */
   onProgress?: (text: string) => void;
 }

@@ -6,7 +6,7 @@
 
 ## Verdict in one paragraph
 
-Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: there is none — agents are strictly sequential per group) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`; since addressed by IP-008 — see gap #2 below). A third, structural risk is that **everything runs in one process**, so a watchdog restart kills in-flight agent runs, radio transcription, and movie processing together. None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
+Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: originally none — agents were strictly sequential per group; since addressed by IP-009 — see gap #1 below) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`; since addressed by IP-008 — see gap #2 below). A third, structural risk is that **everything runs in one process**, so a watchdog restart kills in-flight agent runs, radio transcription, and movie processing together. None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
 
 ## What Shade gets right
 
@@ -18,13 +18,18 @@ Shade's core pipeline — channel connectors → `Message` → `MessageLoop` →
 
 ## Gaps against the goal
 
-### 1. Sub-agents working together (the big one)
+### 1. Sub-agents working together (the big one) — ✅ addressed (IP-009)
 
-There is no multi-agent layer. `GroupQueue` runs one agent per group at a time; "collaboration" is limited to whatever the Claude Agent SDK does inside a single turn. There is no durable task board, no worker identity, no way for a long job to be decomposed, claimed, retried, or survive a process restart.
+*Original gap:* there was no multi-agent layer. `GroupQueue` ran one agent per group at a time; "collaboration" was limited to whatever the Claude Agent SDK did inside a single turn. There was no durable task board, no worker identity, no way for a long job to be decomposed, claimed, retried, or survive a process restart.
 
-Hermes's answer, worth copying nearly wholesale: a **Kanban task model** — durable tasks with states, worker heartbeats, reclaim of tasks from dead workers, zombie detection, per-task retry budgets, and an output-verification gate — plus `delegate_task(background=true)` for spawning concurrent background workers. Shade already has the primitives (Mongo models, `TaskRunLog`, the underused `@shade/worker` package, edge-agent heartbeat code that could be generalized to workers).
+Hermes's answer, worth copying nearly wholesale: a **Kanban task model** — durable tasks with states, worker heartbeats, reclaim of tasks from dead workers, zombie detection, per-task retry budgets, and an output-verification gate — plus `delegate_task(background=true)` for spawning concurrent background workers. Shade already had the primitives (Mongo models, `TaskRunLog`, edge-agent heartbeat code that could be generalized to workers).
 
-**Recommendation:** add a `Task` model (decomposable, claimable, heartbeated) and turn `@shade/worker` into an agent worker pool that claims tasks. Expose `delegate_task` / `list_tasks`-style MCP tools so the orchestrator agent can fan work out. In the near term, enable Claude Agent SDK subagents inside `DirectAgentRunner` for intra-turn parallelism — it's the cheapest 80%.
+**Shipped as IP-009** (see `docs/implementationPlans/Agent-Task-Board.md`), closely following the recommendation:
+1. A durable `AgentTask` board — claimable (atomic `findOneAndUpdate`, Mongo is the queue), heartbeated, reclaimed from dead workers, with per-task retry budgets (`attempts`/`maxAttempts`) and cancellation (`cancelRequested`, honored between heartbeats).
+2. An in-process `TaskWorkerService` worker pool (`AppConfig.taskWorker`: enabled/concurrency/poll/heartbeat/stale/timeout) that runs board tasks through `DirectAgentRunner` outside GroupQueue; every attempt is audited in `TaskRunLog` (`trigger: "delegated"`).
+3. `delegate_task` / `get_task_result` / `list_agent_tasks` / `cancel_agent_task` MCP tools (one-level depth limit; optional `deliverResult` posts to the group channel) plus a system-prompt delegation block, and Claude Agent SDK subagents enabled in `DirectAgentRunner` (`agent.enableSubagents`) for intra-turn parallelism.
+
+*Still future:* out-of-process/remote workers and the HTTP claim protocol (→ IP-010), delegation trees/DAGs, cross-group tasks, and Hermes's output-verification ("hallucination gate") step.
 
 ### 2. Memory and learning — ✅ addressed (IP-008)
 
@@ -64,7 +69,7 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 | Dimension | Shade | Hermes |
 |---|---|---|
 | Cron agents | ✅ Same design (task → agent turn), Mongo-backed, audited | ✅ Fresh isolated session per job, 60s tick, deliver-to-any-channel |
-| Sub-agents | ❌ None (sequential per group) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
+| Sub-agents | ✅ Durable AgentTask board w/ heartbeats & reclaim + in-process worker pool + SDK subagents (IP-009) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
 | Memory/learning | ✅ Curated memory docs (global/group/USER.md) + message text search + self-authored skills (IP-008) | ✅ Curated memory docs + FTS session search + self-authored skills |
 | Channels | 5 (Slack, iMessage, email, webhook, edge) | 22 (incl. Telegram, WhatsApp, Signal, Discord…) |
 | iMessage | ✅ Local edge agent (private) | ⚠️ Third-party hosted relay (Photon Spectrum) |
@@ -85,7 +90,7 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 Priority order for closing the gap:
 
 1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort. ✅ Shipped as IP-008.
-2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock.
+2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock. ✅ Shipped as IP-009 (in-process worker pool; out-of-process execution → IP-010).
 3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius.
 4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing).
 

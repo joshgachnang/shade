@@ -44,6 +44,38 @@ describe("AppConfig richResponses + maps additions", () => {
     expect(doc.memory.historySearchLimit).toBe(3);
   });
 
+  test("loadAppConfig returns taskWorker defaults", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.taskWorker).toBeDefined();
+    expect(cfg.taskWorker.enabled).toBe(true);
+    expect(cfg.taskWorker.concurrency).toBe(2);
+    expect(cfg.taskWorker.pollMs).toBe(5000);
+    expect(cfg.taskWorker.heartbeatMs).toBe(15000);
+    expect(cfg.taskWorker.staleMs).toBe(60000);
+    expect(cfg.taskWorker.taskTimeoutMs).toBe(900000);
+  });
+
+  test("strict: throw accepts explicit taskWorker values", async () => {
+    await AppConfig.deleteMany({});
+    const doc = await AppConfig.create({
+      taskWorker: {
+        enabled: false,
+        concurrency: 4,
+        pollMs: 1000,
+        heartbeatMs: 2000,
+        staleMs: 5000,
+        taskTimeoutMs: 60000,
+      },
+    });
+    expect(doc.taskWorker.enabled).toBe(false);
+    expect(doc.taskWorker.concurrency).toBe(4);
+    expect(doc.taskWorker.pollMs).toBe(1000);
+    expect(doc.taskWorker.heartbeatMs).toBe(2000);
+    expect(doc.taskWorker.staleMs).toBe(5000);
+    expect(doc.taskWorker.taskTimeoutMs).toBe(60000);
+  });
+
   test("cache invalidates on deleteMany so a stale doc is never saved", async () => {
     const original = await loadAppConfig();
     await AppConfig.deleteMany({});

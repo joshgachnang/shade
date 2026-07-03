@@ -6,6 +6,7 @@ import {loadAppConfig} from "../models/appConfig";
 import {memorySystemPromptBlock} from "./memoryPromptBlock";
 import {richResponseSystemPromptBlock} from "./responses/promptBlock";
 import {listSkills} from "./skills";
+import {taskBoardSystemPromptBlock} from "./taskBoardPromptBlock";
 
 const MEMORY_FILENAME = "CLAUDE.md";
 const SOUL_FILENAME = "SOUL.md";
@@ -173,6 +174,14 @@ export const buildSystemPrompt = async (groupFolder: string, fallback: string): 
         ].join("\n")
       );
     }
+  }
+
+  // Teach the agent when to delegate work to the task board.
+  const taskBoardBlock = taskBoardSystemPromptBlock({
+    enabled: appConfig.taskWorker?.enabled ?? true,
+  });
+  if (taskBoardBlock) {
+    parts.push(taskBoardBlock);
   }
 
   return parts.join("\n\n---\n\n");

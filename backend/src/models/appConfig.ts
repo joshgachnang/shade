@@ -84,6 +84,9 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       maxTurns: {type: Number, default: 50},
       progressIntervalMs: {type: Number, default: 30000},
       allowedTools: {type: [String], default: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]},
+      // Enables the Claude Agent SDK's native subagents (the Task tool) so a
+      // single turn can fan out short-lived parallel subagents.
+      enableSubagents: {type: Boolean, default: true},
     },
 
     memory: {
@@ -95,6 +98,21 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       maxSkillChars: {type: Number, default: 8000},
       // Maximum results returned by the search_history tool.
       historySearchLimit: {type: Number, default: 8},
+    },
+
+    taskWorker: {
+      // Master switch for the agent task board worker loop.
+      enabled: {type: Boolean, default: true},
+      // Maximum number of board tasks run concurrently by this process.
+      concurrency: {type: Number, default: 2},
+      // How often the worker polls for claimable tasks.
+      pollMs: {type: Number, default: 5000},
+      // Interval between heartbeat updates while a task is running.
+      heartbeatMs: {type: Number, default: 15000},
+      // Heartbeat older than this is considered stale and the task is reclaimed.
+      staleMs: {type: Number, default: 60000},
+      // Per-attempt execution timeout (15 min).
+      taskTimeoutMs: {type: Number, default: 900000},
     },
 
     apiKeys: {

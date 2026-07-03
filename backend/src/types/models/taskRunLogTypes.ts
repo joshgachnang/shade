@@ -4,7 +4,7 @@ import type {DefaultDoc, DefaultModel, DefaultStatics} from "./userTypes";
 export interface TaskRunLogFields {
   taskId?: mongoose.Types.ObjectId;
   groupId: mongoose.Types.ObjectId;
-  trigger: "scheduled" | "message" | "webhook" | "websocket" | "manual";
+  trigger: "scheduled" | "message" | "webhook" | "websocket" | "manual" | "delegated";
   classification: "public" | "internal" | "sensitive" | "critical";
   modelBackend: "claude" | "ollama" | "codex" | "gemini";
   modelName?: string;

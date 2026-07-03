@@ -34,6 +34,7 @@ Tool inputs are Zod-validated. Tools act by writing IPC files to `data/ipc/` (pi
 | Messaging | `send_message`, `respond_with_card` (RichResponse cards), `add_reaction`, `get_channel_history` |
 | Memory & skills | `search_history`, `update_memory`, `save_skill`, `list_skills`, `load_skill` |
 | Scheduling | `schedule_task`, `list_tasks`, `pause_task`, `resume_task`, `cancel_task` |
+| Task board (background delegation) | `delegate_task`, `get_task_result`, `list_agent_tasks`, `cancel_agent_task` |
 | Storage | `save_data`, `load_data`, `list_data`, `delete_data` |
 | Apple (macOS host) | `list_reminders`, `create_reminder`, `complete_reminder`, `delete_reminder`, `search_contacts`, `get_contact`, `match_contact`, `create_contact`, `update_contact`, `add_contact_context` |
 | Radio / trivia | `start_radio_stream`, `stop_radio_stream`, `list_radio_streams`, `toggle_transcription`, `toggle_trivia_monitor`, `trivia_monitor_status` |
@@ -41,13 +42,20 @@ Tool inputs are Zod-validated. Tools act by writing IPC files to `data/ipc/` (pi
 
 External MCP servers (subprocess, command-based) can be added via `AgentRunConfig.mcpServers` — e.g. the [media server](./backend.md#mcp-media-server-backendsrcmcpmediaserver) for Sonarr/Radarr/Plex/NZBGet.
 
+## Multi-agent work: task board & SDK subagents
+
+Two complementary mechanisms (IP-009):
+
+- **Task board (durable background work)**: `delegate_task` creates an `AgentTask` for the current group; the in-process `TaskWorkerService` claims and runs it as a separate agent session, concurrent with (and independent of) the conversation. Results come back via `get_task_result` polling or `deliverResult: true` (posted to the group channel). Tasks survive restarts (claim/heartbeat/reclaim — see [Orchestrator](./orchestrator.md#agent-task-board-servicestaskboardts-servicestaskworkerts)). Board tasks run with `isBoardTask` set in the MCP context and cannot delegate further (one-level depth rule). Gated by `AppConfig.taskWorker.enabled`, which also controls the delegation prompt block appended in `buildSystemPrompt`.
+- **SDK subagents (intra-turn parallelism)**: `AppConfig.agent.enableSubagents` (default true) adds the Claude Agent SDK's native `Task` tool to `allowedTools`, letting a single turn fan out short-lived parallel subagents (e.g. "check these 3 URLs in parallel"). These are ephemeral — they die with the turn — whereas board tasks are durable, retried, and auditable (`TaskRunLog`).
+
 ## Feature channels (software-building workflow)
 
 `create_feature` creates a dedicated Slack channel + `Group` with `featurePhase: "planning"` and `requiresTrigger: false` (every message triggers the agent). The planning phase runs the OpenAI planner with `/ip` workflow instructions pinned into the prompt; `/implement` hands off to the Claude SDK for implementation; `Feature` docs track step status (pending → in_progress → complete) surfaced in the frontend Features screen.
 
 ## Current limitations (as observed in code)
 
-- **No parallel sub-agents**: one agent per group at a time; "multi-agent" work must happen inside a single SDK turn (the SDK's own subagents) or as separately scheduled tasks. There is no cross-agent task board or worker pool.
+- **Multi-agent coordination is one level deep**: the task board (IP-009) provides durable background delegation and SDK subagents provide intra-turn parallelism, but delegated tasks cannot delegate further — no delegation trees, task dependencies/DAGs, or cross-group tasks. Execution is still in-process (out-of-process workers → IP-010).
 - **Model routing is coarse**: global/per-backend model selection; no per-group or per-task model routing beyond the feature-channel planner/implementor split.
 - **Email threading**: replies don't yet reconstruct reply-to from the inbound message.
 - **iMessage**: text-only (AppleScript can't send tapbacks/attachments reliably).
