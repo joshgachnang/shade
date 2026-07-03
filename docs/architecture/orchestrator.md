@@ -19,19 +19,20 @@ All connectors implement `ChannelConnector` (`channels/types.ts`).
 |---|---|---|
 | Slack | Socket Mode (`@slack/bolt`), real-time | Rich Block Kit cards, reactions, threads, message updates; per-channel bot/app tokens |
 | iMessage | chat.db SQLite poll (~5s) + AppleScript send | Text only; requires a macOS host (or an [edge agent](./edge-agents.md)) |
-| Email | IMAP poll (~30s, ImapFlow) + SMTP | Attachments supported outbound; reply-to threading incomplete (TODO in `email.ts`) |
+| Email | IMAP poll (~30s, ImapFlow) + SMTP | Attachments supported outbound; replies thread back to the most recent inbound sender (`In-Reply-To`/`References`/`Re:` from stored `metadata`, IP-011), falling back to the configured recipient when no inbound metadata exists |
 | Webhook | HTTP push | Inbound `WebhookSource` docs; outbound POST, responses ignored |
 | EdgeAgent | HTTP push/pull | Remote daemons push messages, pull queued commands |
 
 ## Scheduler (`services/scheduler.ts`)
 
-- Interval tick (default 5 min, `AppConfig.pollIntervals.scheduler`).
+- Adaptive tick (IP-011): a self-re-arming `setTimeout` chain. After each tick, the service queries `min(nextRunAt)` over active tasks and sleeps `clamp(nextRunAt - now, 5s, AppConfig.pollIntervals.scheduler)` — so `pollIntervals.scheduler` (default 5 min, re-read from config on each re-arm) is the *maximum* sleep, an empty board sleeps the max, and near-term tasks fire on time.
+- `wake()` cancels the pending sleep and ticks immediately (a wake during a tick is never lost). The gateway's IPC handlers call it when tasks are created, updated, or resumed (`schedule_task`/`resume_task`), so agent-created tasks fire promptly even from workers (IPC files flow to the gateway, ~one IPC-poll delay). Tasks created via admin CRUD don't wake the scheduler — they're picked up within one max interval.
 - Each tick: query `ScheduledTask` docs with `status: "active"`, compare `nextRunAt` (computed by `scheduleMath.ts`) to now.
 - Due task → by default a synthetic `Message` with the task's prompt pushed into GroupQueue with `metadata: {scheduledTaskId, scheduled: true}` — so a scheduled run is just a normal agent turn. With `AppConfig.scheduler.useTaskBoard` (default false, IP-010), the scheduler instead creates an `AgentTask {deliverResult: true, scheduledTaskId}` so the run executes via the task board — i.e. on a worker process (see below). Bookkeeping is identical in both modes, but board mode ignores group-queue busyness.
 - Bookkeeping: `lastRunAt`, `runCount`, next run computed; `once` tasks marked completed; every run recorded in `TaskRunLog` (trigger, duration, cost, result).
 - Schedule types: `cron` (cron expression), `interval` (ms), `once` (ISO date).
 - Agents create and manage tasks themselves via the `schedule_task` / `list_tasks` / `pause_task` / `resume_task` / `cancel_task` MCP tools.
-- Precision caveat: a task can fire up to one tick (~5 min) late.
+- Precision caveat: ~5 s worst case for tasks known when the sleep was armed (or created through a wake-calling path); a task created via admin CRUD can still land up to one max interval (~5 min) late. No sub-second precision.
 
 ## Agent task board (`services/taskBoard.ts`, `services/taskWorker.ts`)
 
@@ -48,7 +49,7 @@ Durable background delegation (IP-009, Hermes Kanban pattern). An agent turn can
 ## Background services (`services/`)
 
 - **RadioTranscriber** — ffmpeg tails a radio stream, Deepgram transcribes, transcripts batch into the DB and post to Slack; ACRCloud identifies songs; failed streams restart with exponential backoff.
-- **TriviaMonitor** — rolling 25-message transcript window through Claude Haiku to detect trivia questions; on the `[MUSIC_START]` sentinel, finalizes questions, saves to the trivia DB, posts to webhooks, and launches a Claude Sonnet research agent with web search (Brave + Exa + Tavily). `!trivia <question>` researches manually.
+- **TriviaMonitor** — rolling 25-message transcript window through the cheap auxiliary model (`AppConfig.agent.auxiliaryModel`, default Haiku; trivia-specific override via `models.detector`/`DETECTOR_MODEL`) to detect trivia questions; on the `[MUSIC_START]` sentinel, finalizes questions, saves to the trivia DB, posts to webhooks, and launches a Claude Sonnet research agent with web search (Brave + Exa + Tavily). `!trivia <question>` researches manually.
 - **PrWatcher** — polls GitHub PRs (`PrWatch` model), posts Slack notifications on state changes, can auto-review and fix merge conflicts with Claude.
 
 ## Gateway/worker split & process supervision

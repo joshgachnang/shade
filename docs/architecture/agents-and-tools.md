@@ -7,7 +7,8 @@
 The primary runtime. Calls `query()` from `@anthropic-ai/claude-agent-sdk`:
 
 - Attaches an **in-process MCP server** ("shade-orchestrator", built in `backend/src/agentRunner/mcpServer.ts`) exposing Shade's tool suite.
-- Model, timeout (~300s default), max resumes, and allowed tools come from `AppConfig` (`agent.allowedTools`, `orchestrator.*`); Shade MCP tools are auto-allowed via the `mcp__shade-orchestrator` wildcard.
+- **Model resolution (IP-011)**: `resolveModel()` picks `Group.modelConfig.defaultModel` (per-group override) → `AppConfig.agent.model` (global default; empty string = SDK default) → SDK default. The resolved model is passed to `query()` and is what gets logged to `AIRequest` and `TaskRunLog`. A second cheap tier, `AppConfig.agent.auxiliaryModel` (default `claude-haiku-4-5-20251001`), serves detection/summarization-style callers — currently the trivia detector.
+- Timeout (~300s default), max resumes, and allowed tools come from `AppConfig` (`agent.allowedTools`, `orchestrator.*`); Shade MCP tools are auto-allowed via the `mcp__shade-orchestrator` wildcard.
 - Streams results; on timeout, aborts via `AbortController` and records a `resumeSessionAt` checkpoint on the `AgentSession` so the next turn can resume (up to `AppConfig.orchestrator.maxResumes`).
 - Output is secret-redacted before returning to the orchestrator.
 
@@ -56,8 +57,8 @@ Two complementary mechanisms (IP-009):
 ## Current limitations (as observed in code)
 
 - **Multi-agent coordination is one level deep**: the task board (IP-009) provides durable background delegation and SDK subagents provide intra-turn parallelism, but delegated tasks cannot delegate further — no delegation trees, task dependencies/DAGs, or cross-group tasks. Execution is still in-process (out-of-process workers → IP-010).
-- **Model routing is coarse**: global/per-backend model selection; no per-group or per-task model routing beyond the feature-channel planner/implementor split.
-- **Email threading**: replies don't yet reconstruct reply-to from the inbound message.
+- **Model routing is per-group, not per-task**: `Group.modelConfig.defaultModel` and the `agent.model`/`agent.auxiliaryModel` global tiers (IP-011) cover group-level routing, but there are no per-task model overrides or automatic fallback chains (Hermes-style).
+- **Email threading is single-thread**: replies target the most recent inbound email in the group (IP-011); multiple interleaved conversations per group, HTML bodies, and inbound attachments are not handled.
 - **iMessage**: text-only (AppleScript can't send tapbacks/attachments reliably).
-- **Scheduler precision**: up to ~5 min late (tick interval).
+- **Scheduler precision**: second-level, not sub-second — the adaptive tick (IP-011) clamps sleeps to ≥5 s, and admin-CRUD-created tasks can still wait up to one max interval.
 - **Timeout/resume**: bounded by `maxResumes`; long tasks eventually fail rather than checkpoint indefinitely.

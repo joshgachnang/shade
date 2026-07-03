@@ -9,49 +9,158 @@ import {logError} from "../errors";
 import type {GroupQueue} from "../groupQueue";
 import {computeNextRun} from "./scheduleMath";
 
-const DEFAULT_TICK_MS = 5 * 60 * 1000;
+const DEFAULT_MAX_SLEEP_MS = 5 * 60 * 1000;
+const DEFAULT_MIN_SLEEP_MS = 5_000;
+
+export interface SchedulerServiceOptions {
+  /** Lower clamp for the adaptive sleep. Injectable so tests can use tiny real timeouts. */
+  minSleepMs?: number;
+}
 
 /**
- * Executes scheduled tasks. On each tick it queries active tasks and dispatches
- * any that are due to the group's agent runner (via the same GroupQueue used by
- * inbound chat messages). The tick itself is a single Mongo query — it consumes
- * no model tokens unless a task is actually due.
+ * Executes scheduled tasks. Runs a self-re-arming setTimeout chain: after each
+ * tick it queries the earliest `nextRunAt` over active tasks and sleeps
+ * `clamp(nextRunAt - now, minSleep, pollIntervals.scheduler)` — so near-term
+ * tasks ("remind me in 2 minutes") fire close to on time while an empty board
+ * only wakes at the configured max interval. Each tick is a single Mongo
+ * query — it consumes no model tokens unless a task is actually due. `wake()`
+ * short-circuits the pending sleep when a task is created or resumed.
  */
 export class SchedulerService {
-  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private timeoutId: ReturnType<typeof setTimeout> | null = null;
   private readonly groupQueue: GroupQueue;
+  private readonly minSleepMs: number;
   private ticking = false;
+  private running = false;
+  /** True while a tick+re-arm cycle is executing (prevents overlapping chains). */
+  private cycling = false;
+  /** Set by wake() when a cycle is already in flight so the wake isn't lost. */
+  private wakeRequested = false;
 
-  constructor(groupQueue: GroupQueue) {
+  constructor(groupQueue: GroupQueue, options: SchedulerServiceOptions = {}) {
     this.groupQueue = groupQueue;
+    this.minSleepMs = options.minSleepMs ?? DEFAULT_MIN_SLEEP_MS;
   }
 
   async start(): Promise<void> {
-    if (this.intervalId) {
+    if (this.running) {
       return;
     }
+    this.running = true;
 
     const appConfig = await loadAppConfig();
-    const interval = appConfig.pollIntervals.scheduler ?? DEFAULT_TICK_MS;
+    const maxSleep = appConfig.pollIntervals.scheduler ?? DEFAULT_MAX_SLEEP_MS;
+    logger.info(`Scheduler started (max interval: ${maxSleep}ms)`);
 
-    // Run an immediate tick so tasks already due on boot don't wait a full interval.
-    this.tick().catch((err) => logError("Scheduler initial tick error", err));
-
-    this.intervalId = setInterval(() => {
-      this.tick().catch((err) => {
-        logger.error(`Scheduler tick error: ${err}`);
-      });
-    }, interval);
-
-    logger.info(`Scheduler started (interval: ${interval}ms)`);
+    // Run an immediate tick so tasks already due on boot don't wait a full
+    // interval; the cycle then re-arms itself adaptively.
+    void this.runCycle();
   }
 
   stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-      logger.info("Scheduler stopped");
+    if (!this.running) {
+      return;
     }
+    this.running = false;
+    this.wakeRequested = false;
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+    logger.info("Scheduler stopped");
+  }
+
+  /**
+   * Cancel the pending sleep and tick immediately. Called when a task is
+   * created, resumed, or rescheduled so near-term tasks don't wait out the
+   * current sleep. No-op when the scheduler isn't running. Safe during an
+   * in-flight tick: the request is remembered and the cycle runs another
+   * tick before re-arming instead of dropping the wake.
+   */
+  wake(): void {
+    if (!this.running) {
+      return;
+    }
+    this.wakeRequested = true;
+    if (this.cycling) {
+      // The running cycle checks wakeRequested after its tick and loops.
+      return;
+    }
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+    void this.runCycle();
+  }
+
+  /**
+   * One tick+re-arm cycle. Loops while wakes arrive mid-cycle, then computes
+   * the adaptive sleep and arms the next timeout. Guarded so concurrent
+   * wake()/timer callbacks never produce overlapping chains.
+   */
+  private async runCycle(): Promise<void> {
+    if (this.cycling) {
+      return;
+    }
+    this.cycling = true;
+    try {
+      while (this.running) {
+        this.wakeRequested = false;
+        try {
+          await this.tick();
+        } catch (err) {
+          logError("Scheduler tick error", err);
+        }
+        if (!this.running) {
+          return;
+        }
+        if (this.wakeRequested) {
+          // A wake landed while we were ticking — run another tick now.
+          continue;
+        }
+
+        const sleepMs = await this.computeSleepMs();
+        if (this.wakeRequested) {
+          // A wake landed while we were computing the sleep — tick again.
+          continue;
+        }
+        if (!this.running) {
+          return;
+        }
+        logger.debug(`Scheduler re-armed (sleeping ${sleepMs}ms)`);
+        this.timeoutId = setTimeout(() => {
+          this.timeoutId = null;
+          void this.runCycle();
+        }, sleepMs);
+        return;
+      }
+    } finally {
+      this.cycling = false;
+    }
+  }
+
+  /**
+   * Adaptive sleep: time until the earliest active nextRunAt, clamped to
+   * [minSleepMs, pollIntervals.scheduler]. No active tasks (or none with a
+   * nextRunAt yet) → the max. Public so tests can assert the computation
+   * without arming real timers.
+   */
+  async computeSleepMs(): Promise<number> {
+    const appConfig = await loadAppConfig();
+    const maxSleep = appConfig.pollIntervals.scheduler ?? DEFAULT_MAX_SLEEP_MS;
+
+    const [nextTask] = await ScheduledTask.find(
+      {status: "active", nextRunAt: {$ne: null}},
+      {nextRunAt: 1}
+    )
+      .sort({nextRunAt: 1})
+      .limit(1);
+    if (!nextTask?.nextRunAt) {
+      return maxSleep;
+    }
+
+    const untilNext = nextTask.nextRunAt.getTime() - Date.now();
+    return Math.min(Math.max(untilNext, this.minSleepMs), maxSleep);
   }
 
   /** One scheduler pass: find due active tasks and dispatch them. */
@@ -221,3 +330,20 @@ export class SchedulerService {
     return true;
   }
 }
+
+/**
+ * Process-wide wake registry. Task-mutating code paths (the IPC handlers that
+ * create/resume/reschedule ScheduledTasks) call `wakeScheduler()` without
+ * needing a scheduler reference. The gateway registers its scheduler on start;
+ * processes without one (dedicated task workers, tests) get a safe no-op — the
+ * gateway's adaptive sleep still picks those tasks up within one max interval.
+ */
+let registeredScheduler: SchedulerService | null = null;
+
+export const registerSchedulerForWake = (scheduler: SchedulerService | null): void => {
+  registeredScheduler = scheduler;
+};
+
+export const wakeScheduler = (): void => {
+  registeredScheduler?.wake();
+};

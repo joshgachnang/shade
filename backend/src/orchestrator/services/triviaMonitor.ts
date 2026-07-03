@@ -42,7 +42,7 @@ import {
 } from "./trivia/prompts";
 
 const DEFAULT_DETECTOR_MODEL = "claude-haiku-4-5-20251001";
-const DEFAULT_ANSWERER_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_ANSWERER_MODEL = "claude-sonnet-4-6";
 const POLL_INTERVAL_MS = 3000;
 const TRANSCRIPT_WINDOW_SIZE = 25;
 const RESEARCH_MAX_TURNS = 8;
@@ -56,8 +56,27 @@ const PENDING_MAX_AGE_MS = 60 * 1000;
 
 // Resolve at call time so AppConfig-hydrated env vars take effect even though
 // this module is imported before server.ts calls hydrateEnvFromConfig().
-const getDetectorModel = (): string => process.env.DETECTOR_MODEL || DEFAULT_DETECTOR_MODEL;
 const getAnswererModel = (): string => process.env.ANSWERER_MODEL || DEFAULT_ANSWERER_MODEL;
+
+/**
+ * Resolves the trivia detector model, in precedence order:
+ * 1. DETECTOR_MODEL env var (boot-time override; also hydrated from
+ *    AppConfig `models.detector` when that field is set — restart required)
+ * 2. AppConfig `models.detector` (trivia-specific override, empty by default)
+ * 3. AppConfig `agent.auxiliaryModel` (the shared cheap-model tier)
+ * 4. compile-time default
+ * Blank/whitespace values count as unset.
+ */
+export const resolveDetectorModel = ({
+  envModel,
+  detectorModel,
+  auxiliaryModel,
+}: {
+  envModel?: string;
+  detectorModel?: string;
+  auxiliaryModel?: string;
+}): string =>
+  envModel?.trim() || detectorModel?.trim() || auxiliaryModel?.trim() || DEFAULT_DETECTOR_MODEL;
 
 // Lazy Anthropic client — construction reads ANTHROPIC_API_KEY synchronously,
 // but the key is hydrated from AppConfig after module load.
@@ -388,8 +407,13 @@ export class TriviaMonitor {
 
   private async detect(windowText: string): Promise<DetectionResult> {
     try {
+      const config = await loadAppConfig();
       const response = await getAnthropic().messages.create({
-        model: getDetectorModel(),
+        model: resolveDetectorModel({
+          envModel: process.env.DETECTOR_MODEL,
+          detectorModel: config.models.detector,
+          auxiliaryModel: config.agent.auxiliaryModel,
+        }),
         max_tokens: 2048,
         system: TRIVIA_DETECTOR_PROMPT,
         messages: [{role: "user", content: windowText}],

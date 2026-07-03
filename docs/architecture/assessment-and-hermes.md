@@ -61,11 +61,16 @@ Feature channels (OpenAI planner → `/implement` → Claude SDK) are a reasonab
 
 *Still future:* remote/multi-host workers (requires the HTTP claim protocol), moving movie processing and radio streaming out of the gateway, and interactive turns on workers.
 
-### Smaller items
+### Smaller items — ✅ addressed (IP-011)
 
-- Email reply threading is incomplete (`channels/email.ts` TODO) — replies don't go back to the original sender's thread.
-- Scheduler tick is 5 minutes; fine for digests, too coarse for "remind me in 2 minutes." Make the tick adaptive (sleep until `min(nextRunAt)`).
-- Model routing is coarse (global + feature-phase). Per-group/per-task model config plus a cheap "auxiliary" tier for summarization/detection (Shade already does this ad hoc: Haiku for trivia detection) could be formalized.
+*Original gap:* email reply threading was incomplete (`channels/email.ts` TODO) — replies didn't go back to the original sender's thread; the scheduler's fixed 5-minute tick was fine for digests but too coarse for "remind me in 2 minutes"; and model routing was coarse (global + feature-phase) — `Group.modelConfig` existed but wasn't honored, and the cheap-model tier existed only ad hoc (Haiku for trivia detection).
+
+**Shipped as IP-011** (see `docs/implementationPlans/Channel-Scheduler-Polish.md`), closely following the recommendation:
+1. **Email threading**: inbound emails persist `metadata: {emailMessageId, from, subject, references}`; replies resolve the most recent inbound email in the group and go back to its sender with `In-Reply-To`/`References` chains and a `Re:` subject, falling back to the configured recipient when no metadata exists (which also covers all pre-existing messages — no backfill).
+2. **Adaptive scheduler tick**: the fixed `setInterval` is now a self-re-arming `setTimeout` chain sleeping `clamp(min(nextRunAt) − now, 5 s, pollIntervals.scheduler)` (empty board → max), plus a `wake()` called from the IPC task-mutation handlers — so "remind me in 2 minutes" fires on time and a far-future task doesn't cause busy polling.
+3. **Model routing**: `Group.modelConfig.defaultModel` is honored end-to-end via `resolveModel()` (group override → new `AppConfig.agent.model` global default → SDK default), with the resolved model consistently logged to `AIRequest`/`TaskRunLog`; the cheap tier is formalized as `AppConfig.agent.auxiliaryModel` (default Haiku), adopted first by the trivia detector.
+
+*Still future:* full multi-thread email conversations (multiple interleaved threads per group), HTML bodies and inbound attachments, sub-second scheduler precision, and per-task model overrides / automatic fallback chains (Hermes-style).
 
 ## Shade vs. Hermes Agent, head to head
 
@@ -78,7 +83,7 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 | Memory/learning | ✅ Curated memory docs (global/group/USER.md) + message text search + self-authored skills (IP-008) | ✅ Curated memory docs + FTS session search + self-authored skills |
 | Channels | 5 (Slack, iMessage, email, webhook, edge) | 22 (incl. Telegram, WhatsApp, Signal, Discord…) |
 | iMessage | ✅ Local edge agent (private) | ⚠️ Third-party hosted relay (Photon Spectrum) |
-| Model support | Claude SDK + OpenAI planner, coarse routing | ~20 providers, local models, mid-session switching, fallbacks |
+| Model support | Claude SDK + OpenAI planner; per-group routing + auxiliary cheap tier (IP-011), no fallback chains | ~20 providers, local models, mid-session switching, fallbacks |
 | Ops/observability | ✅ AppConfig admin UI, cost ledger, run audit | ⚠️ Weaker: YAML/env config, no cost ledger |
 | Structured app state | ✅ Mongo models + generated typed SDK + custom frontend | ❌ Files + SQLite; generic dashboard |
 | Software building | ✅ Feature channels, PR watcher, movie/radio verticals | ⚠️ Generic terminal/coding tools; no PR workflow |
@@ -97,7 +102,7 @@ Priority order for closing the gap:
 1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort. ✅ Shipped as IP-008.
 2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock. ✅ Shipped as IP-009 (in-process worker pool; out-of-process execution shipped as IP-010).
 3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius. ✅ Shipped as IP-010 (same-host worker processes; remote workers still future).
-4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing).
+4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing). ✅ Shipped as IP-011.
 
 ## Sources
 

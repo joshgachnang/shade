@@ -8,6 +8,7 @@ import type {ChannelManager} from "../channels/manager";
 import {logError} from "../errors";
 import {buildSystemPrompt, ensureGroupDirectory} from "../memory";
 import {formatOutboundMessage} from "../router";
+import {resolveModel} from "../runners/direct";
 import type {AgentRunner} from "../runners/types";
 import {
   claimNextTask,
@@ -237,7 +238,10 @@ export class TaskWorkerService {
       trigger: "delegated",
       classification: "internal",
       modelBackend: group.modelConfig.defaultBackend || "claude",
-      modelName: group.modelConfig.defaultModel,
+      modelName: resolveModel({
+        groupModel: group.modelConfig.defaultModel,
+        globalModel: appConfig.agent.model,
+      }),
       status: "running",
       prompt: task.prompt,
       startedAt,

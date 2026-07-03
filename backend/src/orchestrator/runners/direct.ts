@@ -45,6 +45,24 @@ export const buildAllowedTools = ({
   return allowedTools;
 };
 
+/**
+ * Resolves the model passed to the Agent SDK's query():
+ * - the per-group override (Group.modelConfig.defaultModel, threaded through
+ *   AgentRunConfig.modelName by GroupQueue/TaskWorker) wins
+ * - otherwise the global default (AppConfig agent.model)
+ * - undefined when neither is set (blank/whitespace counts as unset), letting
+ *   the SDK fall back to its own default model
+ */
+export const resolveModel = ({
+  groupModel,
+  globalModel,
+}: {
+  groupModel?: string;
+  globalModel?: string;
+}): string | undefined => {
+  return groupModel?.trim() || globalModel?.trim() || undefined;
+};
+
 export class DirectAgentRunner implements AgentRunner {
   private activeAgents = new Map<string, ActiveAgent>();
 
@@ -114,6 +132,11 @@ export class DirectAgentRunner implements AgentRunner {
       let costUsd: number | undefined;
       let lastProgressAt = 0;
 
+      const model = resolveModel({
+        groupModel: config.modelName,
+        globalModel: appConfig.agent.model,
+      });
+
       const queryOptions: Parameters<typeof query>[0] = {
         prompt: config.prompt,
         options: {
@@ -126,6 +149,7 @@ export class DirectAgentRunner implements AgentRunner {
           abortController,
           maxTurns: appConfig.agent.maxTurns,
           mcpServers,
+          ...(model ? {model} : {}),
           ...(config.resume && config.resumeSessionAt ? {resume: config.resumeSessionAt} : {}),
         },
       };
@@ -136,7 +160,7 @@ export class DirectAgentRunner implements AgentRunner {
       );
 
       logger.info(
-        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${config.groupFolder}, model=${config.modelName ?? "default"}`
+        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${config.groupFolder}, model=${model ?? "sdk-default"}`
       );
 
       const stream = query(queryOptions);

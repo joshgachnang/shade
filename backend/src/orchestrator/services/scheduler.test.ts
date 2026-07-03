@@ -6,7 +6,7 @@ import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import {ScheduledTask} from "../../models/scheduledTask";
 import type {GroupQueue} from "../groupQueue";
-import {SchedulerService} from "./scheduler";
+import {registerSchedulerForWake, SchedulerService, wakeScheduler} from "./scheduler";
 
 // The `scheduler.useTaskBoard` AppConfig field ships separately (IP-010 Task
 // 2.1 config half). Flag-on tests are skipped until the schema field exists —
@@ -59,9 +59,45 @@ const setUseTaskBoard = async (value: boolean) => {
   await reloadAppConfig();
 };
 
+let originalSchedulerInterval: number | null = null;
+
+const setSchedulerInterval = async (ms: number) => {
+  if (originalSchedulerInterval === null) {
+    const config = await loadAppConfig();
+    originalSchedulerInterval = config.pollIntervals.scheduler;
+  }
+  await AppConfig.findOneAndUpdate({}, {$set: {"pollIntervals.scheduler": ms}});
+  await reloadAppConfig();
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll a predicate with real (small) timers — bun's fake timers only cover Date. */
+const waitFor = async (
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 3000
+): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) {
+      return true;
+    }
+    await sleep(25);
+  }
+  return predicate();
+};
+
 afterEach(async () => {
+  registerSchedulerForWake(null);
   if (hasUseTaskBoardField) {
     await AppConfig.findOneAndUpdate({}, {$set: {"scheduler.useTaskBoard": false}});
+  }
+  if (originalSchedulerInterval !== null) {
+    await AppConfig.findOneAndUpdate(
+      {},
+      {$set: {"pollIntervals.scheduler": originalSchedulerInterval}}
+    );
+    originalSchedulerInterval = null;
   }
   await reloadAppConfig();
 
@@ -223,6 +259,148 @@ describe("SchedulerService", () => {
       expect(queue.enqueue).not.toHaveBeenCalled();
       const reloaded = await ScheduledTask.findExactlyOne({_id: task._id});
       expect(reloaded.runCount).toBe(1);
+    });
+  });
+
+  describe("adaptive tick", () => {
+    test("near-term task shortens the computed sleep", async () => {
+      await setSchedulerInterval(60_000);
+      const group = await makeGroup();
+      await makeScheduledTask(group._id, {nextRunAt: new Date(Date.now() + 10_000)});
+      const scheduler = makeScheduler(makeQueue());
+
+      const sleepMs = await scheduler.computeSleepMs();
+
+      expect(sleepMs).toBeGreaterThan(5_000);
+      expect(sleepMs).toBeLessThanOrEqual(10_000);
+    });
+
+    test("empty board sleeps the configured max", async () => {
+      await setSchedulerInterval(60_000);
+      const scheduler = makeScheduler(makeQueue());
+
+      expect(await scheduler.computeSleepMs()).toBe(60_000);
+    });
+
+    test("past-due task clamps the sleep to the minimum", async () => {
+      await setSchedulerInterval(60_000);
+      const group = await makeGroup();
+      await makeScheduledTask(group._id); // nextRunAt in the past
+      const scheduler = makeScheduler(makeQueue());
+
+      expect(await scheduler.computeSleepMs()).toBe(5_000);
+    });
+
+    test("a max interval below the minimum clamp wins", async () => {
+      await setSchedulerInterval(200);
+      const group = await makeGroup();
+      await makeScheduledTask(group._id); // nextRunAt in the past
+      const scheduler = makeScheduler(makeQueue());
+
+      expect(await scheduler.computeSleepMs()).toBe(200);
+    });
+
+    test("wake() triggers an immediate tick instead of waiting out the sleep", async () => {
+      await setSchedulerInterval(60_000);
+      const queue = makeQueue();
+      const scheduler = makeScheduler(queue);
+
+      try {
+        await scheduler.start();
+        // Let the boot tick settle so the scheduler is asleep for 60s.
+        await sleep(50);
+        const group = await makeGroup();
+        await makeScheduledTask(group._id); // due now
+
+        scheduler.wake();
+
+        const fired = await waitFor(() => queue.enqueue.mock.calls.length > 0);
+        expect(fired).toBe(true);
+      } finally {
+        scheduler.stop();
+      }
+    });
+
+    test("wakeScheduler() no-ops unregistered and wakes the registered scheduler", async () => {
+      // Nothing registered — must be a safe no-op (worker processes hit this path).
+      expect(() => wakeScheduler()).not.toThrow();
+
+      await setSchedulerInterval(60_000);
+      const queue = makeQueue();
+      const scheduler = makeScheduler(queue);
+      registerSchedulerForWake(scheduler);
+
+      try {
+        await scheduler.start();
+        await sleep(50);
+        const group = await makeGroup();
+        await makeScheduledTask(group._id); // due now
+
+        wakeScheduler();
+
+        const fired = await waitFor(() => queue.enqueue.mock.calls.length > 0);
+        expect(fired).toBe(true);
+      } finally {
+        registerSchedulerForWake(null);
+        scheduler.stop();
+      }
+    });
+
+    test("wake() while stopped is a no-op", async () => {
+      const queue = makeQueue();
+      const scheduler = makeScheduler(queue);
+      const group = await makeGroup();
+      await makeScheduledTask(group._id); // due now
+
+      scheduler.wake(); // never started
+
+      await sleep(150);
+      expect(queue.enqueue).not.toHaveBeenCalled();
+      expect(await Message.countDocuments({groupId: group._id})).toBe(0);
+    });
+
+    test("stop() cancels the pending timeout", async () => {
+      await setSchedulerInterval(100);
+      const queue = makeQueue();
+      const scheduler = makeScheduler(queue);
+
+      await scheduler.start();
+      scheduler.stop();
+      // Let any in-flight boot tick drain before creating the task.
+      await sleep(50);
+      const group = await makeGroup();
+      await makeScheduledTask(group._id); // due now
+
+      await sleep(350); // several would-be 100ms intervals
+      expect(queue.enqueue).not.toHaveBeenCalled();
+      expect(await Message.countDocuments({groupId: group._id})).toBe(0);
+    });
+
+    test("a near-term once task fires without waiting for the max interval", async () => {
+      await setSchedulerInterval(60_000);
+      const queue = makeQueue();
+      // Injected min sleep keeps the test fast; production default is 5s.
+      const scheduler = new SchedulerService(queue as unknown as GroupQueue, {minSleepMs: 25});
+      const group = await makeGroup();
+      const due = new Date(Date.now() + 500);
+      const task = await makeScheduledTask(group._id, {
+        scheduleType: "once",
+        schedule: due.toISOString(),
+        nextRunAt: due,
+      });
+
+      try {
+        await scheduler.start();
+
+        const fired = await waitFor(async () => {
+          const reloaded = await ScheduledTask.findExactlyOne({_id: task._id});
+          return reloaded.status === "completed";
+        });
+        expect(fired).toBe(true);
+        expect(queue.enqueue).toHaveBeenCalledTimes(1);
+      } finally {
+        scheduler.stop();
+      }
     });
   });
 });

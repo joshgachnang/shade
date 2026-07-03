@@ -81,6 +81,14 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     },
 
     agent: {
+      // Global default Anthropic model for agent runs. Per-group overrides
+      // (Group.modelConfig.defaultModel) take precedence. Empty string falls
+      // back to the Agent SDK's built-in default model.
+      model: {type: String, default: ""},
+      // Cheap/fast model tier for auxiliary work (detection, classification,
+      // summarization). Consumed by the trivia detector; other lightweight
+      // consumers should adopt it instead of hardcoding a model name.
+      auxiliaryModel: {type: String, default: "claude-haiku-4-5-20251001"},
       maxTurns: {type: Number, default: 50},
       progressIntervalMs: {type: Number, default: 30000},
       allowedTools: {type: [String], default: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]},
@@ -145,8 +153,10 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     },
 
     models: {
-      answerer: {type: String, default: "claude-sonnet-4-20250514"},
-      detector: {type: String, default: "claude-haiku-4-5-20251001"},
+      answerer: {type: String, default: "claude-sonnet-4-6"},
+      // Trivia detector model override. Empty string falls back to
+      // agent.auxiliaryModel (the shared cheap-model tier).
+      detector: {type: String, default: ""},
       // OpenAI model used to drive the /ip planning conversation inside
       // feature Slack channels. Implementation is still handed off to the
       // Claude Agent SDK once the plan is approved.

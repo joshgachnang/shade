@@ -32,6 +32,10 @@ export interface AppConfigOrchestrator {
 }
 
 export interface AppConfigAgent {
+  /** Global default agent model; empty string = Agent SDK default. */
+  model: string;
+  /** Cheap/fast model tier for auxiliary work (e.g. trivia detection). */
+  auxiliaryModel: string;
   maxTurns: number;
   progressIntervalMs: number;
   allowedTools: string[];

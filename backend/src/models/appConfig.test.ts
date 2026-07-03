@@ -129,3 +129,43 @@ describe("AppConfig gateway/worker split additions (IP-010)", () => {
     expect(doc.taskWorker.taskTimeoutMs).toBe(900000);
   });
 });
+
+describe("AppConfig agent model tiers (IP-011)", () => {
+  afterEach(async () => {
+    // Leave a fresh default config behind so other suites see pristine state.
+    await AppConfig.deleteMany({});
+    await reloadAppConfig();
+  });
+
+  test("agent.auxiliaryModel defaults to the cheap Haiku tier", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.agent.auxiliaryModel).toBe("claude-haiku-4-5-20251001");
+  });
+
+  test("agent.model defaults to empty string (Agent SDK default)", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.agent.model).toBe("");
+  });
+
+  test("models.detector defaults to empty string, deferring to agent.auxiliaryModel", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.models.detector).toBe("");
+  });
+
+  test("strict: throw accepts explicit model tier values", async () => {
+    await AppConfig.deleteMany({});
+    const doc = await AppConfig.create({
+      agent: {model: "claude-opus-4-6", auxiliaryModel: "claude-haiku-4-5-20251001"},
+      models: {detector: "claude-haiku-4-5-20251001"},
+    });
+    expect(doc.agent.model).toBe("claude-opus-4-6");
+    expect(doc.agent.auxiliaryModel).toBe("claude-haiku-4-5-20251001");
+    expect(doc.models.detector).toBe("claude-haiku-4-5-20251001");
+    // Sibling agent defaults still apply when only the models are set.
+    expect(doc.agent.maxTurns).toBe(50);
+    expect(doc.agent.enableSubagents).toBe(true);
+  });
+});

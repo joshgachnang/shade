@@ -15,7 +15,7 @@ import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
-import {SchedulerService} from "./services/scheduler";
+import {registerSchedulerForWake, SchedulerService} from "./services/scheduler";
 import {TaskWorkerService} from "./services/taskWorker";
 import {TriviaMonitor} from "./services/triviaMonitor";
 
@@ -288,8 +288,11 @@ export const startOrchestrator = async (
     logError("Trivia monitor start error (non-fatal)", err);
   }
 
-  // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks
+  // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks.
+  // Registering it for wake lets task-mutating IPC handlers (schedule_task /
+  // resume_task et al.) short-circuit the adaptive sleep immediately.
   const scheduler = new SchedulerService(groupQueue);
+  registerSchedulerForWake(scheduler);
   try {
     await scheduler.start();
   } catch (err) {
@@ -379,6 +382,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.ipcWatcher.stop();
   state.prWatcher.stop();
   state.triviaMonitor.stop();
+  registerSchedulerForWake(null);
   state.scheduler.stop();
   state.taskWorker.stop();
 

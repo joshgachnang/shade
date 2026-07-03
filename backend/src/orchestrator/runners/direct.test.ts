@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import {AppConfig, reloadAppConfig} from "../../models/appConfig";
-import {buildAllowedTools, SHADE_MCP_WILDCARD} from "./direct";
+import {buildAllowedTools, resolveModel, SHADE_MCP_WILDCARD} from "./direct";
 
 const CONFIGURED_DEFAULTS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"];
 
@@ -43,6 +43,66 @@ describe("buildAllowedTools", () => {
     expect(buildAllowedTools({configured: [], enableSubagents: false})).toEqual([
       SHADE_MCP_WILDCARD,
     ]);
+  });
+});
+
+describe("resolveModel", () => {
+  test("per-group override wins over the global default", () => {
+    expect(
+      resolveModel({groupModel: "claude-opus-4-6", globalModel: "claude-sonnet-4-20250514"})
+    ).toBe("claude-opus-4-6");
+  });
+
+  test("falls back to the global default when the group has no override", () => {
+    expect(resolveModel({groupModel: undefined, globalModel: "claude-sonnet-4-20250514"})).toBe(
+      "claude-sonnet-4-20250514"
+    );
+    expect(resolveModel({groupModel: "", globalModel: "claude-sonnet-4-20250514"})).toBe(
+      "claude-sonnet-4-20250514"
+    );
+  });
+
+  test("returns undefined when neither is set (SDK default)", () => {
+    expect(resolveModel({})).toBeUndefined();
+    expect(resolveModel({groupModel: "", globalModel: ""})).toBeUndefined();
+  });
+
+  test("treats whitespace-only values as unset", () => {
+    expect(resolveModel({groupModel: "   ", globalModel: "claude-sonnet-4-20250514"})).toBe(
+      "claude-sonnet-4-20250514"
+    );
+    expect(resolveModel({groupModel: "  ", globalModel: " "})).toBeUndefined();
+  });
+});
+
+describe("AppConfig agent.model", () => {
+  afterEach(async () => {
+    // Leave AppConfig in its default state for other test files.
+    await AppConfig.deleteMany({});
+    await reloadAppConfig();
+  });
+
+  test("defaults to empty string, resolving to the SDK default model", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.agent.model).toBe("");
+    expect(resolveModel({groupModel: undefined, globalModel: cfg.agent.model})).toBeUndefined();
+  });
+
+  test("a configured global model applies to groups without an override", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    cfg.set("agent.model", "claude-opus-4-6");
+    await cfg.save();
+
+    const reloaded = await reloadAppConfig();
+    expect(resolveModel({groupModel: undefined, globalModel: reloaded.agent.model})).toBe(
+      "claude-opus-4-6"
+    );
+    // A group-level override still wins over the configured global default.
+    expect(
+      resolveModel({groupModel: "claude-haiku-4-5-20251001", globalModel: reloaded.agent.model})
+    ).toBe("claude-haiku-4-5-20251001");
   });
 });
 
