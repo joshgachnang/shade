@@ -44,6 +44,15 @@ describe("AppConfig richResponses + maps additions", () => {
     expect(doc.memory.historySearchLimit).toBe(3);
   });
 
+  test("cache invalidates on deleteMany so a stale doc is never saved", async () => {
+    const original = await loadAppConfig();
+    await AppConfig.deleteMany({});
+    const fresh = await loadAppConfig();
+    expect(fresh._id.toString()).not.toBe(original._id.toString());
+    fresh.set("memory.enabled", false);
+    await fresh.save();
+  });
+
   test("cache invalidates on save", async () => {
     await AppConfig.deleteMany({});
     const original = await loadAppConfig();

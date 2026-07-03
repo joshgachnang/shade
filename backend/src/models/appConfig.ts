@@ -233,6 +233,13 @@ appConfigSchema.post("findOneAndUpdate", async (doc) => {
   }
 });
 
+// Deletes must also invalidate the cache — otherwise loadAppConfig() keeps
+// returning a document that no longer exists and any save() on it fails with
+// DocumentNotFoundError.
+appConfigSchema.post(["deleteOne", "deleteMany", "findOneAndDelete"], () => {
+  cachedConfig = null;
+});
+
 export const AppConfig = mongoose.model<AppConfigDocument, AppConfigModel>(
   "AppConfig",
   appConfigSchema

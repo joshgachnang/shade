@@ -4,7 +4,7 @@ import path from "node:path";
 import {DateTime} from "luxon";
 import mongoose from "mongoose";
 import {paths} from "../config";
-import {loadAppConfig} from "../models/appConfig";
+import {reloadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
 import {Group} from "../models/group";
 import {Message} from "../models/message";
@@ -55,7 +55,8 @@ const callTool = async (
 };
 
 const setMemoryConfig = async (patch: Record<string, unknown>): Promise<void> => {
-  const config = await loadAppConfig();
+  // reload, don't load: another test file may have deleted the cached doc.
+  const config = await reloadAppConfig();
   for (const [key, value] of Object.entries(patch)) {
     config.set(`memory.${key}`, value);
   }

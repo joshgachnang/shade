@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, test} from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {loadAppConfig} from "../models/appConfig";
+import {reloadAppConfig} from "../models/appConfig";
 import {
   applyMemoryUpdate,
   buildSystemPrompt,
@@ -171,7 +171,8 @@ describe("buildSystemPrompt", () => {
   const originalSkillsPath = paths.skills;
 
   const setMemoryEnabled = async (enabled: boolean): Promise<void> => {
-    const config = await loadAppConfig();
+    // reload, don't load: another test file may have deleted the cached doc.
+    const config = await reloadAppConfig();
     config.set("memory.enabled", enabled);
     await config.save();
   };
@@ -273,7 +274,7 @@ describe("buildSystemPrompt", () => {
     await seedMemoryFiles();
     await seedSkills();
     // Other test files may leave richResponses disabled in the shared config.
-    const config = await loadAppConfig();
+    const config = await reloadAppConfig();
     config.set("richResponses.enabled", true);
     await config.save();
 
