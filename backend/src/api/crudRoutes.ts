@@ -7,6 +7,7 @@ import {
 import type {Model} from "mongoose";
 import {
   AgentSession,
+  AgentTask,
   AIRequest,
   AppConfig,
   CalendarConfig,
@@ -118,6 +119,13 @@ const descriptors: CrudRouteDescriptor[] = [
     permissions: ADMIN_WRITES,
     queryFields: ["groupId", "taskId", "trigger", "status", "modelBackend"],
     sort: "-startedAt",
+  },
+  {
+    path: "/agentTasks",
+    model: AgentTask,
+    permissions: ADMIN_WRITES,
+    queryFields: ["groupId", "status", "workerId"],
+    sort: "-created",
   },
   {
     path: "/agentSessions",

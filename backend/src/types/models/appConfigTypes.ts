@@ -32,9 +32,35 @@ export interface AppConfigOrchestrator {
 }
 
 export interface AppConfigAgent {
+  /** Global default agent model; empty string = Agent SDK default. */
+  model: string;
+  /** Cheap/fast model tier for auxiliary work (e.g. trivia detection). */
+  auxiliaryModel: string;
   maxTurns: number;
   progressIntervalMs: number;
   allowedTools: string[];
+  enableSubagents: boolean;
+}
+
+export interface AppConfigMemory {
+  enabled: boolean;
+  maxFileChars: number;
+  maxSkillChars: number;
+  historySearchLimit: number;
+}
+
+export interface AppConfigTaskWorker {
+  enabled: boolean;
+  concurrency: number;
+  pollMs: number;
+  heartbeatMs: number;
+  staleMs: number;
+  taskTimeoutMs: number;
+  runInGateway: boolean;
+}
+
+export interface AppConfigScheduler {
+  useTaskBoard: boolean;
 }
 
 export interface AppConfigApiKeys {
@@ -149,6 +175,9 @@ export interface AppConfigFields {
   radioTranscriber: AppConfigRadioTranscriber;
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
+  memory: AppConfigMemory;
+  taskWorker: AppConfigTaskWorker;
+  scheduler: AppConfigScheduler;
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;

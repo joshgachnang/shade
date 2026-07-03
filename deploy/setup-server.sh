@@ -91,12 +91,14 @@ else
   echo "/opt/shade/package.json already exists, skipping"
 fi
 
-# --- Install systemd service ---
+# --- Install systemd services ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cp "$SCRIPT_DIR/shade-backend.service" /etc/systemd/system/shade-backend.service
+cp "$SCRIPT_DIR/shade-worker.service" /etc/systemd/system/shade-worker.service
 systemctl daemon-reload
 systemctl enable shade-backend
-echo "Systemd service installed and enabled"
+systemctl enable shade-worker
+echo "Systemd services installed and enabled"
 
 echo ""
 echo "=== Setup Complete ==="
@@ -104,5 +106,6 @@ echo ""
 echo "Next steps:"
 echo "  1. Edit /opt/shade/.env — add ANTHROPIC_API_KEY, TOKEN_SECRET, REFRESH_TOKEN_SECRET"
 echo "  2. Deploy: ./shade remote-deploy <host>"
-echo "  3. Start:  ssh <host> 'sudo systemctl start shade-backend'"
+echo "  3. Start:  ssh <host> 'sudo systemctl start shade-backend shade-worker'"
 echo "  4. Logs:   ssh <host> 'sudo journalctl -u shade-backend -f'"
+echo "             ssh <host> 'sudo journalctl -u shade-worker -f'"

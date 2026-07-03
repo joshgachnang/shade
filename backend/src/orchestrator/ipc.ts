@@ -6,6 +6,7 @@ import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
 import {ScheduledTask} from "../models/scheduledTask";
 import type {RichResponse} from "./responses/schema";
+import {wakeScheduler} from "./services/scheduler";
 
 export interface IpcMessage {
   type: "send_message";
@@ -395,6 +396,7 @@ export class IpcWatcher {
       groupId: data.groupId,
       ...taskData,
     });
+    wakeScheduler();
     logger.info(`IPC: created task for group ${data.groupId}`);
   }
 
@@ -403,6 +405,7 @@ export class IpcWatcher {
       return;
     }
     await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: data.data ?? {}});
+    wakeScheduler();
     logger.info(`IPC: updated task ${data.taskId}`);
   }
 
@@ -439,6 +442,10 @@ export class IpcWatcher {
       return;
     }
     await ScheduledTask.findByIdAndUpdate(data.taskId, {$set: {status}});
+    if (status === "active") {
+      // Resume: the task may be due sooner than the scheduler's current sleep.
+      wakeScheduler();
+    }
     logger.info(`IPC: set task ${data.taskId} to ${status}`);
   }
 }

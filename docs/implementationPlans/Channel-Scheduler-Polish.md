@@ -1,6 +1,6 @@
 # Implementation Plan: Channel & Scheduler Polish
 
-**Status:** Open
+**Status:** Pending Verification
 **Priority:** Medium
 **Effort:** Small batch (1-2 days)
 **IP:** IP-011
@@ -70,13 +70,13 @@ Three independent mini-phases; can land in any order as separate PRs.
 
 ### Phase 1: Email Reply Threading
 
-- [ ] **Task 1.1**: Store inbound email metadata
+- [x] **Task 1.1**: Store inbound email metadata
   - Description: In the email connector's inbound handler, persist `metadata: {emailMessageId, from, subject, references}` on the created Message (verify what's already stored; add what's missing).
   - Files: `backend/src/orchestrator/channels/email.ts`
   - Depends on: none
   - Acceptance: unit test: parsed inbound mail produces a Message with the four fields.
 
-- [ ] **Task 1.2**: Thread-aware outbound replies
+- [x] **Task 1.2**: Thread-aware outbound replies
   - Description: Resolve the TODO at `email.ts:334`: in `sendMessage`, find the most recent inbound Message in the group having `metadata.emailMessageId`; set `to` = its `from`, `inReplyTo` = its `emailMessageId`, `references` = its references + its id, subject = `Re: <subject>` (don't double-prefix). Fall back to current recipient when none found.
   - Files: `backend/src/orchestrator/channels/email.ts`, colocated test
   - Depends on: 1.1
@@ -84,13 +84,13 @@ Three independent mini-phases; can land in any order as separate PRs.
 
 ### Phase 2: Adaptive Scheduler Tick
 
-- [ ] **Task 2.1**: setTimeout-chain scheduler with `wake()`
+- [x] **Task 2.1**: setTimeout-chain scheduler with `wake()`
   - Description: In `SchedulerService`, replace `setInterval` with a self-re-arming `setTimeout`: after each tick, query `min(nextRunAt)` over active tasks and sleep `clamp(nextRunAt - now, 5_000, pollIntervals.scheduler)` (no active tasks → max). Add `wake()` that cancels the pending timeout and ticks immediately; keep the `ticking` reentrancy guard and `stop()` semantics.
   - Files: `backend/src/orchestrator/services/scheduler.ts`, colocated test
   - Depends on: none
   - Acceptance: unit tests with fake timers: near-term task shortens sleep; empty board sleeps max; `wake()` triggers immediate tick; `stop()` cancels cleanly.
 
-- [ ] **Task 2.2**: Wake on task mutation
+- [x] **Task 2.2**: Wake on task mutation
   - Description: Call `scheduler.wake()` from the IPC/MCP handlers that create, resume, or reschedule tasks (`schedule_task`, `resume_task` paths — wherever `handleCreateTask` etc. live in the IPC watcher).
   - Files: `backend/src/orchestrator/ipcWatcher.ts` (adjust to actual path), `backend/src/orchestrator/index.ts` (pass scheduler reference)
   - Depends on: 2.1
@@ -98,13 +98,13 @@ Three independent mini-phases; can land in any order as separate PRs.
 
 ### Phase 3: Model Routing
 
-- [ ] **Task 3.1**: Honor `Group.modelConfig` in `DirectAgentRunner`
+- [x] **Task 3.1**: Honor `Group.modelConfig` in `DirectAgentRunner`
   - Description: Verify/implement: the runner's model (and any maxTurns/timeout fields present in `modelConfig`) comes from the group's `modelConfig` when set, else AppConfig defaults. Ensure the chosen model is what gets logged to `AIRequest`.
   - Files: `backend/src/orchestrator/runners/direct.ts`, colocated test
   - Depends on: none
   - Acceptance: unit test: group with override → runner options carry it; without → global default.
 
-- [ ] **Task 3.2**: `agent.auxiliaryModel` config + trivia adoption
+- [x] **Task 3.2**: `agent.auxiliaryModel` config + trivia adoption
   - Description: Add the AppConfig field + types; trivia detector resolves `triviaMonitor` override ?? `agent.auxiliaryModel`.
   - Files: `backend/src/models/appConfig.ts`, `backend/src/types/models/appConfigTypes.ts`, `backend/src/orchestrator/services/triviaMonitor.ts`
   - Depends on: none

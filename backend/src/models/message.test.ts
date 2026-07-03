@@ -68,3 +68,34 @@ describe("Message richResponse fields", () => {
     expect(hasParentIndex).toBe(true);
   });
 });
+
+describe("Message content text index", () => {
+  test("content text index exists (sanity check via collection.indexInformation)", async () => {
+    await Message.init();
+    const indexes = await Message.collection.indexInformation();
+    expect(Object.keys(indexes)).toContain("content_text");
+  });
+
+  test("$text query returns matching messages scoped to a group", async () => {
+    await Message.init();
+    const {groupId, channelId} = await makeGroupAndChannel();
+    await Message.create({
+      groupId,
+      channelId,
+      sender: "alice",
+      content: "the plex server needs a restart tonight",
+      isFromBot: false,
+    });
+    await Message.create({
+      groupId,
+      channelId,
+      sender: "bob",
+      content: "unrelated chatter about dinner plans",
+      isFromBot: false,
+    });
+
+    const results = await Message.find({$text: {$search: "plex restart"}, groupId});
+    expect(results.length).toBe(1);
+    expect(results[0].content).toContain("plex");
+  });
+});

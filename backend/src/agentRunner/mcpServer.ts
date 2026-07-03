@@ -5,13 +5,25 @@ import path from "node:path";
 import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
+import {DateTime} from "luxon";
+import mongoose from "mongoose";
 import {z} from "zod";
+import {AgentTask} from "../models/agentTask";
 import {loadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
+import {Group} from "../models/group";
 import {Message} from "../models/message";
 import {RadioStream} from "../models/radioStream";
 import {ScheduledTask} from "../models/scheduledTask";
+import {
+  applyMemoryUpdate,
+  canWriteGlobalMemory,
+  getGlobalMemoryPath,
+  getGroupMemoryPath,
+  getUserProfilePath,
+} from "../orchestrator/memory";
 import {RichResponse} from "../orchestrator/responses/schema";
+import {listSkills, loadSkill, saveSkill} from "../orchestrator/skills";
 import {
   addShadeContext,
   createContact,
@@ -24,7 +36,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-interface McpContext {
+export interface McpContext {
   groupId: string;
   channelId: string;
   ipcDir: string;
@@ -36,6 +48,12 @@ interface McpContext {
   agentRunId?: string;
   /** Slack thread_ts to use when replying. Falls back to messageTs when omitted by the runner. */
   threadTs?: string;
+  /**
+   * True when this run executes an AgentTask from the task board (set by
+   * TaskWorkerService via AgentRunConfig.isBoardTask). Used by delegate_task
+   * to enforce the one-level delegation rule.
+   */
+  isBoardTask?: boolean;
 }
 
 const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Promise<string> => {
@@ -51,7 +69,20 @@ const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Prom
   return fileId;
 };
 
-const buildTools = (ctx: McpContext) => {
+const MEMORY_DISABLED_TEXT = "Memory features are disabled";
+const TASK_BOARD_DISABLED_TEXT = "The task board is disabled";
+
+const AGENT_TASK_STATUSES = [
+  "pending",
+  "claimed",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+// Exported for tests; production code should use createShadeMcpServer.
+export const buildTools = (ctx: McpContext) => {
   const sendMessageTool = tool(
     "send_message",
     "Send a message to a channel. Use this to respond to users or communicate with other groups.",
@@ -290,6 +321,225 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
+  // --- Agent task board tools (background delegation, IP-009) ---
+
+  const delegateTaskTool = tool(
+    "delegate_task",
+    "Delegate an independent subtask to a background agent via the task board. The task runs asynchronously with its own agent session — use this for work that takes more than a minute or that the user wants done in the background. Returns the task id: poll get_task_result to retrieve the output, or set deliverResult to have the result posted to this group's channel on completion.",
+    {
+      title: z.string().describe("Short human-readable task title"),
+      prompt: z
+        .string()
+        .describe(
+          "Complete, self-contained instructions for the background agent (it cannot see this conversation)"
+        ),
+      priority: z
+        .number()
+        .optional()
+        .describe("Higher-priority tasks are claimed first (default 0)"),
+      deliverResult: z
+        .boolean()
+        .optional()
+        .describe(
+          "Post the result to this group's channel when the task completes (default false)"
+        ),
+    },
+    async (args) => {
+      try {
+        const taskWorker = (await loadAppConfig()).taskWorker;
+        if (taskWorker?.enabled === false) {
+          return {content: [{type: "text" as const, text: TASK_BOARD_DISABLED_TEXT}]};
+        }
+        if (ctx.isBoardTask) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: this run is itself a delegated board task, and board tasks cannot delegate further (delegation is limited to one level to prevent runaway fan-out). Do the work directly in this run instead.",
+              },
+            ],
+          };
+        }
+
+        const task = await AgentTask.create({
+          groupId: ctx.groupId,
+          title: args.title,
+          prompt: args.prompt,
+          priority: args.priority ?? 0,
+          deliverResult: args.deliverResult ?? false,
+        });
+        logger.info(
+          `delegate_task: created board task "${args.title}" (${task._id}) for group ${ctx.groupId}`
+        );
+
+        const deliveryNote = args.deliverResult
+          ? "The result will also be posted to this group's channel when it finishes."
+          : "Poll get_task_result with this id to check status and retrieve the output (or delegate with deliverResult=true to have results messaged to the group).";
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Task ${task._id} ("${args.title}") created — running in background. ${deliveryNote}`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error delegating task: ${msg}`}]};
+      }
+    }
+  );
+
+  const getTaskResultTool = tool(
+    "get_task_result",
+    "Get the current status of a delegated background task by id. Completed tasks include their result; failed tasks include the error and attempt count.",
+    {
+      taskId: z.string().describe("The AgentTask id returned by delegate_task"),
+    },
+    async (args) => {
+      try {
+        if (!mongoose.Types.ObjectId.isValid(args.taskId)) {
+          return {content: [{type: "text" as const, text: `Task "${args.taskId}" not found.`}]};
+        }
+        const task = await AgentTask.findOneOrNone({_id: args.taskId, groupId: ctx.groupId});
+        if (!task) {
+          return {content: [{type: "text" as const, text: `Task "${args.taskId}" not found.`}]};
+        }
+
+        const lines = [`Task ${task._id} ("${task.title}") status: ${task.status}`];
+        if (task.status === "completed") {
+          lines.push(`Result:\n${task.result ?? "(no result recorded)"}`);
+        } else if (task.status === "failed") {
+          lines.push(
+            `Error: ${task.error ?? "unknown"} (failed after ${task.attempts}/${task.maxAttempts} attempts)`
+          );
+        } else if (task.status === "cancelled") {
+          lines.push("The task was cancelled.");
+        } else {
+          lines.push("Still in progress — check again later.");
+        }
+        return {content: [{type: "text" as const, text: lines.join("\n")}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error getting task result: ${msg}`}]};
+      }
+    }
+  );
+
+  const listAgentTasksTool = tool(
+    "list_agent_tasks",
+    "List this group's delegated background tasks (task board), newest first. Optionally filter by status.",
+    {
+      status: z
+        .string()
+        .optional()
+        .describe("Filter by status: pending, claimed, running, completed, failed, or cancelled"),
+      limit: z.number().min(1).max(50).default(10).describe("Maximum tasks to return (default 10)"),
+    },
+    async (args) => {
+      try {
+        if (args.status && !(AGENT_TASK_STATUSES as readonly string[]).includes(args.status)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Invalid status "${args.status}". Valid statuses: ${AGENT_TASK_STATUSES.join(", ")}.`,
+              },
+            ],
+          };
+        }
+
+        const filter: Record<string, string> = {groupId: ctx.groupId};
+        if (args.status) {
+          filter.status = args.status;
+        }
+        const tasks = await AgentTask.find(filter)
+          .sort({created: -1})
+          .limit(args.limit ?? 10);
+
+        if (tasks.length === 0) {
+          return {content: [{type: "text" as const, text: "No tasks."}]};
+        }
+
+        const lines = tasks.map((t) => {
+          const age = DateTime.fromJSDate(t.created).toRelative() ?? "unknown age";
+          return `${t._id} | ${t.title} | ${t.status} | ${age}`;
+        });
+        return {content: [{type: "text" as const, text: lines.join("\n")}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error listing tasks: ${msg}`}]};
+      }
+    }
+  );
+
+  const cancelAgentTaskTool = tool(
+    "cancel_agent_task",
+    "Cancel a delegated background task. Pending tasks are cancelled immediately; claimed/running tasks are flagged for cancellation and the worker aborts them at its next heartbeat.",
+    {
+      taskId: z.string().describe("The AgentTask id to cancel"),
+    },
+    async (args) => {
+      try {
+        if (!mongoose.Types.ObjectId.isValid(args.taskId)) {
+          return {content: [{type: "text" as const, text: `Task "${args.taskId}" not found.`}]};
+        }
+
+        // Atomic transitions so a status change between read and write can't
+        // cancel a task that already started (or restart-cancel a finished one).
+        const cancelledPending = await AgentTask.findOneAndUpdate(
+          {_id: args.taskId, groupId: ctx.groupId, status: "pending"},
+          {$set: {status: "cancelled", error: "Cancelled by request", completedAt: new Date()}},
+          {new: true}
+        );
+        if (cancelledPending) {
+          logger.info(`cancel_agent_task: cancelled pending board task ${args.taskId}`);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Task ${args.taskId} ("${cancelledPending.title}") cancelled — it had not started yet.`,
+              },
+            ],
+          };
+        }
+
+        const flagged = await AgentTask.findOneAndUpdate(
+          {_id: args.taskId, groupId: ctx.groupId, status: {$in: ["claimed", "running"]}},
+          {$set: {cancelRequested: true}},
+          {new: true}
+        );
+        if (flagged) {
+          logger.info(`cancel_agent_task: requested cancellation of board task ${args.taskId}`);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Cancellation requested for task ${args.taskId} ("${flagged.title}") — it is currently ${flagged.status}; the worker will abort it at its next heartbeat.`,
+              },
+            ],
+          };
+        }
+
+        const task = await AgentTask.findOneOrNone({_id: args.taskId, groupId: ctx.groupId});
+        if (!task) {
+          return {content: [{type: "text" as const, text: `Task "${args.taskId}" not found.`}]};
+        }
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Task ${args.taskId} ("${task.title}") is already ${task.status} — nothing to cancel.`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error cancelling task: ${msg}`}]};
+      }
+    }
+  );
+
   const getWeatherTool = tool(
     "get_weather",
     "Get current weather information for a location using wttr.in free API. Returns temperature, conditions, humidity, wind, and more.",
@@ -405,6 +655,234 @@ const buildTools = (ctx: McpContext) => {
           },
         ],
       };
+    }
+  );
+
+  const searchHistoryTool = tool(
+    "search_history",
+    "Full-text search over this group's stored message history, reaching far beyond the recent context window (defaults to the last 90 days). Use this to recall older conversations before saying you don't know or don't remember something.",
+    {
+      query: z.string().describe("Full-text search query (keywords, not a regex)"),
+      days: z.number().min(1).default(90).describe("How many days back to search (default 90)"),
+      limit: z
+        .number()
+        .min(1)
+        .optional()
+        .describe("Maximum number of results (capped by server config)"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const configLimit = memory?.historySearchLimit ?? 8;
+        const limit = Math.min(args.limit ?? configLimit, configLimit);
+        const cutoff = DateTime.now()
+          .minus({days: args.days ?? 90})
+          .toJSDate();
+
+        const messages = await Message.find(
+          {
+            $text: {$search: args.query},
+            groupId: ctx.groupId,
+            created: {$gte: cutoff},
+          },
+          {score: {$meta: "textScore"}}
+        )
+          .sort({score: {$meta: "textScore"}})
+          .limit(limit);
+
+        if (messages.length === 0) {
+          return {content: [{type: "text" as const, text: "No matches."}]};
+        }
+
+        const lines = messages.map((msg) => {
+          const sender = msg.isFromBot ? "Shade" : msg.sender;
+          const time = DateTime.fromJSDate(msg.created).toISO();
+          return `[${time}] ${sender}: ${msg.content.slice(0, 300)}`;
+        });
+
+        return {content: [{type: "text" as const, text: lines.join("\n")}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error searching history: ${msg}`}]};
+      }
+    }
+  );
+
+  const updateMemoryTool = tool(
+    "update_memory",
+    "Update Shade's persistent memory files. Scopes: 'global' (shared across all groups; main group only), 'group' (this group's memory file), 'user' (the user profile USER.md; main group only). Mode 'append' adds to the existing file; 'replace' overwrites it. Content persists across sessions and is loaded into future system prompts.",
+    {
+      scope: z
+        .enum(["global", "group", "user"])
+        .describe("Which memory file to update: global, group, or user"),
+      content: z.string().describe("The memory content to write"),
+      mode: z
+        .enum(["replace", "append"])
+        .describe("'append' adds to the existing file; 'replace' overwrites it"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const group = await Group.findById(ctx.groupId);
+        if (!group) {
+          return {content: [{type: "text" as const, text: "Error: Group not found."}]};
+        }
+
+        const isMainGroup = group.isMain === true;
+        if (
+          (args.scope === "global" || args.scope === "user") &&
+          !canWriteGlobalMemory(isMainGroup)
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: only the main group can update ${args.scope} memory.`,
+              },
+            ],
+          };
+        }
+
+        let targetPath: string;
+        if (args.scope === "global") {
+          targetPath = getGlobalMemoryPath();
+        } else if (args.scope === "user") {
+          targetPath = getUserProfilePath();
+        } else {
+          targetPath = getGroupMemoryPath(group.folder);
+        }
+
+        const result = await applyMemoryUpdate({
+          filePath: targetPath,
+          content: args.content,
+          mode: args.mode,
+          maxChars: memory?.maxFileChars ?? 6000,
+        });
+
+        if (!result.ok) {
+          return {content: [{type: "text" as const, text: `Error: ${result.error}`}]};
+        }
+
+        logger.info(`update_memory: wrote ${args.scope} memory (${result.size} chars)`);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Memory updated (scope: ${args.scope}, ${result.size} chars).`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error updating memory: ${msg}`}]};
+      }
+    }
+  );
+
+  const saveSkillTool = tool(
+    "save_skill",
+    "Save a reusable skill to Shade's skills library. Skills are procedures you authored — save one after solving a novel multi-step problem so future sessions can reuse the approach instead of re-deriving it. Overwrites an existing skill of the same name.",
+    {
+      name: z
+        .string()
+        .describe(
+          'Kebab-case skill name: lowercase letters, digits, and hyphens (e.g. "check-plex-health")'
+        ),
+      description: z
+        .string()
+        .describe("One-line summary shown in the skills index (list_skills and the system prompt)"),
+      content: z.string().describe("The reusable procedure, as a markdown body"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const result = await saveSkill({
+          name: args.name,
+          description: args.description,
+          content: args.content,
+          maxChars: memory?.maxSkillChars ?? 8000,
+        });
+
+        if (!result.saved) {
+          return {content: [{type: "text" as const, text: `Error: ${result.error}`}]};
+        }
+
+        return {content: [{type: "text" as const, text: `Skill "${args.name}" saved.`}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error saving skill: ${msg}`}]};
+      }
+    }
+  );
+
+  const listSkillsTool = tool(
+    "list_skills",
+    "List saved skills (name and one-line description). Skills are reusable procedures you previously authored with save_skill. Check this before re-deriving a multi-step procedure, then call load_skill to get the full content.",
+    {},
+    async () => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const skills = await listSkills();
+        if (skills.length === 0) {
+          return {content: [{type: "text" as const, text: "No skills saved yet."}]};
+        }
+
+        const lines = skills.map((skill) => `${skill.name} — ${skill.description}`);
+        return {content: [{type: "text" as const, text: lines.join("\n")}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error listing skills: ${msg}`}]};
+      }
+    }
+  );
+
+  const loadSkillTool = tool(
+    "load_skill",
+    "Load the full content of a saved skill by name. Always load a skill before executing it — the skills index only shows names and descriptions.",
+    {
+      name: z.string().describe("The kebab-case name of the skill to load"),
+    },
+    async (args) => {
+      try {
+        const memory = (await loadAppConfig()).memory;
+        if (!(memory?.enabled ?? true)) {
+          return {content: [{type: "text" as const, text: MEMORY_DISABLED_TEXT}]};
+        }
+
+        const result = await loadSkill({name: args.name});
+        if (!result.found) {
+          const names = result.validNames?.length ? result.validNames.join(", ") : "(none)";
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Skill "${args.name}" not found. Valid skills: ${names}`,
+              },
+            ],
+          };
+        }
+
+        return {content: [{type: "text" as const, text: result.content ?? ""}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error loading skill: ${msg}`}]};
+      }
     }
   );
 
@@ -1234,8 +1712,17 @@ const buildTools = (ctx: McpContext) => {
     pauseTaskTool,
     resumeTaskTool,
     cancelTaskTool,
+    delegateTaskTool,
+    getTaskResultTool,
+    listAgentTasksTool,
+    cancelAgentTaskTool,
     getWeatherTool,
     getChannelHistoryTool,
+    searchHistoryTool,
+    updateMemoryTool,
+    saveSkillTool,
+    listSkillsTool,
+    loadSkillTool,
     saveDataTool,
     loadDataTool,
     listDataTool,

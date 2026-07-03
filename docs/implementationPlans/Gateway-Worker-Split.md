@@ -1,6 +1,6 @@
 # Implementation Plan: Gateway/Worker Process Split
 
-**Status:** Open
+**Status:** Pending Verification
 **Priority:** Medium
 **Effort:** Big batch (1-2 weeks)
 **IP:** IP-010
@@ -89,13 +89,13 @@ No data migrations.
 
 ### Phase 1: Worker Entrypoint
 
-- [ ] **Task 1.1**: `workerMain.ts` boot path
+- [x] **Task 1.1**: `workerMain.ts` boot path
   - Description: New entrypoint that reuses the gateway boot helpers: connect Mongo, `loadAppConfig()`, `hydrateEnvFromConfig()`, init filesystem paths, then start ONLY `TaskWorkerService` + the `/health` mini-app. Extract shared boot steps from `server.ts` into `backend/src/boot.ts` so both entrypoints call the same code. Add `"worker": "bun run src/workerMain.ts"` script to `backend/package.json`.
   - Files: `backend/src/workerMain.ts` (new), `backend/src/boot.ts` (new, extracted), `backend/src/server.ts` (use extracted helpers), `backend/package.json`
   - Depends on: IP-009 complete
   - Acceptance: `bun run worker` boots, claims a seeded pending `AgentTask`, completes it; `curl :4021/health` returns worker status; `bun run dev` (gateway) unaffected.
 
-- [ ] **Task 1.2**: Graceful shutdown + `runInGateway` flag
+- [x] **Task 1.2**: Graceful shutdown + `runInGateway` flag
   - Description: SIGTERM/SIGINT handler in the worker: stop claiming, wait for in-flight tasks up to `taskWorker.taskTimeoutMs` (then abort so reclaim handles it), exit 0. In `orchestrator/index.ts`, start `TaskWorkerService` only when `taskWorker.runInGateway` is true.
   - Files: `backend/src/workerMain.ts`, `backend/src/orchestrator/index.ts`, `backend/src/models/appConfig.ts`, `backend/src/types/models/appConfigTypes.ts`
   - Depends on: 1.1
@@ -103,7 +103,7 @@ No data migrations.
 
 ### Phase 2: Scheduler → Board
 
-- [ ] **Task 2.1**: Flag-gated board dispatch for scheduled tasks
+- [x] **Task 2.1**: Flag-gated board dispatch for scheduled tasks
   - Description: Add `scheduler.useTaskBoard` config + optional `scheduledTaskId` field on `AgentTask`. In `orchestrator/services/scheduler.ts`, when the flag is on, create `AgentTask {groupId, title: task.name, prompt: task.prompt, deliverResult: true, scheduledTaskId}` instead of the synthetic message; bookkeeping (`lastRunAt`, `runCount`, `nextRunAt`, once→completed) unchanged.
   - Files: `backend/src/orchestrator/services/scheduler.ts`, `backend/src/models/agentTask.ts`, `backend/src/types/models/agentTaskTypes.ts`, `backend/src/models/appConfig.ts`, `backend/src/types/models/appConfigTypes.ts`
   - Depends on: 1.1
@@ -111,13 +111,13 @@ No data migrations.
 
 ### Phase 3: Deploy
 
-- [ ] **Task 3.1**: systemd unit + setup script
+- [x] **Task 3.1**: systemd unit + setup script
   - Description: `deploy/shade-worker.service` mirroring `shade-backend.service` (ExecStart `bun run worker`, same user/env file/`SHADE_DATA_DIR`, `TimeoutStopSec` ≥ drain timeout); extend `deploy/setup-server.sh` to install/enable it.
   - Files: `deploy/shade-worker.service` (new), `deploy/setup-server.sh`
   - Depends on: 1.2
   - Acceptance: shellcheck-clean; unit file references only existing paths/env.
 
-- [ ] **Task 3.2**: Watchdog scope check
+- [x] **Task 3.2**: Watchdog scope check
   - Description: Verify `deploy/shade-watchdog.sh` restarts only `shade-backend.service`; add a comment stating workers are intentionally out of scope; add worker `/health` port to `config/shade-worker.env.example`.
   - Files: `deploy/shade-watchdog.sh`, `config/shade-worker.env.example`
   - Depends on: 3.1
@@ -125,13 +125,13 @@ No data migrations.
 
 ### Phase 4: Cutover & Observability
 
-- [ ] **Task 4.1**: Extend `systemStatus` admin script
+- [x] **Task 4.1**: Extend `systemStatus` admin script
   - Description: Add a workers section: distinct `workerId`s active in the last 5 min (from `AgentTask.heartbeatAt`), running/pending/failed counts.
   - Files: `backend/src/admin/scripts/systemStatus.ts` (adjust to actual path)
   - Depends on: 1.1
   - Acceptance: script output includes worker section; dry-run safe.
 
-- [ ] **Task 4.2**: Update architecture docs
+- [x] **Task 4.2**: Update architecture docs
   - Description: Update `docs/architecture/orchestrator.md` (process supervision section), `deployment.md` (worker service, rollout flags), and the assessment gap list.
   - Files: `docs/architecture/orchestrator.md`, `docs/architecture/deployment.md`, `docs/architecture/assessment-and-hermes.md`
   - Depends on: 2.1, 3.1

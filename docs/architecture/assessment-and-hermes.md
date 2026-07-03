@@ -6,7 +6,7 @@
 
 ## Verdict in one paragraph
 
-Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: there is none — agents are strictly sequential per group) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`). A third, structural risk is that **everything runs in one process**, so a watchdog restart kills in-flight agent runs, radio transcription, and movie processing together. None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
+Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: originally none — agents were strictly sequential per group; since addressed by IP-009 — see gap #1 below) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`; since addressed by IP-008 — see gap #2 below). A third, structural risk was that **everything ran in one process**, so a watchdog restart killed in-flight agent runs, radio transcription, and movie processing together (since addressed by IP-010 — see gap #4 below). None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
 
 ## What Shade gets right
 
@@ -18,24 +18,31 @@ Shade's core pipeline — channel connectors → `Message` → `MessageLoop` →
 
 ## Gaps against the goal
 
-### 1. Sub-agents working together (the big one)
+### 1. Sub-agents working together (the big one) — ✅ addressed (IP-009)
 
-There is no multi-agent layer. `GroupQueue` runs one agent per group at a time; "collaboration" is limited to whatever the Claude Agent SDK does inside a single turn. There is no durable task board, no worker identity, no way for a long job to be decomposed, claimed, retried, or survive a process restart.
+*Original gap:* there was no multi-agent layer. `GroupQueue` ran one agent per group at a time; "collaboration" was limited to whatever the Claude Agent SDK did inside a single turn. There was no durable task board, no worker identity, no way for a long job to be decomposed, claimed, retried, or survive a process restart.
 
-Hermes's answer, worth copying nearly wholesale: a **Kanban task model** — durable tasks with states, worker heartbeats, reclaim of tasks from dead workers, zombie detection, per-task retry budgets, and an output-verification gate — plus `delegate_task(background=true)` for spawning concurrent background workers. Shade already has the primitives (Mongo models, `TaskRunLog`, the underused `@shade/worker` package, edge-agent heartbeat code that could be generalized to workers).
+Hermes's answer, worth copying nearly wholesale: a **Kanban task model** — durable tasks with states, worker heartbeats, reclaim of tasks from dead workers, zombie detection, per-task retry budgets, and an output-verification gate — plus `delegate_task(background=true)` for spawning concurrent background workers. Shade already had the primitives (Mongo models, `TaskRunLog`, edge-agent heartbeat code that could be generalized to workers).
 
-**Recommendation:** add a `Task` model (decomposable, claimable, heartbeated) and turn `@shade/worker` into an agent worker pool that claims tasks. Expose `delegate_task` / `list_tasks`-style MCP tools so the orchestrator agent can fan work out. In the near term, enable Claude Agent SDK subagents inside `DirectAgentRunner` for intra-turn parallelism — it's the cheapest 80%.
+**Shipped as IP-009** (see `docs/implementationPlans/Agent-Task-Board.md`), closely following the recommendation:
+1. A durable `AgentTask` board — claimable (atomic `findOneAndUpdate`, Mongo is the queue), heartbeated, reclaimed from dead workers, with per-task retry budgets (`attempts`/`maxAttempts`) and cancellation (`cancelRequested`, honored between heartbeats).
+2. An in-process `TaskWorkerService` worker pool (`AppConfig.taskWorker`: enabled/concurrency/poll/heartbeat/stale/timeout) that runs board tasks through `DirectAgentRunner` outside GroupQueue; every attempt is audited in `TaskRunLog` (`trigger: "delegated"`).
+3. `delegate_task` / `get_task_result` / `list_agent_tasks` / `cancel_agent_task` MCP tools (one-level depth limit; optional `deliverResult` posts to the group channel) plus a system-prompt delegation block, and Claude Agent SDK subagents enabled in `DirectAgentRunner` (`agent.enableSubagents`) for intra-turn parallelism.
 
-### 2. Memory and learning
+*Still future:* remote workers and the HTTP claim protocol (out-of-process same-host workers shipped as IP-010 — see gap #4), delegation trees/DAGs, cross-group tasks, and Hermes's output-verification ("hallucination gate") step.
 
-Per-turn context is the last ~2 hours of messages plus a static group `CLAUDE.md` and manual `save_data` blobs. Nothing is learned across sessions; nothing older than 2 hours is retrievable; there is no model of the user.
+### 2. Memory and learning — ✅ addressed (IP-008)
+
+*Original gap:* per-turn context was the last ~2 hours of messages plus a static group `CLAUDE.md` and manual `save_data` blobs. Nothing was learned across sessions; nothing older than 2 hours was retrievable; there was no model of the user.
 
 Hermes's signature feature is the closed learning loop: small curated memory docs (`MEMORY.md` ~800 tokens, `USER.md` ~500 tokens), **full-text search over all past session transcripts** (SQLite FTS5 + LLM summarization at query time), and **agent-authored skill documents** persisted after hard problems. Nous claims large speedups from accumulated skills; directionally this matches what we'd expect.
 
-**Recommendation:** three incremental steps, all cheap in Shade's stack:
-1. A `search_history` MCP tool over `Message` + session transcripts (Mongo text index or Atlas Search — already used for frame analyses).
-2. Agent-curated `MEMORY.md` / `USER.md` per group (the group folder already exists; add a `update_memory` tool with a token budget).
-3. A skills directory the agent can write to after solving novel problems, loaded progressively into the system prompt.
+**Shipped as IP-008** (see `docs/implementationPlans/Agent-Memory-And-Learning.md`), closely following the recommendation:
+1. `search_history` MCP tool over a Mongo text index on `Message.content` (per group, default 90 days, capped by `AppConfig.memory.historySearchLimit`).
+2. Agent-curated memory via `update_memory` — global/group `CLAUDE.md` plus a global `USER.md` user profile (main-group-only writes for global/user), all char-budgeted and loaded into the system prompt.
+3. A global skills directory (`SHADE_DATA_DIR/skills/`) the agent writes with `save_skill` after solving novel problems, surfaced as a name + description index in the system prompt and loaded progressively via `list_skills` / `load_skill`. A memory prompt block teaches when to use each tool; `AppConfig.memory.enabled` gates it all.
+
+*Still future:* transcript-file (JSONL) search, embeddings/semantic search, per-group skills, and automatic post-task "should I save a skill?" reflection.
 
 ### 3. Software building
 
@@ -43,17 +50,27 @@ Feature channels (OpenAI planner → `/implement` → Claude SDK) are a reasonab
 
 **Recommendation:** run implementing-phase agents in git worktrees (or containers) via the worker pool from gap 1, so builds are isolated, parallelizable, and survive orchestrator restarts. Reconsider whether the OpenAI planner still earns its keep versus a second Claude configuration — it's the only reason there are two runner code paths.
 
-### 4. Process architecture
+### 4. Process architecture — ✅ addressed (IP-010)
 
-One process hosts the orchestrator, all channel connectors, ffmpeg radio streaming, movie processing, and every agent run. The external watchdog's restart is a blunt instrument: it kills healthy in-flight work to fix a stuck Slack socket.
+*Original gap:* one process hosted the orchestrator, all channel connectors, ffmpeg radio streaming, movie processing, and every agent run. The external watchdog's restart was a blunt instrument: it killed healthy in-flight work to fix a stuck Slack socket. The recommendation — Hermes's gateway-daemon vs. execution-backend split — was to keep orchestrator/channels in the main service and move agent execution to worker processes, so a gateway restart costs nothing in-flight.
 
-**Recommendation:** split along the seam that already exists — orchestrator/channels stay in the main service; agent execution and media pipelines move to `@shade/worker` processes. Then the watchdog restarting the gateway costs nothing in-flight. (This is Hermes's gateway-daemon vs. execution-backend split.)
+**Shipped as IP-010** (see `docs/implementationPlans/Gateway-Worker-Split.md`), closely following the recommendation:
+1. A second entrypoint, `backend/src/workerMain.ts` (`bun run worker`, deployed as `shade-worker.service`), sharing the gateway's boot path via `backend/src/boot.ts` and running `TaskWorkerService` against the same Mongo board — with a `/health` endpoint (`WORKER_PORT`, default 4021) and SIGTERM/SIGINT drain (finish in-flight tasks up to `taskTimeoutMs`, abort stragglers for stale-heartbeat reclaim).
+2. Cross-process result delivery through the filesystem: worker-run agents write `send_message` IPC files that the gateway's `IpcWatcher` delivers — results queue on disk across gateway restarts; no HTTP worker protocol needed on one host.
+3. A flag-gated, step-reversible rollout: `taskWorker.runInGateway` (default true) keeps the in-process pool until workers are deployed; `scheduler.useTaskBoard` (default false) routes scheduled runs through the board (`AgentTask {deliverResult: true, scheduledTaskId}`) so the long-running jobs land on workers. The watchdog restarts only the gateway (workers intentionally out of scope), and the `systemStatus` script shows active workers and board counts.
 
-### Smaller items
+*Still future:* remote/multi-host workers (requires the HTTP claim protocol), moving movie processing and radio streaming out of the gateway, and interactive turns on workers.
 
-- Email reply threading is incomplete (`channels/email.ts` TODO) — replies don't go back to the original sender's thread.
-- Scheduler tick is 5 minutes; fine for digests, too coarse for "remind me in 2 minutes." Make the tick adaptive (sleep until `min(nextRunAt)`).
-- Model routing is coarse (global + feature-phase). Per-group/per-task model config plus a cheap "auxiliary" tier for summarization/detection (Shade already does this ad hoc: Haiku for trivia detection) could be formalized.
+### Smaller items — ✅ addressed (IP-011)
+
+*Original gap:* email reply threading was incomplete (`channels/email.ts` TODO) — replies didn't go back to the original sender's thread; the scheduler's fixed 5-minute tick was fine for digests but too coarse for "remind me in 2 minutes"; and model routing was coarse (global + feature-phase) — `Group.modelConfig` existed but wasn't honored, and the cheap-model tier existed only ad hoc (Haiku for trivia detection).
+
+**Shipped as IP-011** (see `docs/implementationPlans/Channel-Scheduler-Polish.md`), closely following the recommendation:
+1. **Email threading**: inbound emails persist `metadata: {emailMessageId, from, subject, references}`; replies resolve the most recent inbound email in the group and go back to its sender with `In-Reply-To`/`References` chains and a `Re:` subject, falling back to the configured recipient when no metadata exists (which also covers all pre-existing messages — no backfill).
+2. **Adaptive scheduler tick**: the fixed `setInterval` is now a self-re-arming `setTimeout` chain sleeping `clamp(min(nextRunAt) − now, 5 s, pollIntervals.scheduler)` (empty board → max), plus a `wake()` called from the IPC task-mutation handlers — so "remind me in 2 minutes" fires on time and a far-future task doesn't cause busy polling.
+3. **Model routing**: `Group.modelConfig.defaultModel` is honored end-to-end via `resolveModel()` (group override → new `AppConfig.agent.model` global default → SDK default), with the resolved model consistently logged to `AIRequest`/`TaskRunLog`; the cheap tier is formalized as `AppConfig.agent.auxiliaryModel` (default Haiku), adopted first by the trivia detector.
+
+*Still future:* full multi-thread email conversations (multiple interleaved threads per group), HTML bodies and inbound attachments, sub-second scheduler precision, and per-task model overrides / automatic fallback chains (Hermes-style).
 
 ## Shade vs. Hermes Agent, head to head
 
@@ -62,11 +79,11 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 | Dimension | Shade | Hermes |
 |---|---|---|
 | Cron agents | ✅ Same design (task → agent turn), Mongo-backed, audited | ✅ Fresh isolated session per job, 60s tick, deliver-to-any-channel |
-| Sub-agents | ❌ None (sequential per group) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
-| Memory/learning | ⚠️ 2h window + static CLAUDE.md + save_data | ✅ Curated memory docs + FTS session search + self-authored skills |
+| Sub-agents | ✅ Durable AgentTask board w/ heartbeats & reclaim + worker processes + SDK subagents (IP-009/IP-010) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
+| Memory/learning | ✅ Curated memory docs (global/group/USER.md) + message text search + self-authored skills (IP-008) | ✅ Curated memory docs + FTS session search + self-authored skills |
 | Channels | 5 (Slack, iMessage, email, webhook, edge) | 22 (incl. Telegram, WhatsApp, Signal, Discord…) |
 | iMessage | ✅ Local edge agent (private) | ⚠️ Third-party hosted relay (Photon Spectrum) |
-| Model support | Claude SDK + OpenAI planner, coarse routing | ~20 providers, local models, mid-session switching, fallbacks |
+| Model support | Claude SDK + OpenAI planner; per-group routing + auxiliary cheap tier (IP-011), no fallback chains | ~20 providers, local models, mid-session switching, fallbacks |
 | Ops/observability | ✅ AppConfig admin UI, cost ledger, run audit | ⚠️ Weaker: YAML/env config, no cost ledger |
 | Structured app state | ✅ Mongo models + generated typed SDK + custom frontend | ❌ Files + SQLite; generic dashboard |
 | Software building | ✅ Feature channels, PR watcher, movie/radio verticals | ⚠️ Generic terminal/coding tools; no PR workflow |
@@ -82,10 +99,10 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 
 Priority order for closing the gap:
 
-1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort.
-2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock.
-3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius.
-4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing).
+1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort. ✅ Shipped as IP-008.
+2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock. ✅ Shipped as IP-009 (in-process worker pool; out-of-process execution shipped as IP-010).
+3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius. ✅ Shipped as IP-010 (same-host worker processes; remote workers still future).
+4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing). ✅ Shipped as IP-011.
 
 ## Sources
 

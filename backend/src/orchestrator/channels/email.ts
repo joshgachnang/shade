@@ -4,10 +4,12 @@ import type {ParsedMail} from "mailparser";
 import {simpleParser} from "mailparser";
 import type {Transporter} from "nodemailer";
 import nodemailer from "nodemailer";
+import {Group} from "../../models/group";
+import {Message} from "../../models/message";
 import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
 import {BaseChannelConnector} from "./baseConnector";
-import type {ConnectorFactory} from "./types";
+import type {ConnectorFactory, InboundMessage} from "./types";
 
 interface EmailChannelConfig {
   imapHost: string;
@@ -73,6 +75,90 @@ const formatSender = (parsed: ParsedMail): {name: string; address: string} => {
   return {
     name: from?.name || from?.address || "unknown",
     address: from?.address || "unknown",
+  };
+};
+
+/**
+ * Normalize a References value (mailparser yields string | string[] | undefined,
+ * and stored metadata is untyped) into a clean string array.
+ */
+const normalizeReferences = (references: unknown): string[] => {
+  if (Array.isArray(references)) {
+    return references.filter((ref): ref is string => typeof ref === "string" && ref.length > 0);
+  }
+  if (typeof references === "string" && references.length > 0) {
+    return [references];
+  }
+  return [];
+};
+
+/**
+ * Build a reply subject, prefixing `Re: ` unless the subject already has a
+ * Re: prefix (case-insensitive).
+ */
+const buildReplySubject = (subject: string | undefined): string | undefined => {
+  if (!subject) {
+    return undefined;
+  }
+  if (/^\s*re:/i.test(subject)) {
+    return subject;
+  }
+  return `Re: ${subject}`;
+};
+
+/**
+ * Resolved threading target for an outbound reply, derived from the most
+ * recent inbound email message in the group.
+ */
+interface EmailThreadTarget {
+  to: string;
+  subject?: string;
+  inReplyTo: string;
+  references: string[];
+}
+
+/**
+ * Build the InboundMessage payload (including threading metadata persisted on
+ * the Message document) from a parsed inbound email. Exported for tests.
+ */
+export const buildInboundEmailMessage = (parsed: ParsedMail, uid: number): InboundMessage => {
+  const sender = formatSender(parsed);
+  const content = extractContent(parsed);
+  const threadId = extractThreadId(parsed);
+
+  const toAddresses = parsed.to
+    ? Array.isArray(parsed.to)
+      ? parsed.to.map((a) => a.text)
+      : [parsed.to.text]
+    : [];
+  const ccAddresses = parsed.cc
+    ? Array.isArray(parsed.cc)
+      ? parsed.cc.map((a) => a.text)
+      : [parsed.cc.text]
+    : [];
+
+  return {
+    externalId: parsed.messageId || `uid-${uid}`,
+    sender: sender.name,
+    senderExternalId: sender.address,
+    content,
+    groupExternalId: threadId,
+    metadata: {
+      subject: parsed.subject,
+      messageId: parsed.messageId,
+      // Canonical key used by sendMessage to resolve reply threading.
+      emailMessageId: parsed.messageId,
+      inReplyTo: parsed.inReplyTo,
+      references: normalizeReferences(parsed.references),
+      threadId,
+      from: sender.address,
+      to: toAddresses,
+      cc: ccAddresses,
+      date: parsed.date?.toISOString(),
+      uid,
+      hasAttachments: (parsed.attachments?.length || 0) > 0,
+      attachmentCount: parsed.attachments?.length || 0,
+    },
   };
 };
 
@@ -205,46 +291,13 @@ export class EmailChannelConnector extends BaseChannelConnector {
 
           try {
             const parsed: ParsedMail = await simpleParser(msg.source);
-            const sender = formatSender(parsed);
-            const content = extractContent(parsed);
-            const threadId = extractThreadId(parsed);
+            const inbound = buildInboundEmailMessage(parsed, msg.uid);
 
             logger.debug(
-              `Email from ${sender.address}: "${parsed.subject}" (thread: ${threadId.substring(0, 40)})`
+              `Email from ${inbound.senderExternalId}: "${parsed.subject}" (thread: ${inbound.groupExternalId.substring(0, 40)})`
             );
 
-            const toAddresses = parsed.to
-              ? Array.isArray(parsed.to)
-                ? parsed.to.map((a) => a.text)
-                : [parsed.to.text]
-              : [];
-            const ccAddresses = parsed.cc
-              ? Array.isArray(parsed.cc)
-                ? parsed.cc.map((a) => a.text)
-                : [parsed.cc.text]
-              : [];
-
-            await this.messageHandler({
-              externalId: parsed.messageId || `uid-${msg.uid}`,
-              sender: sender.name,
-              senderExternalId: sender.address,
-              content,
-              groupExternalId: threadId,
-              metadata: {
-                subject: parsed.subject,
-                messageId: parsed.messageId,
-                inReplyTo: parsed.inReplyTo,
-                references: parsed.references,
-                threadId,
-                from: sender.address,
-                to: toAddresses,
-                cc: ccAddresses,
-                date: parsed.date?.toISOString(),
-                uid: msg.uid,
-                hasAttachments: (parsed.attachments?.length || 0) > 0,
-                attachmentCount: parsed.attachments?.length || 0,
-              },
-            });
+            await this.messageHandler(inbound);
 
             // Mark as seen
             await client.messageFlagsAdd({uid: msg.uid}, ["\\Seen"]);
@@ -296,6 +349,53 @@ export class EmailChannelConnector extends BaseChannelConnector {
     logger.info(`Email channel "${this.channelDoc.name}" disconnected`);
   }
 
+  /**
+   * Find the most recent inbound email Message in the group and derive reply
+   * threading (recipient, In-Reply-To, References, Re: subject) from its
+   * stored metadata. Returns null when the group or a threadable message
+   * can't be found, in which case callers fall back to a direct send.
+   */
+  private async resolveThreadTarget(groupExternalId: string): Promise<EmailThreadTarget | null> {
+    const group = await Group.findOneOrNone({
+      channelId: this.channelDoc._id,
+      externalId: groupExternalId,
+    });
+    if (!group) {
+      return null;
+    }
+
+    const [lastInbound] = await Message.find({
+      groupId: group._id,
+      isFromBot: false,
+      "metadata.emailMessageId": {$exists: true, $ne: null},
+    })
+      .sort({created: -1, _id: -1})
+      .limit(1);
+    if (!lastInbound) {
+      return null;
+    }
+
+    const meta = (lastInbound.metadata ?? {}) as Record<string, unknown>;
+    const emailMessageId = typeof meta.emailMessageId === "string" ? meta.emailMessageId : "";
+    const from = typeof meta.from === "string" ? meta.from : "";
+    if (!emailMessageId || !from.includes("@")) {
+      return null;
+    }
+
+    // References for the reply = the original chain plus the message we're replying to.
+    const references = normalizeReferences(meta.references);
+    if (!references.includes(emailMessageId)) {
+      references.push(emailMessageId);
+    }
+
+    return {
+      to: from,
+      subject: buildReplySubject(typeof meta.subject === "string" ? meta.subject : undefined),
+      inReplyTo: emailMessageId,
+      references,
+    };
+  }
+
   async sendMessage(groupExternalId: string, content: string): Promise<void> {
     if (!this.smtpTransport) {
       throw new Error("SMTP transport not initialized");
@@ -303,21 +403,34 @@ export class EmailChannelConnector extends BaseChannelConnector {
 
     const {user} = this.config;
 
-    // groupExternalId is a thread ID (Message-ID of the root email).
-    // We need to look up the actual recipient from stored message metadata.
-    // For now, we need the recipient address passed in the content or stored in the group.
-    // The ChannelManager resolves groupExternalId from the Group model,
-    // so we need to figure out the recipient.
-    //
-    // Convention: groupExternalId for email threads is the root Message-ID.
-    // The Group's externalId stores this. The actual "to" address needs to come
-    // from the group metadata or the last message in the thread.
-    //
-    // For direct sends (not thread replies), groupExternalId can be an email address.
+    // Prefer replying to the most recent inbound email in the group so the
+    // reply goes to the actual sender and threads in their mail client.
+    const threadTarget = await this.resolveThreadTarget(groupExternalId);
+    if (threadTarget) {
+      logger.debug(
+        `Email reply resolved thread target ${threadTarget.to} (In-Reply-To: ${threadTarget.inReplyTo})`
+      );
+      await this.smtpTransport.sendMail({
+        from: user,
+        to: threadTarget.to,
+        subject: threadTarget.subject,
+        inReplyTo: threadTarget.inReplyTo,
+        references: threadTarget.references,
+        text: content,
+      });
+      logger.debug(`Email reply sent to ${threadTarget.to} (${content.length} chars)`);
+      return;
+    }
+
+    // Fallback: no inbound email with threading metadata (e.g. a scheduled
+    // task's first outbound). For direct sends, groupExternalId can be an
+    // email address; thread IDs are wrapped in angle brackets.
     const isEmailAddress = groupExternalId.includes("@") && !groupExternalId.startsWith("<");
 
     if (isEmailAddress) {
-      // Direct send to an email address
+      logger.debug(
+        `Email thread target not resolved for ${groupExternalId} — falling back to direct send`
+      );
       await this.smtpTransport.sendMail({
         from: user,
         to: groupExternalId,
@@ -325,14 +438,9 @@ export class EmailChannelConnector extends BaseChannelConnector {
       });
       logger.debug(`Email sent to ${groupExternalId} (${content.length} chars)`);
     } else {
-      // Thread reply — we need to reconstruct the reply headers.
-      // The message metadata should have the recipient and subject stored by the group.
-      // For now, log a warning if we can't determine the recipient.
       logger.warn(
-        `Email thread reply to ${groupExternalId} — thread replies require recipient resolution from group metadata. Skipping send.`
+        `Email thread reply to ${groupExternalId} — no inbound email with threading metadata found and the external ID is not an address. Skipping send.`
       );
-      // TODO: Look up the last inbound message in this thread to get the reply-to address
-      // and reconstruct In-Reply-To/References headers for proper threading.
     }
   }
 

@@ -1,6 +1,6 @@
 # Implementation Plan: Agent Task Board & Worker Pool
 
-**Status:** Open
+**Status:** Pending Verification
 **Priority:** High
 **Effort:** Big batch (1-2 weeks)
 **IP:** IP-009
@@ -120,19 +120,19 @@ taskWorker: {
 
 ### Phase 1: Model & CRUD
 
-- [ ] **Task 1.1**: `AgentTask` model + types
+- [x] **Task 1.1**: `AgentTask` model + types
   - Description: Schema above with indexes; export from model/type barrels.
   - Files: `backend/src/models/agentTask.ts`, `backend/src/types/models/agentTaskTypes.ts`, `backend/src/models/index.ts`, `backend/src/types/models/index.ts`
   - Depends on: none
   - Acceptance: model unit test (create, status transitions, index presence); `bun run test` green.
 
-- [ ] **Task 1.2**: `taskWorker` AppConfig block
+- [x] **Task 1.2**: `taskWorker` AppConfig block
   - Description: Add config fields + types.
   - Files: `backend/src/models/appConfig.ts`, `backend/src/types/models/appConfigTypes.ts`
   - Depends on: none
   - Acceptance: defaults load via `loadAppConfig()`; editable in admin.
 
-- [ ] **Task 1.3**: CRUD route + admin registration + `TaskRunLog` trigger enum
+- [x] **Task 1.3**: CRUD route + admin registration + `TaskRunLog` trigger enum
   - Description: `/agentTasks` in `crudRoutes.ts` (admin write / auth read; query: groupId, status, workerId); register in `adminConfig.ts`; add `"delegated"` to the TaskRunLog trigger enum.
   - Files: `backend/src/api/crudRoutes.ts`, `backend/src/adminConfig.ts`, `backend/src/models/taskRunLog.ts`
   - Depends on: 1.1
@@ -140,19 +140,19 @@ taskWorker: {
 
 ### Phase 2: Worker Service
 
-- [ ] **Task 2.1**: Claim/reclaim primitives
+- [x] **Task 2.1**: Claim/reclaim primitives
   - Description: `backend/src/orchestrator/services/taskBoard.ts` — `claimNextTask(workerId)` (atomic `findOneAndUpdate` pending→claimed, sort `{priority: -1, created: 1}`), `heartbeatTask(taskId)`, `completeTask/failTask` (fail: attempts < maxAttempts → back to pending, else failed), `reclaimStaleTasks(staleMs)`.
   - Files: `backend/src/orchestrator/services/taskBoard.ts`, `backend/src/orchestrator/services/taskBoard.test.ts`
   - Depends on: 1.1
   - Acceptance: unit tests: two concurrent claims get different tasks; stale reclaim increments attempts; exhausted attempts → failed.
 
-- [ ] **Task 2.2**: `TaskWorkerService`
+- [x] **Task 2.2**: `TaskWorkerService`
   - Description: `backend/src/orchestrator/services/taskWorker.ts`, modeled on `scheduler.ts` (start/stop, interval tick, `ticking` guard). Each tick: `reclaimStaleTasks`, then claim while below `concurrency`. Per task: mark `running`, start heartbeat interval, execute via `DirectAgentRunner` with the group's context (build system prompt from group memory; the task `prompt` is the user prompt; honor `taskTimeoutMs` via AbortController), write `TaskRunLog`, `completeTask`/`failTask`, deliver result when `deliverResult` (via `ChannelManager.sendMessageToGroup`). Check the cancel flag between heartbeats.
   - Files: `backend/src/orchestrator/services/taskWorker.ts`, `backend/src/orchestrator/services/taskWorker.test.ts`
   - Depends on: 2.1, 1.2
   - Acceptance: unit test with a stubbed runner: happy path, failure→retry, timeout→abort, deliverResult sends through a stubbed ChannelManager.
 
-- [ ] **Task 2.3**: Wire service into orchestrator startup
+- [x] **Task 2.3**: Wire service into orchestrator startup
   - Description: Instantiate/start in `orchestrator/index.ts` behind `taskWorker.enabled`; stop on shutdown.
   - Files: `backend/src/orchestrator/index.ts`
   - Depends on: 2.2
@@ -160,13 +160,13 @@ taskWorker: {
 
 ### Phase 3: MCP Tools
 
-- [ ] **Task 3.1**: `delegate_task` + `get_task_result` + `list_agent_tasks` + `cancel_agent_task`
+- [x] **Task 3.1**: `delegate_task` + `get_task_result` + `list_agent_tasks` + `cancel_agent_task`
   - Description: Per the APIs table. Context must indicate whether the current run is a board task (thread a `isBoardTask` flag through `McpContext` from `TaskWorkerService` runs) to enforce the one-level rule.
   - Files: `backend/src/agentRunner/mcpServer.ts`, `backend/src/orchestrator/runners/direct.ts` (context flag)
   - Depends on: 2.2
   - Acceptance: unit tests for all four handlers incl. depth rejection and group scoping.
 
-- [ ] **Task 3.2**: Delegation prompt block
+- [x] **Task 3.2**: Delegation prompt block
   - Description: System-prompt guidance: use `delegate_task` for independent >1-minute subtasks or explicit "in the background" requests; poll or set `deliverResult`; don't delegate trivial lookups. Append in `buildSystemPrompt` when `taskWorker.enabled`.
   - Files: `backend/src/orchestrator/memory.ts` (or shared prompt-block module if IP-008 landed)
   - Depends on: 3.1
@@ -174,7 +174,7 @@ taskWorker: {
 
 ### Phase 4: SDK Subagents
 
-- [ ] **Task 4.1**: Enable Claude Agent SDK subagents in `DirectAgentRunner`
+- [x] **Task 4.1**: Enable Claude Agent SDK subagents in `DirectAgentRunner`
   - Description: Add `AppConfig.agent.enableSubagents` (default `true`); when set, include the SDK's agent/Task capability in the `query()` options and add `Task` to allowed tools so a single turn can fan out short-lived parallel subagents (complementary to the board: intra-turn vs. durable background).
   - Files: `backend/src/orchestrator/runners/direct.ts`, `backend/src/models/appConfig.ts`, `backend/src/types/models/appConfigTypes.ts`
   - Depends on: none (parallel to Phases 1–3)
@@ -182,7 +182,7 @@ taskWorker: {
 
 ### Phase 5: Docs
 
-- [ ] **Task 5.1**: Update architecture docs
+- [x] **Task 5.1**: Update architecture docs
   - Description: Add the task board to `docs/architecture/orchestrator.md` and `agents-and-tools.md` (limitations section update), note IP-010 seam.
   - Files: `docs/architecture/orchestrator.md`, `docs/architecture/agents-and-tools.md`
   - Depends on: 3.1

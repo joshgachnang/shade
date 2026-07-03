@@ -9,6 +9,7 @@ import type {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
+import {resolveModel} from "./runners/direct";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
 
 /** Regex matching `/implement` or `!implement` as a standalone command. */
@@ -212,7 +213,10 @@ export class GroupQueue {
       trigger: "message",
       classification: "internal",
       modelBackend: group.modelConfig.defaultBackend || "claude",
-      modelName: group.modelConfig.defaultModel,
+      modelName: resolveModel({
+        groupModel: group.modelConfig.defaultModel,
+        globalModel: appConfig.agent.model,
+      }),
       status: "running",
       prompt: isResume ? `[resume #${item.resumeCount}] ${message.content}` : message.content,
       startedAt,
@@ -452,7 +456,14 @@ export class GroupQueue {
 
     try {
       await AIRequest.create({
-        aiModel: group.modelConfig.defaultModel || "claude-sonnet-4-20250514",
+        // Log the same model the runner resolved (group override, else global
+        // default). "sdk-default" covers the no-override case, since aiModel
+        // is a required field and the SDK's default model id isn't knowable here.
+        aiModel:
+          resolveModel({
+            groupModel: group.modelConfig.defaultModel,
+            globalModel: appConfig.agent.model,
+          }) ?? "sdk-default",
         costUsd: result.costUsd,
         error: result.error,
         groupId: group._id,

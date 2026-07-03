@@ -16,14 +16,11 @@ import {OrchestratorPreviewPlugin} from "./api/orchestratorPreview";
 import {SearchPlugin} from "./api/search";
 import {RecordingsPlugin} from "./api/transcripts";
 import {TriviaMonitorPlugin} from "./api/triviaMonitor";
+import {boot} from "./boot";
 import {startHealthMonitor} from "./edge/healthMonitor";
-import {loadAppConfig} from "./models/appConfig";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
-import {hydrateEnvFromConfig} from "./utils/configEnv";
-import {connectToMongoDB} from "./utils/database";
-import {initDirectories} from "./utils/directories";
 
 const isDeployed = process.env.NODE_ENV === "production";
 
@@ -41,18 +38,11 @@ process.on("unhandledRejection", (reason, _promise) => {
 export const start = async (skipListen = false) => {
   logger.info("Shade server starting up...");
 
-  // Boot sequence:
-  //   1. Connect to Mongo (needs MONGO_URI env — cannot live in AppConfig).
-  //   2. Load AppConfig and hydrate `process.env` from it, so anything that
-  //      reads env below (TerrenoApp JWT setup, filesystem paths, public URL)
-  //      sees values sourced from AppConfig as fallbacks.
-  //   3. Init filesystem dirs (uses hydrated SHADE_DATA_DIR via config.ts).
+  // Boot sequence (shared with the worker entrypoint via boot.ts):
+  //   1-3. Mongo connect, AppConfig load + env hydration, filesystem dirs.
   //   4. Build the HTTP app and orchestrator.
   // TerrenoApp logs "Listening on port N" once the HTTP server binds.
-  await connectToMongoDB();
-  const appConfig = await loadAppConfig();
-  hydrateEnvFromConfig(appConfig);
-  await initDirectories();
+  await boot();
 
   if (!isDeployed) {
     try {

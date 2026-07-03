@@ -1,4 +1,5 @@
 export * from "./agentSessionTypes";
+export * from "./agentTaskTypes";
 export * from "./aiRequestTypes";
 export * from "./appConfigTypes";
 export * from "./calendarConfigTypes";

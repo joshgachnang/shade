@@ -12,6 +12,11 @@
 # each restart and an hourly cap so a hard failure (e.g. revoked token) doesn't
 # become a restart storm.
 #
+# Scope: this watchdog restarts ONLY shade-backend.service. shade-worker is
+# intentionally NOT watchdog-managed — workers drain in-flight tasks gracefully
+# on SIGTERM, and tasks orphaned by a dead worker are reclaimed from the board
+# via stale-heartbeat sweep, so a forced restart would only kill healthy work.
+#
 # Runs as a long-lived systemd service (see shade-watchdog.service). All config
 # is via environment variables with the defaults below.
 set -uo pipefail

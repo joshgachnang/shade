@@ -15,6 +15,54 @@ interface ActiveAgent {
   startedAt: number;
 }
 
+// Every Shade-owned MCP tool must be auto-allowed, otherwise the agent
+// silently drops the tool call and we end up with hallucinated "Done"
+// responses (e.g. a feature channel that was never actually created).
+// `mcp__<server>` whitelists every tool exposed by that MCP server.
+export const SHADE_MCP_WILDCARD = "mcp__shade-orchestrator";
+
+/**
+ * Computes the allowedTools list passed to the Agent SDK's query():
+ * - always includes the configured tools plus the Shade MCP wildcard
+ * - when `enableSubagents` is set, includes the SDK's native "Task" tool so a
+ *   single turn can fan out short-lived parallel subagents
+ * - never duplicates entries already present in the configured list
+ */
+export const buildAllowedTools = ({
+  configured,
+  enableSubagents,
+}: {
+  configured: string[];
+  enableSubagents: boolean;
+}): string[] => {
+  const allowedTools = [...configured];
+  if (!allowedTools.includes(SHADE_MCP_WILDCARD)) {
+    allowedTools.push(SHADE_MCP_WILDCARD);
+  }
+  if (enableSubagents && !allowedTools.includes("Task")) {
+    allowedTools.push("Task");
+  }
+  return allowedTools;
+};
+
+/**
+ * Resolves the model passed to the Agent SDK's query():
+ * - the per-group override (Group.modelConfig.defaultModel, threaded through
+ *   AgentRunConfig.modelName by GroupQueue/TaskWorker) wins
+ * - otherwise the global default (AppConfig agent.model)
+ * - undefined when neither is set (blank/whitespace counts as unset), letting
+ *   the SDK fall back to its own default model
+ */
+export const resolveModel = ({
+  groupModel,
+  globalModel,
+}: {
+  groupModel?: string;
+  globalModel?: string;
+}): string | undefined => {
+  return groupModel?.trim() || globalModel?.trim() || undefined;
+};
+
 export class DirectAgentRunner implements AgentRunner {
   private activeAgents = new Map<string, ActiveAgent>();
 
@@ -60,18 +108,14 @@ export class DirectAgentRunner implements AgentRunner {
         senderExternalId: config.senderExternalId,
         agentRunId: config.sessionId,
         threadTs: config.messageTs,
+        isBoardTask: config.isBoardTask,
       });
       mcpServers["shade-orchestrator"] = shadeMcp;
 
-      // Every Shade-owned MCP tool must be auto-allowed, otherwise the agent
-      // silently drops the tool call and we end up with hallucinated "Done"
-      // responses (e.g. a feature channel that was never actually created).
-      // `mcp__<server>` whitelists every tool exposed by that MCP server.
-      const shadeMcpWildcard = "mcp__shade-orchestrator";
-      const configuredAllowedTools = appConfig.agent.allowedTools ?? [];
-      const allowedTools = configuredAllowedTools.includes(shadeMcpWildcard)
-        ? configuredAllowedTools
-        : [...configuredAllowedTools, shadeMcpWildcard];
+      const allowedTools = buildAllowedTools({
+        configured: appConfig.agent.allowedTools ?? [],
+        enableSubagents: appConfig.agent.enableSubagents !== false,
+      });
 
       // Add any additional external MCP servers
       if (config.mcpServers) {
@@ -88,6 +132,11 @@ export class DirectAgentRunner implements AgentRunner {
       let costUsd: number | undefined;
       let lastProgressAt = 0;
 
+      const model = resolveModel({
+        groupModel: config.modelName,
+        globalModel: appConfig.agent.model,
+      });
+
       const queryOptions: Parameters<typeof query>[0] = {
         prompt: config.prompt,
         options: {
@@ -100,6 +149,7 @@ export class DirectAgentRunner implements AgentRunner {
           abortController,
           maxTurns: appConfig.agent.maxTurns,
           mcpServers,
+          ...(model ? {model} : {}),
           ...(config.resume && config.resumeSessionAt ? {resume: config.resumeSessionAt} : {}),
         },
       };
@@ -110,7 +160,7 @@ export class DirectAgentRunner implements AgentRunner {
       );
 
       logger.info(
-        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${config.groupFolder}, model=${config.modelName ?? "default"}`
+        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${config.groupFolder}, model=${model ?? "sdk-default"}`
       );
 
       const stream = query(queryOptions);

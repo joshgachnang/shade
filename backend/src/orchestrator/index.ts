@@ -1,6 +1,8 @@
 import {logger} from "@terreno/api";
 import type express from "express";
+import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
+import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
@@ -13,7 +15,8 @@ import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
-import {SchedulerService} from "./services/scheduler";
+import {registerSchedulerForWake, SchedulerService} from "./services/scheduler";
+import {TaskWorkerService} from "./services/taskWorker";
 import {TriviaMonitor} from "./services/triviaMonitor";
 
 const FEATURE_CHANNEL_MEMORY = (featureName: string, description?: string): string => {
@@ -100,6 +103,7 @@ export interface OrchestratorState {
   prWatcher: PrWatcher;
   triviaMonitor: TriviaMonitor;
   scheduler: SchedulerService;
+  taskWorker: TaskWorkerService;
   isRunning: boolean;
 }
 
@@ -284,12 +288,32 @@ export const startOrchestrator = async (
     logError("Trivia monitor start error (non-fatal)", err);
   }
 
-  // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks
+  // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks.
+  // Registering it for wake lets task-mutating IPC handlers (schedule_task /
+  // resume_task et al.) short-circuit the adaptive sleep immediately.
   const scheduler = new SchedulerService(groupQueue);
+  registerSchedulerForWake(scheduler);
   try {
     await scheduler.start();
   } catch (err) {
     logError("Scheduler start error (non-fatal)", err);
+  }
+
+  // Start task worker (non-fatal if it fails) — claims and runs AgentTask
+  // board work. start() itself no-ops when AppConfig.taskWorker.enabled=false.
+  // With taskWorker.runInGateway=false (IP-010), board work is left to
+  // dedicated worker processes (`bun run worker`); the service is still
+  // constructed so OrchestratorState/stopOrchestrator stay uniform.
+  const taskWorker = new TaskWorkerService({runner, channelManager});
+  const appConfig = await loadAppConfig();
+  if (shouldRunTaskWorkerInGateway(appConfig)) {
+    try {
+      await taskWorker.start();
+    } catch (err) {
+      logError("Task worker start error (non-fatal)", err);
+    }
+  } else {
+    logger.info("Task worker not started in gateway (AppConfig.taskWorker.runInGateway=false)");
   }
 
   ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {
@@ -336,6 +360,7 @@ export const startOrchestrator = async (
     prWatcher,
     triviaMonitor,
     scheduler,
+    taskWorker,
     isRunning: true,
   };
 
@@ -357,7 +382,9 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.ipcWatcher.stop();
   state.prWatcher.stop();
   state.triviaMonitor.stop();
+  registerSchedulerForWake(null);
   state.scheduler.stop();
+  state.taskWorker.stop();
 
   try {
     await state.radioTranscriber.stop();

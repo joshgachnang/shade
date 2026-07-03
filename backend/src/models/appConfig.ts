@@ -81,9 +81,59 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     },
 
     agent: {
+      // Global default Anthropic model for agent runs. Per-group overrides
+      // (Group.modelConfig.defaultModel) take precedence. Empty string falls
+      // back to the Agent SDK's built-in default model.
+      model: {type: String, default: ""},
+      // Cheap/fast model tier for auxiliary work (detection, classification,
+      // summarization). Consumed by the trivia detector; other lightweight
+      // consumers should adopt it instead of hardcoding a model name.
+      auxiliaryModel: {type: String, default: "claude-haiku-4-5-20251001"},
       maxTurns: {type: Number, default: 50},
       progressIntervalMs: {type: Number, default: 30000},
       allowedTools: {type: [String], default: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]},
+      // Enables the Claude Agent SDK's native subagents (the Task tool) so a
+      // single turn can fan out short-lived parallel subagents.
+      enableSubagents: {type: Boolean, default: true},
+    },
+
+    memory: {
+      // Master switch for the agent memory tools and prompt block.
+      enabled: {type: Boolean, default: true},
+      // Character cap per memory file (global/group/user).
+      maxFileChars: {type: Number, default: 6000},
+      // Character cap per skill file.
+      maxSkillChars: {type: Number, default: 8000},
+      // Maximum results returned by the search_history tool.
+      historySearchLimit: {type: Number, default: 8},
+    },
+
+    taskWorker: {
+      // Master switch for the agent task board worker loop.
+      enabled: {type: Boolean, default: true},
+      // Maximum number of board tasks run concurrently by this process.
+      concurrency: {type: Number, default: 2},
+      // How often the worker polls for claimable tasks.
+      pollMs: {type: Number, default: 5000},
+      // Interval between heartbeat updates while a task is running.
+      heartbeatMs: {type: Number, default: 15000},
+      // Heartbeat older than this is considered stale and the task is reclaimed.
+      staleMs: {type: Number, default: 60000},
+      // Per-attempt execution timeout (15 min). Also bounds the worker
+      // process's graceful-shutdown drain (workerMain.ts).
+      taskTimeoutMs: {type: Number, default: 900000},
+      // Whether the gateway process runs the worker loop in-process. Set to
+      // false once dedicated worker processes (`bun run worker`) are deployed
+      // so board work becomes worker-only (IP-010 rollout step 3).
+      runInGateway: {type: Boolean, default: true},
+    },
+
+    scheduler: {
+      // When true, due ScheduledTasks are dispatched as AgentTask board work
+      // (run by workers, results delivered via deliverResult) instead of a
+      // synthetic message through the gateway's GroupQueue (IP-010 rollout
+      // step 4).
+      useTaskBoard: {type: Boolean, default: false},
     },
 
     apiKeys: {
@@ -103,8 +153,10 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     },
 
     models: {
-      answerer: {type: String, default: "claude-sonnet-4-20250514"},
-      detector: {type: String, default: "claude-haiku-4-5-20251001"},
+      answerer: {type: String, default: "claude-sonnet-4-6"},
+      // Trivia detector model override. Empty string falls back to
+      // agent.auxiliaryModel (the shared cheap-model tier).
+      detector: {type: String, default: ""},
       // OpenAI model used to drive the /ip planning conversation inside
       // feature Slack channels. Implementation is still handed off to the
       // Claude Agent SDK once the plan is approved.
@@ -220,6 +272,13 @@ appConfigSchema.post("findOneAndUpdate", async (doc) => {
   } catch {
     // Non-fatal.
   }
+});
+
+// Deletes must also invalidate the cache — otherwise loadAppConfig() keeps
+// returning a document that no longer exists and any save() on it fails with
+// DocumentNotFoundError.
+appConfigSchema.post(["deleteOne", "deleteMany", "findOneAndDelete"], () => {
+  cachedConfig = null;
 });
 
 export const AppConfig = mongoose.model<AppConfigDocument, AppConfigModel>(
