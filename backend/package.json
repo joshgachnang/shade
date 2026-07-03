@@ -51,6 +51,7 @@
     "build": "bun build src/index.ts --outdir ./dist --target node",
     "compile": "tsc",
     "dev": "PORT=4020 bun run --preload ./src/instrument.ts --watch src/index.ts",
+    "dev:test": "SHADE_TEST_MODE=1 PORT=4020 bun run --watch src/index.ts",
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -62,7 +63,8 @@
     "scrape:vault": "bun run scripts/scrapeVaultScores.ts",
     "mcp:media": "bun run src/mcpMediaServer/index.ts",
     "test": "bun test",
-    "worker": "bun run src/workerMain.ts"
+    "worker": "bun run src/workerMain.ts",
+    "worker:test": "SHADE_TEST_MODE=1 bun run src/workerMain.ts"
   },
   "type": "module",
   "version": "1.0.0",

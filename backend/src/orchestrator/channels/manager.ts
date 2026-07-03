@@ -6,6 +6,7 @@ import {loadAppConfig} from "../../models/appConfig";
 import {Channel} from "../../models/channel";
 import {Group} from "../../models/group";
 import {Message} from "../../models/message";
+import {isTestMode} from "../../testMode/flag";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
 import {pickRenderer} from "../responses/renderers";
@@ -16,6 +17,7 @@ import {ChatCommandRouter} from "./commandRouter";
 import {createEdgeAgentConnector} from "./edgeAgent";
 import {createEmailConnector} from "./email";
 import {createSlackConnector} from "./slack";
+import {createTestConnector} from "./test";
 import type {ChannelConnector, ChannelHealth, ConnectorFactory, InboundMessage} from "./types";
 import {createWebhookConnector} from "./webhook";
 
@@ -27,6 +29,7 @@ const defaultConnectorFactories: Record<string, ConnectorFactory> = {
   webhook: createWebhookConnector,
   imessage: createEdgeAgentConnector,
   email: createEmailConnector,
+  test: createTestConnector,
 };
 
 export class ChannelManager {
@@ -65,6 +68,14 @@ export class ChannelManager {
     logger.info(`Cached ${groups.length} group(s)`);
 
     for (const channelDoc of channels) {
+      // Test mode never touches real transports — a leftover Slack/IMAP
+      // channel doc in the test DB must not trigger network connections.
+      if (isTestMode() && channelDoc.type !== "test") {
+        logger.warn(
+          `Test mode: skipping real channel "${channelDoc.name}" (${channelDoc.type}) — only "test" channels connect`
+        );
+        continue;
+      }
       try {
         await this.connectChannel(channelDoc);
       } catch (err) {

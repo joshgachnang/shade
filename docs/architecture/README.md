@@ -60,6 +60,7 @@ This directory is the internal documentation of how the whole app works. This pa
 - **Auth & permissions** — Passport local (email/password) + JWT via Terreno; route access via `IsAuthenticated` / `IsAdmin` / `IsOwner`.
 - **Persistence conventions** — Every schema gets `created`/`updated` timestamps, soft delete, and strict mode (`strict: "throw"`). Sessions/transcripts and IPC live on the filesystem under `SHADE_DATA_DIR`.
 - **Observability** — `AIRequest` logs every LLM call with tokens and cost; `TaskRunLog` audits every task run; Sentry captures crashes; admin scripts surface system status and AI spend.
+- **AI testability harness (IP-012)** — `SHADE_TEST_MODE=1` (`bun run dev:test`) boots the full orchestration pipeline offline: `MockAgentRunner` replaces all LLM calls (scripted via `LlmFixture`), a no-op `"test"` channel type hosts observable conversations, real integrations are stubbed/disabled, and a `/test/*` control API drives reset/tick/outbox. See [AI harness](../testing/ai-harness.md).
 
 ## Key data models (the ones that matter)
 

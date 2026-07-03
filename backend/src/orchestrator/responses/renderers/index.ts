@@ -22,6 +22,7 @@ const slack = new SlackBlockKitRenderer();
 const email = new FallbackTextRenderer("email");
 const webhook = new FallbackTextRenderer("webhook");
 const imessage = new FallbackTextRenderer("imessage");
+const test = new FallbackTextRenderer("test");
 const terreno = new TerrenoRenderer();
 
 /**
@@ -39,6 +40,8 @@ export const pickRenderer = (channelType: ChannelType | "terreno"): CardRenderer
       return webhook;
     case "imessage":
       return imessage;
+    case "test":
+      return test;
     case "terreno":
       return terreno;
   }

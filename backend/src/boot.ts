@@ -1,4 +1,5 @@
-import {loadAppConfig} from "./models/appConfig";
+import {loadAppConfig, reloadAppConfig} from "./models/appConfig";
+import {applyTestModeEnvDefaults, isTestMode} from "./testMode/flag";
 import type {AppConfigDocument} from "./types";
 import {hydrateEnvFromConfig} from "./utils/configEnv";
 import {connectToMongoDB} from "./utils/database";
@@ -18,9 +19,17 @@ import {initDirectories} from "./utils/directories";
  * Returns the loaded AppConfig so callers don't have to re-fetch it.
  */
 export const boot = async (): Promise<AppConfigDocument> => {
+  applyTestModeEnvDefaults();
   await connectToMongoDB();
   const appConfig = await loadAppConfig();
   hydrateEnvFromConfig(appConfig);
   await initDirectories();
+  if (isTestMode()) {
+    const {seedTestMode} = await import("./testMode/seed");
+    await seedTestMode();
+    // The seed tunes AppConfig (poll intervals, worker config) — return the
+    // fresh doc so services started after boot() read the tuned values.
+    return reloadAppConfig();
+  }
   return appConfig;
 };

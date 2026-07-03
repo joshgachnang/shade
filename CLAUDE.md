@@ -15,6 +15,7 @@ All testing rules, formats, and commands are in the `.claude/` directory:
 - `.claude/auto-test-generation.md` — MANDATORY rules for generating tests alongside code
 - `.claude/qa-test-case-format.md` — QA test case template, priority definitions, coverage requirements, and examples
 - `.claude/playwright-rules.md` — Selector strategy, RNW DOM mappings, async patterns, and config
+- `docs/testing/ai-harness.md` — AI testability harness: run the app offline with mocked LLM calls (`bun run dev:test`), drive it via `POST /command` + `/test/*`, observe results. Use `/shade-harness` (project skill) for the quick loop.
 
 **Read all three files before writing or modifying any code.** The auto-test-generation rules apply to every code change — not just when a command is invoked.
 

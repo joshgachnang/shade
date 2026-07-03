@@ -4,7 +4,7 @@ export interface AgentRunConfig {
   sessionId: string;
   prompt: string;
   systemPrompt?: string;
-  modelBackend: "claude" | "ollama" | "codex" | "gemini";
+  modelBackend: "claude" | "ollama" | "codex" | "gemini" | "mock";
   modelName?: string;
   env?: Record<string, string>;
   timeout: number;

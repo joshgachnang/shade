@@ -1,6 +1,17 @@
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
 import {logger} from "@terreno/api";
+import {
+  createTestContact,
+  getTestContactById,
+  getTestContactGroups,
+  getTestContacts,
+  matchTestContactByEmail,
+  matchTestContactByPhone,
+  searchTestContacts,
+  updateTestContact,
+} from "../testMode/fixtures";
+import {isTestMode} from "../testMode/flag";
 
 const execFileAsync = promisify(execFile);
 
@@ -274,6 +285,9 @@ const escapeJxaString = (s: string): string => {
 // --- Contact operations ---
 
 export const listAllContacts = async (): Promise<AppleContact[]> => {
+  if (isTestMode()) {
+    return getTestContacts();
+  }
   const script = `
     const app = Application("Contacts");
     const people = app.people();
@@ -322,6 +336,9 @@ export const listAllContacts = async (): Promise<AppleContact[]> => {
 };
 
 export const searchContacts = async (query: string): Promise<AppleContact[]> => {
+  if (isTestMode()) {
+    return searchTestContacts(query);
+  }
   // Search across name, email, phone, company, and notes
   const queryEscaped = escapeJxaString(query.toLowerCase());
   const script = `
@@ -398,6 +415,9 @@ export const searchContacts = async (query: string): Promise<AppleContact[]> => 
 };
 
 export const getContactById = async (id: string): Promise<AppleContact | null> => {
+  if (isTestMode()) {
+    return getTestContactById(id);
+  }
   const idEscaped = escapeJxaString(id);
   const script = `
     const app = Application("Contacts");
@@ -450,6 +470,9 @@ export const getContactById = async (id: string): Promise<AppleContact | null> =
 };
 
 export const createContact = async (input: CreateContactInput): Promise<AppleContact> => {
+  if (isTestMode()) {
+    return createTestContact(input);
+  }
   const firstEscaped = escapeJxaString(input.firstName);
   const lastEscaped = escapeJxaString(input.lastName ?? "");
   const companyEscaped = escapeJxaString(input.company ?? "");
@@ -515,6 +538,9 @@ export const createContact = async (input: CreateContactInput): Promise<AppleCon
 };
 
 export const updateContact = async (input: UpdateContactInput): Promise<AppleContact> => {
+  if (isTestMode()) {
+    return updateTestContact(input);
+  }
   const idEscaped = escapeJxaString(input.id);
 
   const setLines: string[] = [];
@@ -584,6 +610,9 @@ export const addShadeContext = async (
 };
 
 export const listGroups = async (): Promise<{name: string; id: string; count: number}[]> => {
+  if (isTestMode()) {
+    return getTestContactGroups();
+  }
   const script = `
     const app = Application("Contacts");
     const groups = app.groups();
@@ -601,6 +630,9 @@ export const listGroups = async (): Promise<{name: string; id: string; count: nu
 };
 
 export const matchContactByEmail = async (email: string): Promise<AppleContact | null> => {
+  if (isTestMode()) {
+    return matchTestContactByEmail(email);
+  }
   const emailEscaped = escapeJxaString(email.toLowerCase());
   const script = `
     const app = Application("Contacts");
@@ -643,6 +675,9 @@ export const matchContactByEmail = async (email: string): Promise<AppleContact |
 };
 
 export const matchContactByPhone = async (phone: string): Promise<AppleContact | null> => {
+  if (isTestMode()) {
+    return matchTestContactByPhone(phone);
+  }
   // Normalize to digits only for matching
   const digits = phone.replace(/[^0-9+]/g, "");
   const digitsEscaped = escapeJxaString(digits);

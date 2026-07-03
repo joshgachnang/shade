@@ -159,6 +159,12 @@ export class IpcWatcher {
     }
   }
 
+  /** Force an immediate poll (POST /test/tick). The rename-to-.processing
+   *  step already makes concurrent polls safe. */
+  async tickNow(): Promise<void> {
+    await this.poll();
+  }
+
   private async poll(): Promise<void> {
     const ipcDir = paths.ipc;
 

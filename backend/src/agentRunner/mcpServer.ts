@@ -1,5 +1,4 @@
 import {execFile} from "node:child_process";
-import {randomUUID} from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {promisify} from "node:util";
@@ -15,6 +14,7 @@ import {Group} from "../models/group";
 import {Message} from "../models/message";
 import {RadioStream} from "../models/radioStream";
 import {ScheduledTask} from "../models/scheduledTask";
+import {writeIpcFile} from "../orchestrator/ipcWriter";
 import {
   applyMemoryUpdate,
   canWriteGlobalMemory,
@@ -55,19 +55,6 @@ export interface McpContext {
    */
   isBoardTask?: boolean;
 }
-
-const writeIpcFile = async (ipcDir: string, data: Record<string, unknown>): Promise<string> => {
-  await fs.mkdir(ipcDir, {recursive: true});
-
-  const fileId = randomUUID();
-  const tmpPath = path.join(ipcDir, `${fileId}.tmp`);
-  const finalPath = path.join(ipcDir, `${fileId}.json`);
-
-  await fs.writeFile(tmpPath, JSON.stringify(data), "utf-8");
-  await fs.rename(tmpPath, finalPath);
-
-  return fileId;
-};
 
 const MEMORY_DISABLED_TEXT = "Memory features are disabled";
 const TASK_BOARD_DISABLED_TEXT = "The task board is disabled";

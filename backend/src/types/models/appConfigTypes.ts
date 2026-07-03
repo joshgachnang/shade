@@ -162,6 +162,11 @@ export interface AppConfigMaps {
   mapboxAccessToken: string;
 }
 
+export interface AppConfigTestMode {
+  echoFallback: boolean;
+  simulateLatencyMs: number;
+}
+
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
@@ -187,6 +192,7 @@ export interface AppConfigFields {
   notifications: AppConfigNotifications;
   richResponses: AppConfigRichResponses;
   maps: AppConfigMaps;
+  testMode: AppConfigTestMode;
 }
 
 export type AppConfigDocument = DefaultDoc & AppConfigFields;

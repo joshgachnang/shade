@@ -19,8 +19,11 @@ import {loadAppConfig} from "./models/appConfig";
 import type {ChannelManager} from "./orchestrator/channels/manager";
 import {logError} from "./orchestrator/errors";
 import {DirectAgentRunner} from "./orchestrator/runners/direct";
+import {MockAgentRunner} from "./orchestrator/runners/mock";
+import type {AgentRunner} from "./orchestrator/runners/types";
 import {getWorkerId} from "./orchestrator/services/taskBoard";
 import {TaskWorkerService} from "./orchestrator/services/taskWorker";
+import {isTestMode} from "./testMode/flag";
 import {drainAndStop, IpcResultDeliverer} from "./workerRuntime";
 
 const DEFAULT_WORKER_PORT = 4021;
@@ -45,7 +48,8 @@ export const startWorker = async (): Promise<void> => {
   const workerId = getWorkerId();
   const startedAtMs = Date.now();
 
-  const runner = new DirectAgentRunner();
+  // Test mode (IP-012): board tasks run through the deterministic mock.
+  const runner: AgentRunner = isTestMode() ? new MockAgentRunner() : new DirectAgentRunner();
   // Workers never connect channel connectors (the gateway owns the Slack
   // socket), so result delivery goes through send_message IPC files instead
   // of a live ChannelManager. IpcResultDeliverer implements the single

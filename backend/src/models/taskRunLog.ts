@@ -16,7 +16,11 @@ const taskRunLogSchema = new mongoose.Schema<TaskRunLogDocument, TaskRunLogModel
       required: true,
       enum: ["public", "internal", "sensitive", "critical"],
     },
-    modelBackend: {type: String, required: true, enum: ["claude", "ollama", "codex", "gemini"]},
+    modelBackend: {
+      type: String,
+      required: true,
+      enum: ["claude", "ollama", "codex", "gemini", "mock"],
+    },
     modelName: {type: String},
     status: {type: String, required: true, enum: ["running", "completed", "failed", "timeout"]},
     prompt: {type: String},

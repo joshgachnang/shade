@@ -6,7 +6,7 @@ export interface TaskRunLogFields {
   groupId: mongoose.Types.ObjectId;
   trigger: "scheduled" | "message" | "webhook" | "websocket" | "manual" | "delegated";
   classification: "public" | "internal" | "sensitive" | "critical";
-  modelBackend: "claude" | "ollama" | "codex" | "gemini";
+  modelBackend: "claude" | "ollama" | "codex" | "gemini" | "mock";
   modelName?: string;
   status: "running" | "completed" | "failed" | "timeout";
   prompt?: string;
