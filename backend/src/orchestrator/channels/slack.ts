@@ -1,35 +1,38 @@
-import {App} from "@slack/bolt";
+import {App, LogLevel} from "@slack/bolt";
 import type {GenericMessageEvent, KnownBlock} from "@slack/types";
 import {logger} from "@terreno/api";
-import {Channel} from "../../models/channel";
-import type {ChannelDocument} from "../../types";
 import {logError} from "../errors";
 import {SHADE_CORR_PLACEHOLDER, SHADE_GROUP_PLACEHOLDER} from "../responses/renderers/types";
-import type {
-  ChannelConnector,
-  ChannelHealth,
-  ConnectorFactory,
-  InboundMessage,
-  RichSendOpts,
-} from "./types";
+import {BaseChannelConnector} from "./baseConnector";
+import type {ChannelHealth, ConnectorFactory, RichSendOpts} from "./types";
 
 const SLACK_ACTION_ID_MAX = 255;
 
-export class SlackChannelConnector implements ChannelConnector {
-  readonly channelDoc: ChannelDocument;
+/**
+ * Slack Socket Mode connector.
+ *
+ * Reliability note: Slack load-balances events across every socket open for
+ * the app token. If a previous `bun --watch` restart leaves a zombie socket
+ * alive for ~30-60s, Slack will route some events to it and we lose them
+ * silently (symptom: "sometimes the bot doesn't reply to untagged messages
+ * in feature channels"). Mitigations here:
+ *   1. Enable Bolt INFO logs so socket lifecycle (connected / reconnecting /
+ *      disconnected) is visible in our log stream.
+ *   2. Listen to SocketModeClient lifecycle events and surface them at info
+ *      level so operators can correlate missing events with socket flaps, and
+ *      track them as a real liveness signal for `getHealth()`.
+ *   3. Make `disconnect()` actually wait for the socket to close so a clean
+ *      SIGTERM (what `bun --watch` sends on file change) fully tears it down
+ *      before the replacement process opens a new one.
+ */
+export class SlackChannelConnector extends BaseChannelConnector {
   readonly supportsRichMessages = true;
   private app: App | null = null;
-  private connected = false;
-  private messageHandler: ((message: InboundMessage) => Promise<void>) | null = null;
   // Socket-mode liveness, tracked from the underlying client's lifecycle events.
-  // `connected` above stays true across silent socket deaths; these don't.
+  // `connected` (from the base class) stays true across silent socket deaths; these don't.
   private socketState = "initializing";
   private lastConnectedAt: Date | null = null;
   private lastEventAt: Date | null = null;
-
-  constructor(channelDoc: ChannelDocument) {
-    this.channelDoc = channelDoc;
-  }
 
   private isUserAllowed(userId: string): boolean {
     const config = this.channelDoc.config as {allowedUserIds?: string[]};
@@ -57,6 +60,11 @@ export class SlackChannelConnector implements ChannelConnector {
       appToken: config.appToken,
       signingSecret: config.signingSecret,
       socketMode: true,
+      // INFO surfaces socket lifecycle (connect/reconnect/disconnect) and
+      // rate-limit warnings without flooding the log with every Web API
+      // request body. Our own `logger.info` lifecycle wrapper below gives us
+      // the bulk of what's useful on top of this.
+      logLevel: LogLevel.INFO,
     });
 
     this.app.use(async ({body, next}) => {
@@ -82,12 +90,7 @@ export class SlackChannelConnector implements ChannelConnector {
           return;
         }
 
-        if (!this.messageHandler) {
-          logger.debug("No message handler registered, skipping Slack message");
-          return;
-        }
-
-        await this.messageHandler({
+        await this.dispatchMessage({
           externalId: msg.ts,
           sender: msg.user || "unknown",
           senderExternalId: msg.user || "",
@@ -116,12 +119,7 @@ export class SlackChannelConnector implements ChannelConnector {
           return;
         }
 
-        if (!this.messageHandler) {
-          logger.debug("No message handler registered, skipping Slack mention");
-          return;
-        }
-
-        await this.messageHandler({
+        await this.dispatchMessage({
           externalId: event.ts,
           sender: event.user || "unknown",
           senderExternalId: event.user || "",
@@ -248,13 +246,7 @@ export class SlackChannelConnector implements ChannelConnector {
       logger.warn(`Could not set presence for "${this.channelDoc.name}": ${err}`);
     }
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "connected", lastConnectedAt: new Date()},
-      });
-    } catch (err) {
-      logger.error(`Failed to update channel status in DB: ${err}`);
-    }
+    await this.persistStatus("connected");
 
     logger.info(`Slack channel "${this.channelDoc.name}" fully connected`);
   }
@@ -262,29 +254,37 @@ export class SlackChannelConnector implements ChannelConnector {
   async disconnect(): Promise<void> {
     logger.info(`Disconnecting Slack channel "${this.channelDoc.name}"...`);
     if (this.app) {
+      // Directly close the underlying SocketModeClient as well as stopping
+      // the Bolt app. `app.stop()` alone has been observed to leave the WS
+      // half-open across a `bun --watch` restart; the ghost socket keeps
+      // receiving load-balanced events from Slack for ~30-60s, which is
+      // exactly the "sometimes the bot doesn't see untagged messages"
+      // symptom we were debugging.
+      const socketClient = (
+        this.app as unknown as {
+          receiver?: {client?: {disconnect?: () => Promise<void>}};
+        }
+      ).receiver?.client;
       try {
         await this.app.stop();
       } catch (err) {
         logger.error(`Error stopping Slack app for "${this.channelDoc.name}": ${err}`);
+      }
+      if (socketClient && typeof socketClient.disconnect === "function") {
+        try {
+          await socketClient.disconnect();
+        } catch (err) {
+          logger.warn(`Error force-closing Slack socket for "${this.channelDoc.name}": ${err}`);
+        }
       }
       this.app = null;
     }
     this.connected = false;
     this.socketState = "disconnected";
 
-    try {
-      await Channel.findByIdAndUpdate(this.channelDoc._id, {
-        $set: {status: "disconnected"},
-      });
-    } catch (err) {
-      logger.error(`Failed to update channel status in DB: ${err}`);
-    }
+    await this.persistStatus("disconnected");
 
     logger.info(`Slack channel "${this.channelDoc.name}" disconnected`);
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   /**
@@ -308,7 +308,8 @@ export class SlackChannelConnector implements ChannelConnector {
       if (state === "connected") {
         this.lastConnectedAt = new Date();
       }
-      logger.debug(`Slack socket "${this.channelDoc.name}" → ${state}`);
+      // INFO so operators can correlate missing events with socket flaps.
+      logger.info(`Slack socket "${this.channelDoc.name}" → ${state}`);
     };
 
     client.on("connected", () => setState("connected"));
@@ -529,10 +530,6 @@ export class SlackChannelConnector implements ChannelConnector {
     } catch (err) {
       logger.debug(`Could not remove reaction: ${err}`);
     }
-  }
-
-  onMessage(handler: (message: InboundMessage) => Promise<void>): void {
-    this.messageHandler = handler;
   }
 }
 

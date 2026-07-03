@@ -1,12 +1,47 @@
+import {randomBytes} from "node:crypto";
 import {logger} from "@terreno/api";
 import mongoose from "mongoose";
 import type {AppConfigDocument, AppConfigModel} from "../types";
 import {addDefaultPlugins} from "./modelPlugins";
 
+/**
+ * Generates a 256-bit hex-encoded random secret, used as a sensible default
+ * for JWT and MCP auth tokens on first boot. Callers can still override via
+ * env vars (which take precedence after `hydrateEnvFromConfig`).
+ */
+const generateSecret = (): string => randomBytes(32).toString("hex");
+
 const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
   {
     assistantName: {type: String, default: "Shade", trim: true},
     triggerPattern: {type: String, default: "@Shade"},
+
+    // Filesystem path for writable data (movies, recordings, etc.). Defaults
+    // to "" which means "use SHADE_DATA_DIR env var or ./data".
+    dataDir: {type: String, default: ""},
+
+    // Public-facing base URL the backend advertises to integrations (Slack
+    // buttons, webhook callbacks). Empty string falls back to SHADE_PUBLIC_URL
+    // or the production default.
+    publicUrl: {type: String, default: ""},
+
+    // System prompt used when researching trivia questions with Claude. Top-
+    // level and stored as a plain string so it's easy to edit at runtime.
+    // Empty string falls back to the TRIVIA_ANSWERER_PROMPT constant in
+    // orchestrator/services/trivia/prompts.ts.
+    triviaResearchSystemPrompt: {type: String, default: ""},
+
+    logging: {
+      // pino log level override: trace | debug | info | warn | error | fatal
+      level: {type: String, default: ""},
+    },
+
+    auth: {
+      // JWT secrets. Empty string falls back to TOKEN_SECRET /
+      // REFRESH_TOKEN_SECRET env vars.
+      tokenSecret: {type: String, default: ""},
+      refreshTokenSecret: {type: String, default: ""},
+    },
 
     pollIntervals: {
       message: {type: Number, default: 2000},
@@ -25,6 +60,16 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       defaultBatchIntervalMs: {type: Number, default: 15000},
       maxReconnectAttempts: {type: Number, default: 50},
       reconnectDelayMs: {type: Number, default: 5000},
+      // Controls whether per-flush transcript batches are echoed directly to
+      // Slack (webhook / bot token). Transcripts are always saved to the DB so
+      // downstream consumers (e.g. TriviaMonitor) keep working when disabled.
+      postTranscriptsToSlack: {type: Boolean, default: true},
+      // Controls ACRCloud polling. Required for TriviaMonitor's music-gated
+      // question finalization (a [MUSIC_START] sentinel is emitted on transition).
+      songIdentification: {type: Boolean, default: true},
+      // Controls the "Now Playing: Artist — Title" Slack post. When false,
+      // ACRCloud still polls for music-gating but no Slack post fires.
+      postSongIdToSlack: {type: Boolean, default: true},
     },
 
     orchestrator: {
@@ -45,12 +90,47 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       braveSearch: {type: String, default: ""},
       exa: {type: String, default: ""},
       tavily: {type: String, default: ""},
+      anthropic: {type: String, default: ""},
+      openRouter: {type: String, default: ""},
+      // OpenAI API key used for feature-channel implementation planning
+      // (the /ip workflow runs against `models.planner`). Stored here per the
+      // "all service credentials belong in AppConfig" rule.
+      openai: {type: String, default: ""},
+      deepgram: {type: String, default: ""},
+      acrCloudAccessKey: {type: String, default: ""},
+      acrCloudSecretKey: {type: String, default: ""},
+      github: {type: String, default: ""},
     },
 
-    triviaAutoSearch: {
-      enabled: {type: Boolean, default: false},
-      groupId: {type: String, default: ""},
-      allowedUserIds: {type: [String], default: []},
+    models: {
+      answerer: {type: String, default: "claude-sonnet-4-20250514"},
+      detector: {type: String, default: "claude-haiku-4-5-20251001"},
+      // OpenAI model used to drive the /ip planning conversation inside
+      // feature Slack channels. Implementation is still handed off to the
+      // Claude Agent SDK once the plan is approved.
+      planner: {type: String, default: "gpt-5.4"},
+    },
+
+    mcpMedia: {
+      authToken: {type: String, default: ""},
+      port: {type: Number, default: 8081},
+      sonarr: {
+        baseUrl: {type: String, default: ""},
+        apiKey: {type: String, default: ""},
+      },
+      radarr: {
+        baseUrl: {type: String, default: ""},
+        apiKey: {type: String, default: ""},
+      },
+      nzbget: {
+        baseUrl: {type: String, default: ""},
+        username: {type: String, default: "nzbget"},
+        password: {type: String, default: ""},
+      },
+      plex: {
+        baseUrl: {type: String, default: ""},
+        token: {type: String, default: ""},
+      },
     },
 
     prWatch: {
@@ -61,11 +141,31 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       autoRespondToBots: {type: Boolean, default: true},
       autoFixConflicts: {type: Boolean, default: true},
       reposBaseDir: {type: String, default: "data/repos"},
+      // Anthropic model used to draft auto-responses to bot reviews
+      // (e.g. dependabot, lint bots). Kept separate from `models.*` so
+      // operators can tune PR-watcher behavior without touching the
+      // trivia/answerer models.
+      botResponseModel: {type: String, default: "claude-haiku-4-5-20251001"},
+      // Prompts used by the PR watcher. Empty strings fall back to the
+      // module-level defaults in orchestrator/services/prWatcher.ts so a
+      // fresh AppConfig still produces working behavior. Operators can
+      // edit these via the admin UI to tune PR-watcher behavior without
+      // redeploying.
+      prompts: {
+        // Agent prompt for resolving merge conflicts on a PR branch.
+        fixConflicts: {type: String, default: ""},
+        // Agent prompt for watching CI and auto-fixing failures.
+        checkWatcher: {type: String, default: ""},
+        // System prompt for generating replies to bot review comments.
+        botReviewSystem: {type: String, default: ""},
+      },
     },
 
     triviaMonitor: {
       enabled: {type: Boolean, default: false},
       groupId: {type: String, default: ""},
+      // Slack users allowed to issue !trivia commands (chat ID / external ID).
+      allowedUserIds: {type: [String], default: []},
       questionsWebhook: {type: String, default: ""},
       answersWebhook: {type: String, default: ""},
     },
@@ -95,13 +195,31 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
 
 addDefaultPlugins(appConfigSchema);
 
-// Invalidate cache on save so the next loadAppConfig() fetches fresh data
-appConfigSchema.post("save", () => {
+// Invalidate cache on save so the next loadAppConfig() fetches fresh data, and
+// warn the admin if any restart-required field changed. We import lazily to
+// avoid a circular dependency between `models/appConfig.ts` and
+// `utils/configEnv.ts`.
+appConfigSchema.post("save", async (doc) => {
   cachedConfig = null;
+  try {
+    const {warnOnRestartRequiredChanges} = await import("../utils/configEnv");
+    warnOnRestartRequiredChanges(doc as AppConfigDocument);
+  } catch {
+    // Non-fatal — the hook is best-effort operator feedback.
+  }
 });
 
-appConfigSchema.post("findOneAndUpdate", () => {
+appConfigSchema.post("findOneAndUpdate", async (doc) => {
   cachedConfig = null;
+  if (!doc) {
+    return;
+  }
+  try {
+    const {warnOnRestartRequiredChanges} = await import("../utils/configEnv");
+    warnOnRestartRequiredChanges(doc as unknown as AppConfigDocument);
+  } catch {
+    // Non-fatal.
+  }
 });
 
 export const AppConfig = mongoose.model<AppConfigDocument, AppConfigModel>(
@@ -114,6 +232,11 @@ let cachedConfig: AppConfigDocument | null = null;
 /**
  * Load the singleton AppConfig from the database.
  * Creates one with defaults if none exists. Caches the result in memory.
+ *
+ * On first-boot creation we seed randomly-generated values for secrets that
+ * have no sensible static default (JWT + MCP auth tokens). Operators can
+ * rotate them later via the admin UI; the app must be restarted for the new
+ * values to take effect.
  */
 export const loadAppConfig = async (): Promise<AppConfigDocument> => {
   if (cachedConfig) {
@@ -123,7 +246,15 @@ export const loadAppConfig = async (): Promise<AppConfigDocument> => {
   let doc = await AppConfig.findOneOrNone({});
   if (!doc) {
     logger.info("No AppConfig found, creating default configuration");
-    doc = await AppConfig.create({});
+    doc = await AppConfig.create({
+      auth: {
+        tokenSecret: generateSecret(),
+        refreshTokenSecret: generateSecret(),
+      },
+      mcpMedia: {
+        authToken: generateSecret(),
+      },
+    });
   }
 
   cachedConfig = doc;

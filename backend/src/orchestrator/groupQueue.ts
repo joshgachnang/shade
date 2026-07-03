@@ -2,6 +2,7 @@ import {logger} from "@terreno/api";
 import type {Types} from "mongoose";
 import {AIRequest} from "../models/aiRequest";
 import {loadAppConfig} from "../models/appConfig";
+import {Group} from "../models/group";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
@@ -9,6 +10,10 @@ import {logError} from "./errors";
 import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
+
+/** Regex matching `/implement` or `!implement` as a standalone command. */
+const IMPLEMENT_COMMAND = /(^|\s)[/!]implement\b/i;
+
 import {
   appendToTranscript,
   getOrCreateSession,
@@ -30,12 +35,31 @@ export class GroupQueue {
   private queues = new Map<string, QueuedItem[]>();
   private activeRuns = new Map<string, boolean>();
   private runner: AgentRunner;
+  private plannerRunner: AgentRunner | null;
   private channelManager: ChannelManager;
   private globalActiveCount = 0;
 
-  constructor(runner: AgentRunner, channelManager: ChannelManager) {
+  constructor(
+    runner: AgentRunner,
+    channelManager: ChannelManager,
+    plannerRunner: AgentRunner | null = null
+  ) {
     this.runner = runner;
+    this.plannerRunner = plannerRunner;
     this.channelManager = channelManager;
+  }
+
+  /**
+   * Pick the runner appropriate for this group. Feature channels in the
+   * `planning` phase go to the OpenAI planner; everything else (normal
+   * groups, and feature channels that have transitioned to `implementing` or
+   * `complete`) uses the Claude Agent SDK runner.
+   */
+  private selectRunner(group: GroupDocument): AgentRunner {
+    if (group.featurePhase === "planning" && this.plannerRunner) {
+      return this.plannerRunner;
+    }
+    return this.runner;
   }
 
   enqueue(group: GroupDocument, message: MessageDocument): void {
@@ -138,8 +162,34 @@ export class GroupQueue {
     const startedAt = new Date();
     const isResume = (item.resumeCount ?? 0) > 0;
 
+    // Handle feature-channel phase transition: if this group is still in
+    // `planning` and the user typed `/implement`, flip to `implementing` so
+    // the Claude Agent SDK (not the planner) picks up the request.
+    if (
+      group.featurePhase === "planning" &&
+      !message.isFromBot &&
+      IMPLEMENT_COMMAND.test(message.content)
+    ) {
+      try {
+        await Group.findByIdAndUpdate(group._id, {$set: {featurePhase: "implementing"}});
+        group.featurePhase = "implementing";
+        logger.info(
+          `Feature group ${group.name} transitioned planning -> implementing (triggered by /implement in Slack)`
+        );
+        await this.channelManager.sendMessageToGroup(
+          groupId,
+          `Handing off to the Claude Agent SDK to execute the plan. :rocket:`
+        );
+      } catch (err) {
+        logError(`Failed to transition featurePhase for group ${group.name}`, err);
+      }
+    }
+
+    const runner = this.selectRunner(group);
+    const runnerLabel = runner === this.plannerRunner ? "planner (OpenAI)" : "claude-agent-sdk";
+
     logger.info(
-      `Executing agent run for group ${group.name}${isResume ? ` (resume #${item.resumeCount})` : ""}, trigger: "${message.content.substring(0, 80)}"`
+      `Executing agent run for group ${group.name}${isResume ? ` (resume #${item.resumeCount})` : ""}, runner=${runnerLabel}, trigger: "${message.content.substring(0, 80)}"`
     );
 
     // React with 👀 to acknowledge we're processing (only on first run)
@@ -204,7 +254,7 @@ export class GroupQueue {
       const shouldResume = isResume || session.messageCount > 0;
       const resumeAt = isResume ? item.resumeSessionAt : session.resumeSessionAt;
 
-      const result = await this.runner.run({
+      const result = await runner.run({
         groupId,
         groupFolder,
         sessionId: session.sessionId,

@@ -27,6 +27,14 @@ const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
       idleTimeout: {type: Number, default: 60000},
       maxConcurrent: {type: Number, default: 1},
     },
+    // Lifecycle for feature channels. Undefined for non-feature groups.
+    // `planning` → OpenAI planner (AppConfig `models.planner`, default gpt-5.4)
+    // `implementing` / `complete` → Claude Agent SDK runner
+    featurePhase: {
+      type: String,
+      enum: ["planning", "implementing", "complete"],
+      required: false,
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

@@ -6,15 +6,89 @@ import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
 import type {IpcCreateFeature, IpcRadioStream, IpcTriviaToggle} from "./ipc";
 import {IpcWatcher} from "./ipc";
-import {ensureGroupDirectory, initGlobalMemory} from "./memory";
+import {ensureGroupDirectory, getGroupMemoryPath, initGlobalMemory, writeMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
+import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
 import {SchedulerService} from "./services/scheduler";
-import {TriviaAutoSearch} from "./services/triviaAutoSearch";
 import {TriviaMonitor} from "./services/triviaMonitor";
+
+const FEATURE_CHANNEL_MEMORY = (featureName: string, description?: string): string => {
+  return `# Feature Channel: ${featureName}
+
+You are driving a feature-development workflow inside a dedicated Slack
+channel. Every message in this channel is routed to you automatically —
+the user does **not** need to \`@Shade\`-mention you to trigger a reply,
+so don't tell them they have to. This channel is split between two
+runners, configured by the orchestrator based on \`Group.featurePhase\`:
+${description ? `\n**Initial description:** ${description}\n` : ""}
+## Runners
+
+- **Planning** (phase \`planning\`) — OpenAI model from
+  \`AppConfig.models.planner\` (default \`gpt-5.4\`). Drives the \`/ip\`
+  workflow conversationally. Writes plan drafts to
+  \`docs/implementationPlans/<feature>.md\` inside this group folder.
+- **Implementation** (phases \`implementing\` and \`complete\`) — Claude Agent
+  SDK. Executes the approved plan via the \`/implement\` skill.
+
+The user flips from planning to implementing by typing \`/implement\` or
+\`!implement\` in the channel. The orchestrator detects this and sets
+\`featurePhase\` on the group before handing to Claude.
+
+## What YOU (the agent running this turn) must do
+
+Because this same \`CLAUDE.md\` is in the system prompt for both runners, each
+runner follows the part that applies to it:
+
+### If you are the planner (OpenAI)
+
+- Drive \`/ip\` as a chat. One step per turn. Ask for confirmation before
+  advancing.
+- Never output application source code. Your job is plan prose, tables, and
+  task lists.
+- When you emit the final plan, wrap it in a \`\`\`markdown ... \`\`\` fenced
+  block so the orchestrator can persist it.
+- When the plan is done and the user is happy, tell them to type
+  \`/implement\` to hand off.
+
+### If you are the implementor (Claude Agent SDK)
+
+- The plan already exists at
+  \`docs/implementationPlans/${featureName}.md\` (written by the planner).
+  Read it first.
+- Run the \`/implement\` skill to execute the plan end-to-end. Mark tasks
+  complete in the plan document as you go.
+- Post periodic progress updates in the channel.
+- All service credentials and config live in \`AppConfig\` (loaded via
+  \`loadAppConfig()\`). Do not read API keys or endpoints from ad-hoc env
+  vars — go through AppConfig.
+- When everything is done, summarize what shipped and link the final plan.
+
+## Hard rules (both runners)
+
+- **Never** write implementation code during the \`planning\` phase.
+- **Never** invoke \`/implement\` before the user has approved the plan.
+- If the user changes scope mid-flight, re-run the affected \`/ip\` substep
+  rather than patching code ad-hoc. If we're already in \`implementing\`, the
+  operator can manually reset \`Group.featurePhase\` back to \`planning\`.
+- Prefer small, verifiable commits.
+`;
+};
+
+const FEATURE_CHANNEL_GREETING = (featureName: string, plannerModel: string): string => {
+  return (
+    `Feature channel ready for *${featureName}*! :sparkles:\n\n` +
+    `*You don't need to \`@Shade\` me in this channel* — every message you send here goes straight to me.\n\n` +
+    `Here's how we'll work in this channel:\n` +
+    `1. *Planning phase* — I'll drive the \`/ip\` workflow with you using OpenAI \`${plannerModel}\` (research, shape, tasks, acceptance criteria, adversarial review). You describe the idea; I ask clarifying questions and produce a plan draft you can review.\n` +
+    `2. *Handoff* — when you're happy with the plan, type \`/implement\` (or \`!implement\`). That flips this channel to implementation mode.\n` +
+    `3. *Implementation phase* — the Claude Agent SDK takes over, reads the plan, and executes it end-to-end.\n\n` +
+    `To kick things off: what are you trying to build, and why? A few sentences is enough — I'll shape it from there.`
+  );
+};
 
 export interface OrchestratorState {
   runner: AgentRunner;
@@ -23,7 +97,6 @@ export interface OrchestratorState {
   messageLoop: MessageLoop;
   ipcWatcher: IpcWatcher;
   radioTranscriber: RadioTranscriber;
-  triviaAutoSearch: TriviaAutoSearch;
   prWatcher: PrWatcher;
   triviaMonitor: TriviaMonitor;
   scheduler: SchedulerService;
@@ -42,36 +115,52 @@ export const startOrchestrator = async (
     return state;
   }
 
-  logger.info("Starting Shade orchestrator...");
+  logger.debug("Starting Shade orchestrator...");
 
   // Initialize memory system
   try {
     await initGlobalMemory();
-    logger.info("Global memory initialized");
   } catch (err) {
     logger.error(`Failed to initialize global memory (non-fatal): ${err}`);
   }
 
-  // Create the agent runner
   const runner = new DirectAgentRunner();
-  logger.info("Agent runner created");
+  // Planner runner is used for feature-channel groups while they are in the
+  // `planning` phase. It drives the /ip workflow via the OpenAI Chat
+  // Completions API (model from AppConfig.models.planner, default gpt-5.4).
+  const plannerRunner = new OpenAIAgentRunner();
 
-  // Create and initialize channel manager
+  // Create and initialize channel manager. ChannelManager.initialize logs its
+  // own channel count, so we don't need a separate "initialized" line here.
   const channelManager = new ChannelManager();
   if (expressApp) {
     channelManager.setExpressApp(expressApp);
   }
 
+  // Feature channels must auto-trigger on every message — the whole point is
+  // a focused channel where the user doesn't have to @Shade me on every reply.
+  // Normalize any pre-existing feature group whose `requiresTrigger` drifted
+  // to true before this was enforced (or before feature channels existed at
+  // all). We key off `featurePhase` since that's what marks a feature group.
+  try {
+    const result = await Group.updateMany(
+      {featurePhase: {$exists: true}, requiresTrigger: true},
+      {$set: {requiresTrigger: false}}
+    );
+    if (result.modifiedCount > 0) {
+      logger.info(`Normalized ${result.modifiedCount} feature group(s) to requiresTrigger=false`);
+    }
+  } catch (err) {
+    logError("Failed to normalize feature group triggers (non-fatal)", err);
+  }
+
   try {
     await channelManager.initialize();
-    logger.info("Channel manager initialized");
   } catch (err) {
     logError("Channel manager initialization error (non-fatal)", err);
   }
 
-  // Create group queue wired to the agent runner
-  const groupQueue = new GroupQueue(runner, channelManager);
-  logger.info("Group queue created");
+  const groupQueue = new GroupQueue(runner, channelManager, plannerRunner);
 
   // Create and start message polling loop
   const messageLoop = new MessageLoop(channelManager, groupQueue);
@@ -118,7 +207,10 @@ export const startOrchestrator = async (
       data.senderExternalId
     );
 
-    // Create a Group record so the orchestrator listens to this channel
+    // Create a Group record so the orchestrator listens to this channel.
+    // `featurePhase: "planning"` causes GroupQueue to route messages to the
+    // OpenAI planner runner until the user types `/implement`, which flips
+    // the phase to `implementing` and hands control to the Claude Agent SDK.
     const folder = `features/${data.name}`;
     const group = await Group.create({
       name: data.name,
@@ -126,21 +218,41 @@ export const startOrchestrator = async (
       channelId: sourceGroup.channelId,
       externalId: slackChannelId,
       trigger: "@Shade",
+      // Feature channels are always "addressed" implicitly — every message in
+      // the dedicated channel is meant for Shade, so don't require a mention.
       requiresTrigger: false,
       isMain: false,
       modelConfig: sourceGroup.modelConfig,
       executionConfig: sourceGroup.executionConfig,
+      featurePhase: "planning",
     });
 
     // Register in the live cache so messages flow immediately
     channelManager.registerGroup(group);
     await ensureGroupDirectory(folder);
 
-    // Send the initial prompt to the new channel
+    // Pin the /ip -> /implement workflow into the feature channel's group
+    // memory so every agent turn in this channel is anchored to the flow.
+    try {
+      await writeMemory(
+        getGroupMemoryPath(folder),
+        FEATURE_CHANNEL_MEMORY(data.name, data.description)
+      );
+    } catch (err) {
+      logError(`Failed to write feature channel memory for ${data.name}`, err);
+    }
+
+    // Load AppConfig lazily so the greeting surfaces the actual planner model
+    // the operator has configured (don't hardcode "gpt-5.4" here — AppConfig
+    // is the single source of truth per project rules).
+    const {loadAppConfig} = await import("../models/appConfig");
+    const appConfig = await loadAppConfig();
+    const plannerModel = appConfig.models?.planner || "gpt-5.4";
+
     await channelManager.sendMessage(
       sourceGroup.channelId.toString(),
       slackChannelId,
-      `Feature channel ready! What's the idea for *${data.name}*? Describe what you're thinking and I'll help shape it.`
+      FEATURE_CHANNEL_GREETING(data.name, plannerModel)
     );
 
     logger.info(`Feature channel created: #${data.name} (${slackChannelId}), group ${group._id}`);
@@ -154,15 +266,6 @@ export const startOrchestrator = async (
     logError("Radio transcriber start error (non-fatal)", err);
   }
 
-  // Start trivia auto-search (non-fatal if it fails)
-  const triviaAutoSearch = new TriviaAutoSearch(channelManager);
-  messageLoop.setTriviaAutoSearch(triviaAutoSearch);
-  try {
-    await triviaAutoSearch.start();
-  } catch (err) {
-    logError("Trivia auto-search start error (non-fatal)", err);
-  }
-
   // Start PR watcher (non-fatal if it fails)
   const prWatcher = new PrWatcher(channelManager, runner);
   try {
@@ -171,8 +274,10 @@ export const startOrchestrator = async (
     logError("PR watcher start error (non-fatal)", err);
   }
 
-  // Start trivia monitor (non-fatal if it fails)
+  // Start trivia monitor — unified service (formerly TriviaMonitor +
+  // TriviaAutoSearch). Also hooks chat-command routing for `!trivia`.
   const triviaMonitor = new TriviaMonitor(channelManager);
+  messageLoop.setTriviaMonitor(triviaMonitor);
   try {
     await triviaMonitor.start();
   } catch (err) {
@@ -189,13 +294,13 @@ export const startOrchestrator = async (
 
   ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {
     const {AppConfig, reloadAppConfig} = await import("../models/appConfig");
-    await AppConfig.findOneAndUpdate({}, {$set: {"triviaAutoSearch.enabled": data.enabled}});
+    await AppConfig.findOneAndUpdate({}, {$set: {"triviaMonitor.enabled": data.enabled}});
     await reloadAppConfig();
 
     if (data.enabled) {
-      await triviaAutoSearch.start();
+      await triviaMonitor.start();
     } else {
-      triviaAutoSearch.stop();
+      triviaMonitor.stop();
     }
   });
 
@@ -228,7 +333,6 @@ export const startOrchestrator = async (
     messageLoop,
     ipcWatcher,
     radioTranscriber,
-    triviaAutoSearch,
     prWatcher,
     triviaMonitor,
     scheduler,
@@ -251,7 +355,6 @@ export const stopOrchestrator = async (): Promise<void> => {
 
   state.messageLoop.stop();
   state.ipcWatcher.stop();
-  state.triviaAutoSearch.stop();
   state.prWatcher.stop();
   state.triviaMonitor.stop();
   state.scheduler.stop();

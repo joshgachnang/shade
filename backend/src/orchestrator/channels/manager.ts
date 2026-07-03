@@ -1,17 +1,18 @@
 import {logger} from "@terreno/api";
 import type express from "express";
 import {nanoid} from "nanoid";
+import {CHANNEL_STATUS} from "../../constants/statuses";
 import {loadAppConfig} from "../../models/appConfig";
 import {Channel} from "../../models/channel";
 import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import type {ChannelDocument, GroupDocument} from "../../types";
 import {logError} from "../errors";
-import {handleMovieSearch} from "../movieSearch";
 import {pickRenderer} from "../responses/renderers";
 import type {RenderContext, SlackRenderResult} from "../responses/renderers/types";
 import {RichResponse} from "../responses/schema";
 import {truncateRichResponse} from "../responses/truncate";
+import {ChatCommandRouter} from "./commandRouter";
 import {createEdgeAgentConnector} from "./edgeAgent";
 import {createEmailConnector} from "./email";
 import {createSlackConnector} from "./slack";
@@ -33,9 +34,11 @@ export class ChannelManager {
   private groupCache = new Map<string, GroupDocument>();
   private expressApp: express.Application | null = null;
   private connectorFactories: Record<string, ConnectorFactory>;
+  private commandRouter: ChatCommandRouter;
 
-  constructor(factories?: Record<string, ConnectorFactory>) {
+  constructor(factories?: Record<string, ConnectorFactory>, commandRouter?: ChatCommandRouter) {
     this.connectorFactories = factories ?? defaultConnectorFactories;
+    this.commandRouter = commandRouter ?? new ChatCommandRouter();
   }
 
   setExpressApp(app: express.Application): void {
@@ -67,7 +70,9 @@ export class ChannelManager {
       } catch (err) {
         logError(`Failed to connect channel "${channelDoc.name}"`, err);
         try {
-          await Channel.findByIdAndUpdate(channelDoc._id, {$set: {status: "error"}});
+          await Channel.findByIdAndUpdate(channelDoc._id, {
+            $set: {status: CHANNEL_STATUS.error},
+          });
         } catch (dbErr) {
           logger.error(`Failed to update channel error status in DB: ${dbErr}`);
         }
@@ -127,24 +132,36 @@ export class ChannelManager {
       return;
     }
 
+    // Dedupe by (groupId, externalId). Slack fires both `message` and
+    // `app_mention` events for a tagged message, so without this guard we
+    // were storing every tagged message twice and running the agent on each
+    // copy. The unique pair is (group, provider-side message id / ts).
+    if (inbound.externalId) {
+      const existing = await Message.findOne({
+        groupId: group._id,
+        externalId: inbound.externalId,
+      }).lean();
+      if (existing) {
+        logger.debug(
+          `Duplicate inbound message ${inbound.externalId} in group ${group.name} — skipping`
+        );
+        return;
+      }
+    }
+
     logger.debug(
       `Storing inbound message from ${inbound.sender} in group ${group.name} (${inbound.content.substring(0, 80)})`
     );
 
-    // Intercept !search commands and respond directly
-    const searchMatch = inbound.content.match(/^!moviesearch\s+(.+)/i);
-    if (searchMatch) {
-      const query = searchMatch[1].trim();
-      logger.info(`Movie search from ${inbound.sender}: "${query}"`);
-      try {
-        const response = await handleMovieSearch(query);
-        await this.sendMessage(channelDoc._id.toString(), inbound.groupExternalId, response);
-      } catch (err) {
-        logError("Movie search failed", err);
+    // Let the command router intercept chat-prefix commands (!moviesearch, …)
+    // before the message falls through to the regular storage pipeline.
+    const commandReply = await this.commandRouter.tryHandle(inbound);
+    if (commandReply !== undefined) {
+      if (commandReply) {
         await this.sendMessage(
           channelDoc._id.toString(),
           inbound.groupExternalId,
-          `Search failed: ${err instanceof Error ? err.message : String(err)}`
+          commandReply.content
         );
       }
       return;

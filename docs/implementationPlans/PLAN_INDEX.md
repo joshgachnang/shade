@@ -14,6 +14,7 @@ See `CLAUDE.md` for IP lifecycle stages and management guidelines.
 | IP-004 | Movie Scene Analyzer | Pending Verification | Big batch (1-2 weeks) | High |
 | IP-005 | Rich Response UI | Open | Big batch (1-2 weeks) | High |
 | IP-006 | Edge Agents | Pending Verification | Big batch (1-2 weeks) | High |
+| IP-007 | Trivia Group | Open | Small batch (1-2 days) | Medium |
 
 ## Completed
 

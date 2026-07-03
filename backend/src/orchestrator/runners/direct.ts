@@ -63,6 +63,16 @@ export class DirectAgentRunner implements AgentRunner {
       });
       mcpServers["shade-orchestrator"] = shadeMcp;
 
+      // Every Shade-owned MCP tool must be auto-allowed, otherwise the agent
+      // silently drops the tool call and we end up with hallucinated "Done"
+      // responses (e.g. a feature channel that was never actually created).
+      // `mcp__<server>` whitelists every tool exposed by that MCP server.
+      const shadeMcpWildcard = "mcp__shade-orchestrator";
+      const configuredAllowedTools = appConfig.agent.allowedTools ?? [];
+      const allowedTools = configuredAllowedTools.includes(shadeMcpWildcard)
+        ? configuredAllowedTools
+        : [...configuredAllowedTools, shadeMcpWildcard];
+
       // Add any additional external MCP servers
       if (config.mcpServers) {
         for (const server of config.mcpServers) {
@@ -86,7 +96,7 @@ export class DirectAgentRunner implements AgentRunner {
           systemPrompt: config.systemPrompt,
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
-          allowedTools: appConfig.agent.allowedTools,
+          allowedTools,
           abortController,
           maxTurns: appConfig.agent.maxTurns,
           mcpServers,

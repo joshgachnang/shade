@@ -147,7 +147,7 @@ export class IpcWatcher {
       });
     }, interval);
 
-    logger.info(`IPC watcher started (interval: ${interval}ms)`);
+    logger.debug(`IPC watcher started (interval: ${interval}ms)`);
   }
 
   stop(): void {

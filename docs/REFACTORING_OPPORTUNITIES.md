@@ -38,6 +38,15 @@ Movie statuses ("pending", "extracting", etc.), backend names ("claude", "ollama
 ### 10. Large service files
 `radioTranscriber.ts` (781 lines), `triviaAutoSearch.ts` (794 lines) — could be broken into smaller focused modules.
 
+### 28. Untyped `config` Mixed fields on Channel/Plugin/WebhookSource
+`Channel.config`, `Plugin.config`, and `WebhookSource.config` are stored as `mongoose.Schema.Types.Mixed`. Every consumer (e.g. `slack.ts`, `email.ts`, `imessage.ts`) re-casts the same shape inline like `this.channelDoc.config as {botToken?: string}`, losing validation and autocomplete and risking drift when configs change. Migrate to per-type discriminated subschemas (one per `channel.type` / `plugin.type`) with required fields validated at write time. Same pattern likely applies to `Message.metadata` and `AIRequest.metadata`, though those are more open-ended and may stay loose.
+
+**Includes a startup migration script** (run from `server.ts` after `connectToMongoDB()`, before route registration) that:
+- Reads every existing `Channel`/`Plugin`/`WebhookSource` doc and rewrites `config` into the discriminator-shaped subdocument for its `type`.
+- Logs (does not throw) on docs whose `config` is missing required fields, so a bad row can't block boot.
+- Writes a `schemaVersion` marker on each doc so subsequent runs become no-ops.
+- Is idempotent and safe to re-run; ships alongside the schema change in the same PR.
+
 ---
 
 ## Frontend
@@ -104,5 +113,5 @@ No root `.env.example`. `EXPO_PUBLIC_API_URL` and `OPENAPI_URL` undocumented.
 | Priority | Items | Theme |
 |----------|-------|-------|
 | **High** | 1, 2, 3, 11, 12, 20, 22 | Duplication & correctness |
-| **Medium** | 4, 5, 6, 8, 9, 13, 14, 21, 23 | Complexity & consistency |
+| **Medium** | 4, 5, 6, 8, 9, 13, 14, 21, 23, 28 | Complexity & consistency |
 | **Low** | 7, 10, 15-19, 24-27 | Polish & coverage |

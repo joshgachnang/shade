@@ -1,7 +1,9 @@
-import {Box, Heading, Page, Text} from "@terreno/ui";
+import {Box, Button, Heading, Page, Text} from "@terreno/ui";
+import {type Href, useRouter} from "expo-router";
 import type React from "react";
 
 const HomeScreen: React.FC = () => {
+  const router = useRouter();
   return (
     <Page navigation={undefined} title="Home">
       <Box padding={4} gap={4} testID="home-screen">
@@ -10,6 +12,13 @@ const HomeScreen: React.FC = () => {
         <Text color="secondaryLight">
           Start by adding models to the backend and screens to the frontend.
         </Text>
+        <Box marginTop={2}>
+          <Button
+            testID="home-open-console-button"
+            text="Open Shade Console"
+            onClick={() => router.push("/console" as Href)}
+          />
+        </Box>
       </Box>
     </Page>
   );

@@ -59,6 +59,12 @@ cd frontend && bun run sdk   # Regenerate SDK after backend changes
 - Write complete, functional code without TODOs when possible
 - Comments should describe purpose, not effect
 
+### Configuration — always use `AppConfig`
+- Runtime config (API keys, model names, webhooks, feature flags, URLs, thresholds) **must** live in the `AppConfig` model (`backend/src/models/appConfig.ts`) and be read via `loadAppConfig()`.
+- Environment variables are only for bootstrap values required before the DB is reachable (`MONGO_URI`, `PORT`). Everything else goes in `AppConfig`.
+- When adding new config, update both `appConfig.ts` and `types/models/appConfigTypes.ts`, plus `hydrateEnvFromConfig` in `backend/src/utils/configEnv.ts` if a third-party SDK reads it from `process.env`.
+- Never hardcode API keys, model names, or service URLs in application code.
+
 ## Package Reference
 
 ### @terreno/api

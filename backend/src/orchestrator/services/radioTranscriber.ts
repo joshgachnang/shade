@@ -1,22 +1,20 @@
 import type {ChildProcess} from "node:child_process";
 import {spawn} from "node:child_process";
-import {createHmac} from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {logger} from "@terreno/api";
 import {paths} from "../../config";
+import {RADIO_STREAM_STATUS} from "../../constants/statuses";
 import {loadAppConfig} from "../../models/appConfig";
-
-const BASE_URL = process.env.SHADE_PUBLIC_URL || "https://shade-api.nang.io";
-
-/** Base URL for transcript recording links (http, not https). */
-const RECORDING_PUBLIC_BASE_URL = BASE_URL.replace(/^https:\/\//i, "http://");
-
-// Using native WebSocket with Deepgram's token subprotocol auth
 import {RadioStream} from "../../models/radioStream";
 import {Transcript} from "../../models/transcript";
 import type {RadioStreamDocument} from "../../types";
+import {getRecordingPublicBaseUrl} from "../../utils/publicUrl";
 import type {ChannelManager} from "../channels/manager";
+import {queryAcrCloud} from "./radio/acrCloud";
+import {pcmToMp3, wrapPcmAsWav} from "./radio/audioEncoding";
+import {postMessageToSlack, sendToSlackWebhook} from "./radio/slackNotifier";
+import {MUSIC_END_SENTINEL, MUSIC_START_SENTINEL} from "./trivia/prompts";
 
 /** How often to check ACRCloud (ms) */
 const SONG_ID_INTERVAL_MS = 30_000;
@@ -60,6 +58,20 @@ const FFMPEG_SEARCH_PATHS = [
   "/usr/bin/ffmpeg",
 ];
 
+/**
+ * ffmpeg stderr noise we always drop. These warnings are emitted for a bad
+ * packet here and there in live MP3/HTTP streams — ffmpeg recovers and
+ * keeps decoding, so surfacing them only pollutes the logs. Anything NOT
+ * matching these patterns still goes to debug.
+ */
+const FFMPEG_STDERR_SILENCE_PATTERNS: RegExp[] = [
+  /Error submitting packet to decoder.*Invalid data found/i,
+  /Invalid data found when processing input/i,
+  /mp3float.*Header missing/i,
+  /past duration .* too large/i,
+  /non monotonically increasing dts/i,
+];
+
 export class RadioTranscriber {
   private channelManager: ChannelManager;
   private activeStreams = new Map<string, ActiveStream>();
@@ -97,9 +109,12 @@ export class RadioTranscriber {
       return;
     }
 
-    // Check prerequisites
+    // Credential is hydrated from AppConfig.apiKeys.deepgram if not set in
+    // the process environment. See utils/configEnv.ts.
     if (!process.env.DEEPGRAM_API_KEY) {
-      logger.warn("DEEPGRAM_API_KEY not set — radio transcriber disabled");
+      logger.warn(
+        "Deepgram API key not set (AppConfig.apiKeys.deepgram or DEEPGRAM_API_KEY) — radio transcriber disabled"
+      );
       return;
     }
 
@@ -124,7 +139,7 @@ export class RadioTranscriber {
       } catch (err) {
         logger.error(`Failed to start radio stream "${doc.name}": ${err}`);
         await RadioStream.findByIdAndUpdate(doc._id, {
-          $set: {status: "error", errorMessage: String(err)},
+          $set: {status: RADIO_STREAM_STATUS.error, errorMessage: String(err)},
         });
       }
     }
@@ -180,8 +195,11 @@ export class RadioTranscriber {
       });
     }, batchInterval);
 
-    // Set up periodic song identification via ACRCloud (always on when stream is active)
-    if (process.env.ACRCLOUD_ACCESS_KEY && process.env.ACRCLOUD_SECRET_KEY) {
+    // Set up periodic song identification via ACRCloud. Gated by
+    // AppConfig.radioTranscriber.songIdentification so operators can disable
+    // both the polling and the "Now Playing" Slack post.
+    const songIdEnabled = appConfig.radioTranscriber.songIdentification !== false;
+    if (songIdEnabled && process.env.ACRCLOUD_ACCESS_KEY && process.env.ACRCLOUD_SECRET_KEY) {
       active.songId.timer = setInterval(() => {
         this.identifySong(active).catch((err) => {
           logger.error(`Song ID error for stream "${doc.name}": ${err}`);
@@ -190,6 +208,8 @@ export class RadioTranscriber {
       logger.info(
         `Song identification enabled for "${doc.name}" (every ${SONG_ID_INTERVAL_MS / 1000}s)`
       );
+    } else if (!songIdEnabled) {
+      logger.info(`Song identification disabled by AppConfig for "${doc.name}"`);
     }
 
     logger.info(`Radio stream "${doc.name}" pipeline launched (flush every ${batchInterval}ms)`);
@@ -270,9 +290,13 @@ export class RadioTranscriber {
 
     ffmpeg.stderr?.on("data", (data: Buffer) => {
       const msg = data.toString().trim();
-      if (msg) {
-        logger.debug(`ffmpeg [${active.doc.name}]: ${msg}`);
+      if (!msg) {
+        return;
       }
+      if (FFMPEG_STDERR_SILENCE_PATTERNS.some((re) => re.test(msg))) {
+        return;
+      }
+      logger.debug(`ffmpeg [${active.doc.name}]: ${msg}`);
     });
 
     ffmpeg.stdout?.on("data", (chunk: Buffer) => {
@@ -395,7 +419,10 @@ export class RadioTranscriber {
         `Stream "${active.doc.name}" exceeded max reconnects (${maxReconnects}), marking as error`
       );
       await RadioStream.findByIdAndUpdate(doc._id, {
-        $set: {status: "error", errorMessage: `Exceeded max reconnect attempts (${maxReconnects})`},
+        $set: {
+          status: RADIO_STREAM_STATUS.error,
+          errorMessage: `Exceeded max reconnect attempts (${maxReconnects})`,
+        },
       });
       this.activeStreams.delete(active.streamId);
       return;
@@ -435,6 +462,13 @@ export class RadioTranscriber {
   }
 
   private async doIdentifySong(active: ActiveStream): Promise<void> {
+    // Honor runtime toggle so flipping the flag in AppConfig takes effect
+    // without restarting the stream.
+    const appConfig = await loadAppConfig();
+    if (appConfig.radioTranscriber.songIdentification === false) {
+      return;
+    }
+
     const accessKey = process.env.ACRCLOUD_ACCESS_KEY!;
     const secretKey = process.env.ACRCLOUD_SECRET_KEY!;
 
@@ -443,14 +477,15 @@ export class RadioTranscriber {
     }
 
     const pcmData = Buffer.concat(active.audioBuffer);
-    const audioData = this.wrapPcmAsWav(pcmData, 16000, 1, 16);
+    const audioData = wrapPcmAsWav(pcmData, 16000, 1, 16);
 
-    const result = await this.queryAcrCloud(audioData, accessKey, secretKey);
+    const result = await queryAcrCloud({audioBuffer: audioData, accessKey, secretKey});
 
     if (!result) {
       // No song match — it's speech. Allow transcripts to post.
       if (active.songId.musicPlaying) {
         logger.info(`Music ended on "${active.doc.name}", resuming transcription`);
+        await this.emitMusicSentinel(active, MUSIC_END_SENTINEL);
       }
       active.songId.musicPlaying = false;
       active.songId.lastIdentifiedSong = null;
@@ -458,7 +493,14 @@ export class RadioTranscriber {
     }
 
     // Song matched — suppress transcripts (they're lyrics)
+    const wasPlaying = active.songId.musicPlaying;
     active.songId.musicPlaying = true;
+    if (!wasPlaying) {
+      // Transition into music. Insert a sentinel Transcript so downstream
+      // consumers (e.g. TriviaMonitor) can finalize any pending questions —
+      // the DJ stopped talking.
+      await this.emitMusicSentinel(active, MUSIC_START_SENTINEL);
+    }
 
     const songKey = `${result.artist} - ${result.title}`;
 
@@ -474,11 +516,15 @@ export class RadioTranscriber {
 
     logger.info(`Song identified on "${active.doc.name}": ${songKey}`);
 
+    // "Now Playing" posts are gated separately so music-gating can run without
+    // spamming Slack.
+    const postSongIdToSlack = appConfig.radioTranscriber.postSongIdToSlack !== false;
+
     try {
-      if (active.doc.slackWebhookUrl) {
-        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, message);
+      if (postSongIdToSlack && active.doc.slackWebhookUrl) {
+        await sendToSlackWebhook({webhookUrl: active.doc.slackWebhookUrl, text: message});
       }
-      if (active.doc.targetGroupId) {
+      if (postSongIdToSlack && active.doc.targetGroupId) {
         await this.channelManager.sendMessageToGroup(active.doc.targetGroupId.toString(), message);
       }
     } catch (err) {
@@ -486,158 +532,19 @@ export class RadioTranscriber {
     }
   }
 
-  private wrapPcmAsWav(
-    pcm: Buffer,
-    sampleRate: number,
-    channels: number,
-    bitsPerSample: number
-  ): Buffer {
-    const byteRate = sampleRate * channels * (bitsPerSample / 8);
-    const blockAlign = channels * (bitsPerSample / 8);
-    const header = Buffer.alloc(44);
-    header.write("RIFF", 0);
-    header.writeUInt32LE(36 + pcm.length, 4);
-    header.write("WAVE", 8);
-    header.write("fmt ", 12);
-    header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20); // PCM
-    header.writeUInt16LE(channels, 22);
-    header.writeUInt32LE(sampleRate, 24);
-    header.writeUInt32LE(byteRate, 28);
-    header.writeUInt16LE(blockAlign, 32);
-    header.writeUInt16LE(bitsPerSample, 34);
-    header.write("data", 36);
-    header.writeUInt32LE(pcm.length, 40);
-    return Buffer.concat([header, pcm]);
-  }
-
-  private async queryAcrCloud(
-    audioBuffer: Buffer,
-    accessKey: string,
-    secretKey: string
-  ): Promise<{artist: string; title: string; album?: string} | null> {
-    const host = "identify-us-west-2.acrcloud.com";
-    const endpoint = "/v1/identify";
-    const httpMethod = "POST";
-    const httpUri = endpoint;
-    const dataType = "audio";
-    const signatureVersion = "1";
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-
-    const stringToSign = [
-      httpMethod,
-      httpUri,
-      accessKey,
-      dataType,
-      signatureVersion,
-      timestamp,
-    ].join("\n");
-    const signature = createHmac("sha1", secretKey).update(stringToSign).digest("base64");
-
-    const form = new FormData();
-    form.append("sample", new Blob([audioBuffer]), "audio.wav");
-    form.append("sample_bytes", audioBuffer.length.toString());
-    form.append("access_key", accessKey);
-    form.append("data_type", dataType);
-    form.append("signature_version", signatureVersion);
-    form.append("signature", signature);
-    form.append("timestamp", timestamp);
-
-    const response = await fetch(`https://${host}${endpoint}`, {
-      method: "POST",
-      body: form,
-    });
-
-    if (!response.ok) {
-      logger.error(`ACRCloud returned ${response.status}: ${await response.text()}`);
-      return null;
-    }
-
-    const data = (await response.json()) as any;
-
-    if (data.status?.code !== 0) {
-      logger.debug(`ACRCloud no match: ${data.status?.msg} (code ${data.status?.code})`);
-      return null;
-    }
-
-    const music = data.metadata?.music?.[0];
-    if (!music) {
-      return null;
-    }
-
-    return {
-      artist: music.artists?.map((a: any) => a.name).join(", ") || "Unknown Artist",
-      title: music.title || "Unknown Title",
-      album: music.album?.name,
-    };
-  }
-
-  private async postMessageToSlack(
-    botToken: string,
-    channelId: string,
-    text: string,
-    recordingUrl?: string
-  ): Promise<void> {
-    const body: Record<string, unknown> = {channel: channelId, text};
-
-    if (recordingUrl) {
-      body.blocks = [
-        {
-          type: "section",
-          text: {type: "mrkdwn", text},
-          accessory: {
-            type: "button",
-            text: {type: "plain_text", text: "Listen"},
-            url: recordingUrl,
-            action_id: "listen_recording",
-          },
-        },
-      ];
-    }
-
-    const response = await fetch("https://slack.com/api/chat.postMessage", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    const data = (await response.json()) as any;
-    if (!data.ok) {
-      throw new Error(`chat.postMessage failed: ${data.error}`);
-    }
-  }
-
-  private async sendToSlackWebhook(
-    webhookUrl: string,
-    text: string,
-    recordingUrl?: string
-  ): Promise<void> {
-    const body: Record<string, unknown> = recordingUrl
-      ? {
-          blocks: [
-            {
-              type: "section",
-              text: {type: "mrkdwn", text},
-              accessory: {
-                type: "button",
-                text: {type: "plain_text", text: "Listen"},
-                url: recordingUrl,
-                action_id: "listen_recording",
-              },
-            },
-          ],
-        }
-      : {text};
-
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      throw new Error(`Slack webhook returned ${response.status}: ${await response.text()}`);
+  /**
+   * Write a sentinel Transcript signaling a music-state transition. Used by
+   * TriviaMonitor to decide when to finalize pending questions.
+   */
+  private async emitMusicSentinel(active: ActiveStream, sentinel: string): Promise<void> {
+    try {
+      await Transcript.create({
+        radioStreamId: active.doc._id,
+        targetGroupId: active.doc.targetGroupId,
+        content: sentinel,
+      });
+    } catch (err) {
+      logger.warn(`Failed to emit music sentinel for "${active.doc.name}": ${err}`);
     }
   }
 
@@ -684,7 +591,7 @@ export class RadioTranscriber {
     if (audioChunks.length > 0) {
       try {
         const pcm = Buffer.concat(audioChunks);
-        mp3Buffer = await this.pcmToMp3(pcm);
+        mp3Buffer = await pcmToMp3(pcm, this.ffmpegPath);
       } catch (err) {
         logger.debug(`Failed to convert audio to MP3 for "${active.doc.name}": ${err}`);
       }
@@ -697,7 +604,7 @@ export class RadioTranscriber {
         await fs.mkdir(mp3Dir, {recursive: true});
         const mp3Filename = `${batchStart.toISOString().replace(/[:.]/g, "-")}.mp3`;
         await fs.writeFile(path.join(mp3Dir, mp3Filename), mp3Buffer);
-        recordingUrl = `${RECORDING_PUBLIC_BASE_URL}/static/recordings/${active.streamId}/${mp3Filename}`;
+        recordingUrl = `${getRecordingPublicBaseUrl()}/static/recordings/${active.streamId}/${mp3Filename}`;
       } catch (err) {
         logger.debug(`Failed to save MP3 for "${active.doc.name}": ${err}`);
       }
@@ -716,15 +623,26 @@ export class RadioTranscriber {
     }
 
     try {
-      if (active.doc.slackBotToken && active.doc.slackChannelId) {
-        await this.postMessageToSlack(
-          active.doc.slackBotToken,
-          active.doc.slackChannelId,
-          messageText,
-          recordingUrl
-        );
-      } else if (active.doc.slackWebhookUrl) {
-        await this.sendToSlackWebhook(active.doc.slackWebhookUrl, messageText, recordingUrl);
+      // AppConfig.radioTranscriber.postTranscriptsToSlack gates the raw per-flush
+      // Slack post. When disabled, transcripts are still written to the DB so
+      // downstream consumers like TriviaMonitor (Haiku question extractor +
+      // web-search research) keep running.
+      const appConfig = await loadAppConfig();
+      const postToSlack = appConfig.radioTranscriber.postTranscriptsToSlack !== false;
+
+      if (postToSlack && active.doc.slackBotToken && active.doc.slackChannelId) {
+        await postMessageToSlack({
+          botToken: active.doc.slackBotToken,
+          channelId: active.doc.slackChannelId,
+          text: messageText,
+          recordingUrl,
+        });
+      } else if (postToSlack && active.doc.slackWebhookUrl) {
+        await sendToSlackWebhook({
+          webhookUrl: active.doc.slackWebhookUrl,
+          text: messageText,
+          recordingUrl,
+        });
       }
 
       if (active.doc.targetGroupId) {
@@ -744,44 +662,5 @@ export class RadioTranscriber {
       logger.error(`Failed to send transcript for "${active.doc.name}": ${err}`);
       active.transcriptBuffer = `${text} ${active.transcriptBuffer}`;
     }
-  }
-
-  private pcmToMp3(pcm: Buffer): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const ffmpeg = spawn(
-        this.ffmpegPath,
-        [
-          "-f",
-          "s16le",
-          "-ar",
-          "16000",
-          "-ac",
-          "1",
-          "-i",
-          "pipe:0",
-          "-codec:a",
-          "libmp3lame",
-          "-b:a",
-          "64k",
-          "-f",
-          "mp3",
-          "pipe:1",
-        ],
-        {stdio: ["pipe", "pipe", "pipe"]}
-      );
-
-      const chunks: Buffer[] = [];
-      ffmpeg.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
-      ffmpeg.on("close", (code) => {
-        if (code === 0 && chunks.length > 0) {
-          resolve(Buffer.concat(chunks));
-        } else {
-          reject(new Error(`ffmpeg mp3 encode exited with code ${code}`));
-        }
-      });
-      ffmpeg.on("error", reject);
-      ffmpeg.stdin?.write(pcm);
-      ffmpeg.stdin?.end();
-    });
   }
 }

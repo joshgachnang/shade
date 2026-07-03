@@ -12,9 +12,10 @@
     "@slack/bolt": "^4.6.0",
     "@slack/types": "^2.14.0",
     "@slack/web-api": "^7.14.1",
-    "@terreno/admin-backend": "^0.12.0",
-    "@terreno/api": "^0.12.0",
+    "@terreno/admin-backend": "^0.23.0",
+    "@terreno/api": "^0.23.0",
     "@types/ws": "^8.18.1",
+    "@wesleytodd/openapi": "^1.1.0",
     "cheerio": "^1.2.0",
     "cron-parser": "^5.5.0",
     "dotenv": "^16.4.7",
@@ -42,7 +43,7 @@
     "@types/pino-pretty": "^5.0.0",
     "bun-types": "^1.3.4",
     "mongodb-memory-server-global": "^10.4.0",
-    "typescript": "5.8.2"
+    "typescript": "~5.9.2"
   },
   "name": "@shade/backend",
   "private": true,

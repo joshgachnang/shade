@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
+import {logger} from "@terreno/api";
 import {z} from "zod";
 import {loadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
@@ -565,7 +566,7 @@ const buildTools = (ctx: McpContext) => {
 
   const createFeatureTool = tool(
     "create_feature",
-    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group for it. Use this when someone wants to start working on a new feature.",
+    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group pre-configured to drive the feature through the `/ip` planning skill and then `/implement` to execute the resulting plan. Use this when someone wants to start working on a new feature.",
     {
       name: z
         .string()
@@ -578,12 +579,18 @@ const buildTools = (ctx: McpContext) => {
         .describe("Brief description of the feature for the channel topic"),
     },
     async (args) => {
+      logger.info(
+        `MCP create_feature invoked: name="${args.name}" group=${ctx.groupId} sender=${ctx.senderExternalId ?? "<none>"}`
+      );
       if (!ctx.senderExternalId) {
+        logger.warn(
+          `MCP create_feature aborted: no senderExternalId in context (group=${ctx.groupId})`
+        );
         return {
           content: [
             {
               type: "text" as const,
-              text: "Error: No sender information available to invite to the channel.",
+              text: "Error: No sender information available to invite to the channel. The feature channel was NOT created.",
             },
           ],
         };
@@ -592,22 +599,40 @@ const buildTools = (ctx: McpContext) => {
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, "-")
         .slice(0, 80);
-      const fileId = await writeIpcFile(ctx.ipcDir, {
-        type: "create_feature",
-        groupId: ctx.groupId,
-        channelId: ctx.channelId,
-        name: channelName,
-        description: args.description,
-        senderExternalId: ctx.senderExternalId,
-      });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Feature channel creation queued (${fileId}). Creating #${channelName} and inviting you...`,
-          },
-        ],
-      };
+      try {
+        const fileId = await writeIpcFile(ctx.ipcDir, {
+          type: "create_feature",
+          groupId: ctx.groupId,
+          channelId: ctx.channelId,
+          name: channelName,
+          description: args.description,
+          senderExternalId: ctx.senderExternalId,
+        });
+        logger.info(
+          `MCP create_feature queued IPC ${fileId} for #${channelName} (dir=${ctx.ipcDir})`
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Feature channel creation queued (${fileId}). Creating #${channelName} and inviting you...`,
+            },
+          ],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(
+          `MCP create_feature failed to queue IPC for #${channelName} (dir=${ctx.ipcDir}): ${msg}`
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to queue feature channel creation: ${msg}. The channel was NOT created — ask the operator to check the backend logs.`,
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -1152,11 +1177,11 @@ const buildTools = (ctx: McpContext) => {
     }
   );
 
-  const toggleTriviaAutoSearchTool = tool(
-    "toggle_trivia_auto_search",
-    "Enable or disable the trivia auto-search service. When enabled, Shade watches radio transcripts for trivia questions and automatically researches answers. When disabled, transcript monitoring stops.",
+  const toggleTriviaMonitorTool = tool(
+    "toggle_trivia_monitor",
+    "Enable or disable the trivia monitor. When enabled, Shade watches radio transcripts for trivia questions and automatically researches answers once music starts. When disabled, transcript monitoring stops.",
     {
-      enabled: z.boolean().describe("true to enable trivia auto-search, false to disable"),
+      enabled: z.boolean().describe("true to enable trivia monitor, false to disable"),
     },
     async (args) => {
       const fileId = await writeIpcFile(ctx.ipcDir, {
@@ -1168,22 +1193,22 @@ const buildTools = (ctx: McpContext) => {
         content: [
           {
             type: "text" as const,
-            text: `Trivia auto-search ${args.enabled ? "enable" : "disable"} queued (${fileId}).`,
+            text: `Trivia monitor ${args.enabled ? "enable" : "disable"} queued (${fileId}).`,
           },
         ],
       };
     }
   );
 
-  const triviaAutoSearchStatusTool = tool(
-    "trivia_auto_search_status",
-    "Check the current status of the trivia auto-search service — whether it's enabled in config and whether the polling loop is actively running.",
+  const triviaMonitorStatusTool = tool(
+    "trivia_monitor_status",
+    "Check the current status of the trivia monitor — whether it's enabled in config and the configured group.",
     {},
     async () => {
       try {
         const config = await loadAppConfig();
-        const enabled = config.triviaAutoSearch.enabled;
-        const groupId = config.triviaAutoSearch.groupId;
+        const enabled = config.triviaMonitor.enabled;
+        const groupId = config.triviaMonitor.groupId;
         return {
           content: [
             {
@@ -1231,8 +1256,8 @@ const buildTools = (ctx: McpContext) => {
     stopRadioStreamTool,
     listRadioStreamsTool,
     toggleTranscriptionTool,
-    toggleTriviaAutoSearchTool,
-    triviaAutoSearchStatusTool,
+    toggleTriviaMonitorTool,
+    triviaMonitorStatusTool,
   ];
 };
 

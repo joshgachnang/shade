@@ -18,6 +18,9 @@ export interface AppConfigRadioTranscriber {
   defaultBatchIntervalMs: number;
   maxReconnectAttempts: number;
   reconnectDelayMs: number;
+  postTranscriptsToSlack: boolean;
+  songIdentification: boolean;
+  postSongIdToSlack: boolean;
 }
 
 export interface AppConfigOrchestrator {
@@ -38,12 +41,19 @@ export interface AppConfigApiKeys {
   braveSearch: string;
   exa: string;
   tavily: string;
+  anthropic: string;
+  openRouter: string;
+  openai: string;
+  deepgram: string;
+  acrCloudAccessKey: string;
+  acrCloudSecretKey: string;
+  github: string;
 }
 
-export interface AppConfigTriviaAutoSearch {
-  enabled: boolean;
-  groupId: string;
-  allowedUserIds: string[];
+export interface AppConfigPrWatchPrompts {
+  fixConflicts: string;
+  checkWatcher: string;
+  botReviewSystem: string;
 }
 
 export interface AppConfigPrWatch {
@@ -54,11 +64,14 @@ export interface AppConfigPrWatch {
   autoRespondToBots: boolean;
   autoFixConflicts: boolean;
   reposBaseDir: string;
+  botResponseModel: string;
+  prompts: AppConfigPrWatchPrompts;
 }
 
 export interface AppConfigTriviaMonitor {
   enabled: boolean;
   groupId: string;
+  allowedUserIds: string[];
   questionsWebhook: string;
   answersWebhook: string;
 }
@@ -67,6 +80,46 @@ export interface AppConfigTriviaStats {
   slackWebhook: string;
   blueskyIdentifier: string;
   blueskyPassword: string;
+}
+
+export interface AppConfigModels {
+  answerer: string;
+  detector: string;
+  planner: string;
+}
+
+export interface AppConfigMcpServiceConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+export interface AppConfigMcpNzbgetConfig {
+  baseUrl: string;
+  username: string;
+  password: string;
+}
+
+export interface AppConfigMcpPlexConfig {
+  baseUrl: string;
+  token: string;
+}
+
+export interface AppConfigMcpMedia {
+  authToken: string;
+  port: number;
+  sonarr: AppConfigMcpServiceConfig;
+  radarr: AppConfigMcpServiceConfig;
+  nzbget: AppConfigMcpNzbgetConfig;
+  plex: AppConfigMcpPlexConfig;
+}
+
+export interface AppConfigLogging {
+  level: string;
+}
+
+export interface AppConfigAuth {
+  tokenSecret: string;
+  refreshTokenSecret: string;
 }
 
 export interface AppConfigNotifications {
@@ -86,13 +139,19 @@ export interface AppConfigMaps {
 export interface AppConfigFields {
   assistantName: string;
   triggerPattern: string;
+  dataDir: string;
+  publicUrl: string;
+  triviaResearchSystemPrompt: string;
+  logging: AppConfigLogging;
+  auth: AppConfigAuth;
   pollIntervals: AppConfigPollIntervals;
   concurrency: AppConfigConcurrency;
   radioTranscriber: AppConfigRadioTranscriber;
   orchestrator: AppConfigOrchestrator;
   agent: AppConfigAgent;
   apiKeys: AppConfigApiKeys;
-  triviaAutoSearch: AppConfigTriviaAutoSearch;
+  models: AppConfigModels;
+  mcpMedia: AppConfigMcpMedia;
   prWatch: AppConfigPrWatch;
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;
