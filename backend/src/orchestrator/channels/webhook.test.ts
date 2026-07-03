@@ -1,22 +1,21 @@
-import {describe, expect, mock, test} from "bun:test";
+import {afterAll, beforeAll, describe, expect, mock, spyOn, test} from "bun:test";
 import crypto from "node:crypto";
+import {Channel} from "../../models/channel";
 import type {ChannelDocument} from "../../types";
 import {WebhookChannelConnector} from "./webhook";
 
-// Mock Channel model
-mock.module("../../models/channel", () => ({
-  Channel: {
-    findByIdAndUpdate: mock(() => Promise.resolve()),
-  },
-}));
+// Stub Channel.findByIdAndUpdate so persistStatus doesn't hit the DB with a fake
+// _id. Do NOT use mock.module here — module mocks leak into other test files.
+let findByIdAndUpdateSpy: ReturnType<typeof spyOn>;
 
-// Mock WebhookSource model
-mock.module("../../models/webhookSource", () => ({
-  WebhookSource: {
-    findById: mock(() => Promise.resolve(null)),
-    findByIdAndUpdate: mock(() => Promise.resolve()),
-  },
-}));
+beforeAll(() => {
+  findByIdAndUpdateSpy = spyOn(Channel, "findByIdAndUpdate").mockImplementation((() =>
+    Promise.resolve(null)) as any);
+});
+
+afterAll(() => {
+  findByIdAndUpdateSpy.mockRestore();
+});
 
 const makeChannelDoc = (): ChannelDocument => {
   return {

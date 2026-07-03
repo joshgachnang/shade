@@ -1,17 +1,24 @@
-import {describe, expect, mock, test} from "bun:test";
+import {afterAll, beforeAll, describe, expect, spyOn, test} from "bun:test";
+import {EdgeAgent} from "../../models/edgeAgent";
 import type {ChannelDocument} from "../../types";
 import {EdgeAgentChannelConnector} from "./edgeAgent";
 
-// Mock EdgeAgent model
-const mockFindOne = mock(() => Promise.resolve({_id: "agent1", name: "test-agent"}));
-const mockFindByIdAndUpdate = mock(() => Promise.resolve());
+// Stub the EdgeAgent model statics used by the connector. Do NOT use
+// mock.module here — module mocks leak into other test files.
+let mockFindOne: ReturnType<typeof spyOn>;
+let mockFindByIdAndUpdate: ReturnType<typeof spyOn>;
 
-mock.module("../../models/edgeAgent", () => ({
-  EdgeAgent: {
-    findOne: mockFindOne,
-    findByIdAndUpdate: mockFindByIdAndUpdate,
-  },
-}));
+beforeAll(() => {
+  mockFindOne = spyOn(EdgeAgent, "findOne").mockImplementation((() =>
+    Promise.resolve({_id: "agent1", name: "test-agent"})) as any);
+  mockFindByIdAndUpdate = spyOn(EdgeAgent, "findByIdAndUpdate").mockImplementation((() =>
+    Promise.resolve(null)) as any);
+});
+
+afterAll(() => {
+  mockFindOne.mockRestore();
+  mockFindByIdAndUpdate.mockRestore();
+});
 
 const makeChannelDoc = (): ChannelDocument => {
   return {
