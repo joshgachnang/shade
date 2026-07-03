@@ -1,6 +1,8 @@
 import {logger} from "@terreno/api";
 import type express from "express";
+import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
+import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
@@ -296,11 +298,19 @@ export const startOrchestrator = async (
 
   // Start task worker (non-fatal if it fails) — claims and runs AgentTask
   // board work. start() itself no-ops when AppConfig.taskWorker.enabled=false.
+  // With taskWorker.runInGateway=false (IP-010), board work is left to
+  // dedicated worker processes (`bun run worker`); the service is still
+  // constructed so OrchestratorState/stopOrchestrator stay uniform.
   const taskWorker = new TaskWorkerService({runner, channelManager});
-  try {
-    await taskWorker.start();
-  } catch (err) {
-    logError("Task worker start error (non-fatal)", err);
+  const appConfig = await loadAppConfig();
+  if (shouldRunTaskWorkerInGateway(appConfig)) {
+    try {
+      await taskWorker.start();
+    } catch (err) {
+      logError("Task worker start error (non-fatal)", err);
+    }
+  } else {
+    logger.info("Task worker not started in gateway (AppConfig.taskWorker.runInGateway=false)");
   }
 
   ipcWatcher.setTriviaToggle(async (data: IpcTriviaToggle) => {

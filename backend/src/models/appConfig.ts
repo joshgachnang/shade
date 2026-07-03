@@ -111,8 +111,21 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       heartbeatMs: {type: Number, default: 15000},
       // Heartbeat older than this is considered stale and the task is reclaimed.
       staleMs: {type: Number, default: 60000},
-      // Per-attempt execution timeout (15 min).
+      // Per-attempt execution timeout (15 min). Also bounds the worker
+      // process's graceful-shutdown drain (workerMain.ts).
       taskTimeoutMs: {type: Number, default: 900000},
+      // Whether the gateway process runs the worker loop in-process. Set to
+      // false once dedicated worker processes (`bun run worker`) are deployed
+      // so board work becomes worker-only (IP-010 rollout step 3).
+      runInGateway: {type: Boolean, default: true},
+    },
+
+    scheduler: {
+      // When true, due ScheduledTasks are dispatched as AgentTask board work
+      // (run by workers, results delivered via deliverResult) instead of a
+      // synthetic message through the gateway's GroupQueue (IP-010 rollout
+      // step 4).
+      useTaskBoard: {type: Boolean, default: false},
     },
 
     apiKeys: {

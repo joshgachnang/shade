@@ -1,0 +1,27 @@
+[Unit]
+Description=Shade Worker
+After=network-online.target mongod.service
+Wants=network-online.target mongod.service
+
+[Service]
+Type=simple
+User=josh
+Group=josh
+WorkingDirectory=/opt/shade/src/backend
+EnvironmentFile=/opt/shade/backend.env
+Environment=PATH=/home/josh/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=WORKER_PORT=4021
+ExecStart=/home/josh/.bun/bin/bun run worker
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+# On stop, the worker drains in-flight tasks for up to taskWorker.taskTimeoutMs
+# (default 900000ms = 15 min) before exiting. Give systemd headroom beyond that
+# bound so a graceful drain is never cut short by SIGKILL.
+TimeoutStopSec=960
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shade-worker
+
+[Install]
+WantedBy=multi-user.target

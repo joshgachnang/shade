@@ -6,7 +6,7 @@
 
 ## Verdict in one paragraph
 
-Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: originally none — agents were strictly sequential per group; since addressed by IP-009 — see gap #1 below) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`; since addressed by IP-008 — see gap #2 below). A third, structural risk is that **everything runs in one process**, so a watchdog restart kills in-flight agent runs, radio transcription, and movie processing together. None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
+Shade's core pipeline — channel connectors → `Message` → `MessageLoop` → per-group queue → Claude Agent SDK runner → IPC → outbound — is the right shape and worth keeping. It already delivers goals 1 and 4 credibly. The two real gaps against the goal are **multi-agent coordination** (goal 3: originally none — agents were strictly sequential per group; since addressed by IP-009 — see gap #1 below) and **durable memory/learning** (context is a 2-hour message window plus a static per-group `CLAUDE.md`; since addressed by IP-008 — see gap #2 below). A third, structural risk was that **everything ran in one process**, so a watchdog restart killed in-flight agent runs, radio transcription, and movie processing together (since addressed by IP-010 — see gap #4 below). None of this requires a rewrite; it requires adding a coordination layer and a memory layer to an otherwise sound foundation — and Hermes Agent is a good source of proven designs for both.
 
 ## What Shade gets right
 
@@ -29,7 +29,7 @@ Hermes's answer, worth copying nearly wholesale: a **Kanban task model** — dur
 2. An in-process `TaskWorkerService` worker pool (`AppConfig.taskWorker`: enabled/concurrency/poll/heartbeat/stale/timeout) that runs board tasks through `DirectAgentRunner` outside GroupQueue; every attempt is audited in `TaskRunLog` (`trigger: "delegated"`).
 3. `delegate_task` / `get_task_result` / `list_agent_tasks` / `cancel_agent_task` MCP tools (one-level depth limit; optional `deliverResult` posts to the group channel) plus a system-prompt delegation block, and Claude Agent SDK subagents enabled in `DirectAgentRunner` (`agent.enableSubagents`) for intra-turn parallelism.
 
-*Still future:* out-of-process/remote workers and the HTTP claim protocol (→ IP-010), delegation trees/DAGs, cross-group tasks, and Hermes's output-verification ("hallucination gate") step.
+*Still future:* remote workers and the HTTP claim protocol (out-of-process same-host workers shipped as IP-010 — see gap #4), delegation trees/DAGs, cross-group tasks, and Hermes's output-verification ("hallucination gate") step.
 
 ### 2. Memory and learning — ✅ addressed (IP-008)
 
@@ -50,11 +50,16 @@ Feature channels (OpenAI planner → `/implement` → Claude SDK) are a reasonab
 
 **Recommendation:** run implementing-phase agents in git worktrees (or containers) via the worker pool from gap 1, so builds are isolated, parallelizable, and survive orchestrator restarts. Reconsider whether the OpenAI planner still earns its keep versus a second Claude configuration — it's the only reason there are two runner code paths.
 
-### 4. Process architecture
+### 4. Process architecture — ✅ addressed (IP-010)
 
-One process hosts the orchestrator, all channel connectors, ffmpeg radio streaming, movie processing, and every agent run. The external watchdog's restart is a blunt instrument: it kills healthy in-flight work to fix a stuck Slack socket.
+*Original gap:* one process hosted the orchestrator, all channel connectors, ffmpeg radio streaming, movie processing, and every agent run. The external watchdog's restart was a blunt instrument: it killed healthy in-flight work to fix a stuck Slack socket. The recommendation — Hermes's gateway-daemon vs. execution-backend split — was to keep orchestrator/channels in the main service and move agent execution to worker processes, so a gateway restart costs nothing in-flight.
 
-**Recommendation:** split along the seam that already exists — orchestrator/channels stay in the main service; agent execution and media pipelines move to `@shade/worker` processes. Then the watchdog restarting the gateway costs nothing in-flight. (This is Hermes's gateway-daemon vs. execution-backend split.)
+**Shipped as IP-010** (see `docs/implementationPlans/Gateway-Worker-Split.md`), closely following the recommendation:
+1. A second entrypoint, `backend/src/workerMain.ts` (`bun run worker`, deployed as `shade-worker.service`), sharing the gateway's boot path via `backend/src/boot.ts` and running `TaskWorkerService` against the same Mongo board — with a `/health` endpoint (`WORKER_PORT`, default 4021) and SIGTERM/SIGINT drain (finish in-flight tasks up to `taskTimeoutMs`, abort stragglers for stale-heartbeat reclaim).
+2. Cross-process result delivery through the filesystem: worker-run agents write `send_message` IPC files that the gateway's `IpcWatcher` delivers — results queue on disk across gateway restarts; no HTTP worker protocol needed on one host.
+3. A flag-gated, step-reversible rollout: `taskWorker.runInGateway` (default true) keeps the in-process pool until workers are deployed; `scheduler.useTaskBoard` (default false) routes scheduled runs through the board (`AgentTask {deliverResult: true, scheduledTaskId}`) so the long-running jobs land on workers. The watchdog restarts only the gateway (workers intentionally out of scope), and the `systemStatus` script shows active workers and board counts.
+
+*Still future:* remote/multi-host workers (requires the HTTP claim protocol), moving movie processing and radio streaming out of the gateway, and interactive turns on workers.
 
 ### Smaller items
 
@@ -69,7 +74,7 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 | Dimension | Shade | Hermes |
 |---|---|---|
 | Cron agents | ✅ Same design (task → agent turn), Mongo-backed, audited | ✅ Fresh isolated session per job, 60s tick, deliver-to-any-channel |
-| Sub-agents | ✅ Durable AgentTask board w/ heartbeats & reclaim + in-process worker pool + SDK subagents (IP-009) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
+| Sub-agents | ✅ Durable AgentTask board w/ heartbeats & reclaim + worker processes + SDK subagents (IP-009/IP-010) | ✅ Background worker fleet + Kanban board w/ heartbeats & reclaim |
 | Memory/learning | ✅ Curated memory docs (global/group/USER.md) + message text search + self-authored skills (IP-008) | ✅ Curated memory docs + FTS session search + self-authored skills |
 | Channels | 5 (Slack, iMessage, email, webhook, edge) | 22 (incl. Telegram, WhatsApp, Signal, Discord…) |
 | iMessage | ✅ Local edge agent (private) | ⚠️ Third-party hosted relay (Photon Spectrum) |
@@ -90,8 +95,8 @@ Hermes Agent (github.com/NousResearch/hermes-agent, MIT, ~208k stars, v0.18.0 as
 Priority order for closing the gap:
 
 1. **Memory** (`search_history` tool + curated MEMORY/USER docs + skills dir) — highest leverage per effort. ✅ Shipped as IP-008.
-2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock. ✅ Shipped as IP-009 (in-process worker pool; out-of-process execution → IP-010).
-3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius.
+2. **Worker pool + durable Task board** (multi-agent, resilient long jobs, isolated software builds) — the biggest capability unlock. ✅ Shipped as IP-009 (in-process worker pool; out-of-process execution shipped as IP-010).
+3. **Process split** (gateway vs. workers) — falls out of #2 and fixes the watchdog blast radius. ✅ Shipped as IP-010 (same-host worker processes; remote workers still future).
 4. **Channel & scheduler polish** (email threading, adaptive scheduler tick, per-group model routing).
 
 ## Sources

@@ -1,9 +1,10 @@
 import {logger} from "@terreno/api";
+import {AgentTask} from "../../models/agentTask";
 import {loadAppConfig} from "../../models/appConfig";
 import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import {ScheduledTask} from "../../models/scheduledTask";
-import type {ScheduledTaskDocument} from "../../types";
+import type {GroupDocument, ScheduledTaskDocument} from "../../types";
 import {logError} from "../errors";
 import type {GroupQueue} from "../groupQueue";
 import {computeNextRun} from "./scheduleMath";
@@ -146,10 +147,11 @@ export class SchedulerService {
   }
 
   /**
-   * Dispatch a due task by injecting a synthetic trigger message into its group
-   * and enqueuing it on the GroupQueue. processedAt is pre-set so the message
-   * loop doesn't also pick it up. Returns false (to retry next tick) when the
-   * group is busy or unavailable.
+   * Dispatch a due task to its group. Cancels the task when its group is gone,
+   * then routes by `scheduler.useTaskBoard`: flag on → create an AgentTask on
+   * the board; flag off (default) → inject a synthetic trigger message into
+   * the GroupQueue. Returns false (to retry next tick) when dispatch couldn't
+   * happen; bookkeeping in evaluateTask is shared by both paths.
    */
   private async dispatchTask(task: ScheduledTaskDocument): Promise<boolean> {
     const group = await Group.findById(task.groupId);
@@ -161,6 +163,43 @@ export class SchedulerService {
       return false;
     }
 
+    const appConfig = await loadAppConfig();
+    if (appConfig.scheduler?.useTaskBoard === true) {
+      return this.dispatchToBoard(task, group);
+    }
+    return this.dispatchToQueue(task, group);
+  }
+
+  /**
+   * Board dispatch: create a pending AgentTask for the task worker to claim.
+   * deliverResult is set so the run's output reaches the group's channel, and
+   * scheduledTaskId preserves lineage back to the ScheduledTask.
+   */
+  private async dispatchToBoard(
+    task: ScheduledTaskDocument,
+    group: GroupDocument
+  ): Promise<boolean> {
+    await AgentTask.create({
+      groupId: task.groupId,
+      title: task.name,
+      prompt: task.prompt,
+      deliverResult: true,
+      scheduledTaskId: task._id,
+    });
+    logger.info(`Scheduler created board task for "${task.name}" (group ${group.name})`);
+    return true;
+  }
+
+  /**
+   * Queue dispatch: inject a synthetic trigger message into the group and
+   * enqueue it on the GroupQueue. processedAt is pre-set so the message loop
+   * doesn't also pick it up. Returns false (to retry next tick) when the
+   * group is busy.
+   */
+  private async dispatchToQueue(
+    task: ScheduledTaskDocument,
+    group: GroupDocument
+  ): Promise<boolean> {
     if (this.groupQueue.isGroupActive(group._id.toString())) {
       logger.info(`Scheduled task "${task.name}" deferred — group ${group.name} is busy`);
       return false;

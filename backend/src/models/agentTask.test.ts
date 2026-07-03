@@ -1,11 +1,14 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import mongoose from "mongoose";
+import type {ScheduledTaskDocument} from "../types";
 import {AgentTask} from "./agentTask";
+import {ScheduledTask} from "./scheduledTask";
 
 // Group/Message refs are plain ObjectIds — no real Group/Channel docs are
 // created here, so there is nothing channel-related to clean up. AgentTask
 // docs themselves are removed after each test to keep tests order-independent.
 const createdTaskIds: mongoose.Types.ObjectId[] = [];
+const createdScheduledTaskIds: mongoose.Types.ObjectId[] = [];
 
 const makeTask = async (overrides: Record<string, unknown> = {}) => {
   const doc = await AgentTask.create({
@@ -22,6 +25,10 @@ afterEach(async () => {
   if (createdTaskIds.length > 0) {
     await AgentTask.deleteMany({_id: {$in: createdTaskIds}});
     createdTaskIds.length = 0;
+  }
+  if (createdScheduledTaskIds.length > 0) {
+    await ScheduledTask.deleteMany({_id: {$in: createdScheduledTaskIds}});
+    createdScheduledTaskIds.length = 0;
   }
 });
 
@@ -77,6 +84,25 @@ describe("AgentTask model", () => {
     expect(reloaded.workerId).toBe("host:1234");
     expect(reloaded.attempts).toBe(1);
     expect(reloaded.result).toBe("done");
+  });
+
+  test("accepts an optional scheduledTaskId that populates its ScheduledTask", async () => {
+    const scheduledTask = await ScheduledTask.create({
+      groupId: new mongoose.Types.ObjectId(),
+      name: "Nightly report",
+      prompt: "Write the report",
+      scheduleType: "cron",
+      schedule: "0 3 * * *",
+    });
+    createdScheduledTaskIds.push(scheduledTask._id);
+
+    const doc = await makeTask({scheduledTaskId: scheduledTask._id});
+    expect(doc.scheduledTaskId?.toString()).toBe(scheduledTask._id.toString());
+
+    const populated = await AgentTask.findById(doc._id).populate<{
+      scheduledTaskId: ScheduledTaskDocument;
+    }>("scheduledTaskId");
+    expect(populated?.scheduledTaskId?.name).toBe("Nightly report");
   });
 
   test("rejects invalid status values", async () => {

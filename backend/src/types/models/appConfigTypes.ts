@@ -52,6 +52,11 @@ export interface AppConfigTaskWorker {
   heartbeatMs: number;
   staleMs: number;
   taskTimeoutMs: number;
+  runInGateway: boolean;
+}
+
+export interface AppConfigScheduler {
+  useTaskBoard: boolean;
 }
 
 export interface AppConfigApiKeys {
@@ -168,6 +173,7 @@ export interface AppConfigFields {
   agent: AppConfigAgent;
   memory: AppConfigMemory;
   taskWorker: AppConfigTaskWorker;
+  scheduler: AppConfigScheduler;
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;

@@ -1,5 +1,13 @@
 import {DateTime} from "luxon";
-import {AIRequest, Channel, Group, Message, ScheduledTask, TaskRunLog} from "../../models";
+import {
+  AgentTask,
+  AIRequest,
+  Channel,
+  Group,
+  Message,
+  ScheduledTask,
+  TaskRunLog,
+} from "../../models";
 import {getOrchestrator} from "../../orchestrator";
 import type {ScriptRunner} from "./types";
 
@@ -9,6 +17,7 @@ import type {ScriptRunner} from "./types";
  * - Channel status per-channel
  * - Queue state from the GroupQueue
  * - Active scheduled tasks + next run times
+ * - Task-board workers (distinct workerIds heartbeating in the last 5 min) + board counts
  * - Very recent error counts
  *
  * Pure read. `wetRun` is ignored.
@@ -78,6 +87,33 @@ export const systemStatus: ScriptRunner = async (): Promise<{
   if (activeTasks.length > 5) {
     results.push(`  … and ${activeTasks.length - 5} more`);
   }
+
+  // Task-board workers: distinct workerIds with a heartbeat in the last 5 minutes.
+  const fiveMinAgo = now.minus({minutes: 5}).toJSDate();
+  const activeWorkers: {_id: string; lastHeartbeatAt: Date}[] = await AgentTask.aggregate([
+    {$match: {workerId: {$exists: true, $ne: null}, heartbeatAt: {$gte: fiveMinAgo}}},
+    {$group: {_id: "$workerId", lastHeartbeatAt: {$max: "$heartbeatAt"}}},
+    {$sort: {lastHeartbeatAt: -1}},
+  ]);
+  results.push(`Workers active in last 5m (${activeWorkers.length}):`);
+  for (const worker of activeWorkers) {
+    const last = DateTime.fromJSDate(worker.lastHeartbeatAt).toRelative({base: now});
+    results.push(`  - ${worker._id}: last heartbeat ${last}`);
+  }
+
+  // Agent task board counts
+  const [pendingTasks, claimedTasks, runningTasks, completedTasks24h, failedTasks24h] =
+    await Promise.all([
+      AgentTask.countDocuments({status: "pending"}),
+      AgentTask.countDocuments({status: "claimed"}),
+      AgentTask.countDocuments({status: "running"}),
+      AgentTask.countDocuments({status: "completed", completedAt: {$gte: dayAgo}}),
+      AgentTask.countDocuments({status: "failed", completedAt: {$gte: dayAgo}}),
+    ]);
+  results.push(
+    `Agent task board: ${pendingTasks} pending, ${claimedTasks} claimed, ${runningTasks} running, ` +
+      `${completedTasks24h} completed in last 24h, ${failedTasks24h} failed in last 24h`
+  );
 
   // Failing task runs
   const failedRuns24h = await TaskRunLog.countDocuments({

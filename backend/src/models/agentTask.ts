@@ -9,6 +9,8 @@ const agentTaskSchema = new mongoose.Schema<AgentTaskDocument, AgentTaskModel>(
     parentTaskId: {type: mongoose.Schema.Types.ObjectId, ref: "AgentTask"},
     // The conversation turn that delegated this task.
     sourceMessageId: {type: mongoose.Schema.Types.ObjectId, ref: "Message"},
+    // The ScheduledTask that spawned this run (board-dispatched scheduled runs).
+    scheduledTaskId: {type: mongoose.Schema.Types.ObjectId, ref: "ScheduledTask"},
     title: {type: String, required: true},
     prompt: {type: String, required: true},
     status: {

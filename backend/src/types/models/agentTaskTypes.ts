@@ -15,6 +15,8 @@ export interface AgentTaskFields {
   parentTaskId?: mongoose.Types.ObjectId;
   /** The conversation turn that delegated this task. */
   sourceMessageId?: mongoose.Types.ObjectId;
+  /** The ScheduledTask that spawned this run (board-dispatched scheduled runs). */
+  scheduledTaskId?: mongoose.Types.ObjectId;
   title: string;
   prompt: string;
   status: AgentTaskStatus;

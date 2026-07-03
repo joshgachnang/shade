@@ -1,4 +1,4 @@
-import {describe, expect, test} from "bun:test";
+import {afterEach, describe, expect, test} from "bun:test";
 import {AppConfig, loadAppConfig, reloadAppConfig} from "./appConfig";
 
 describe("AppConfig richResponses + maps additions", () => {
@@ -93,5 +93,39 @@ describe("AppConfig richResponses + maps additions", () => {
     await original.save();
     const reloaded = await reloadAppConfig();
     expect(reloaded.richResponses.enabled).toBe(false);
+  });
+});
+
+describe("AppConfig gateway/worker split additions (IP-010)", () => {
+  afterEach(async () => {
+    // Leave a fresh default config behind so other suites see pristine state.
+    await AppConfig.deleteMany({});
+    await reloadAppConfig();
+  });
+
+  test("loadAppConfig returns taskWorker.runInGateway default true", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.taskWorker.runInGateway).toBe(true);
+  });
+
+  test("loadAppConfig returns scheduler.useTaskBoard default false", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.scheduler).toBeDefined();
+    expect(cfg.scheduler.useTaskBoard).toBe(false);
+  });
+
+  test("strict: throw accepts explicit runInGateway and useTaskBoard values", async () => {
+    await AppConfig.deleteMany({});
+    const doc = await AppConfig.create({
+      taskWorker: {runInGateway: false},
+      scheduler: {useTaskBoard: true},
+    });
+    expect(doc.taskWorker.runInGateway).toBe(false);
+    expect(doc.scheduler.useTaskBoard).toBe(true);
+    // Sibling taskWorker defaults still apply when only runInGateway is set.
+    expect(doc.taskWorker.enabled).toBe(true);
+    expect(doc.taskWorker.taskTimeoutMs).toBe(900000);
   });
 });
