@@ -10,6 +10,11 @@ import {Group} from "../models/group";
 import {Message} from "../models/message";
 import {buildTools, type McpContext} from "./mcpServer";
 
+// Track created fixtures so afterEach can remove them — leftover slack
+// channels/main groups break ChannelManager tests in other files.
+const createdChannelIds: mongoose.Types.ObjectId[] = [];
+const createdGroupIds: mongoose.Types.ObjectId[] = [];
+
 const makeGroup = async ({isMain = false}: {isMain?: boolean} = {}) => {
   const suffix = new mongoose.Types.ObjectId().toString();
   const channel = await Channel.create({
@@ -26,6 +31,8 @@ const makeGroup = async ({isMain = false}: {isMain?: boolean} = {}) => {
     isMain,
     folder: `test-${suffix}`,
   });
+  createdChannelIds.push(channel._id);
+  createdGroupIds.push(group._id);
   return {group, channel};
 };
 
@@ -74,6 +81,15 @@ const resetMemoryConfig = async (): Promise<void> => {
 
 afterEach(async () => {
   await resetMemoryConfig();
+  if (createdGroupIds.length > 0) {
+    await Message.deleteMany({groupId: {$in: createdGroupIds}});
+    await Group.deleteMany({_id: {$in: createdGroupIds}});
+    createdGroupIds.length = 0;
+  }
+  if (createdChannelIds.length > 0) {
+    await Channel.deleteMany({_id: {$in: createdChannelIds}});
+    createdChannelIds.length = 0;
+  }
 });
 
 describe("search_history tool", () => {

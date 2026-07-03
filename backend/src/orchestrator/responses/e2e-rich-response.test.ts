@@ -54,6 +54,10 @@ class FakeSlackConnector implements ChannelConnector {
 }
 
 const setup = async (richEnabled: boolean) => {
+  // Start from a clean slate: leftover channels/groups from other test files
+  // would be connected by manager.initialize() and greeted via the fake
+  // connector, polluting sendMessageCalls.
+  await Promise.all([Channel.deleteMany({}), Group.deleteMany({}), Message.deleteMany({})]);
   await AppConfig.deleteMany({});
   await AppConfig.create({richResponses: {enabled: richEnabled, autoTruncate: true}});
   await reloadAppConfig();

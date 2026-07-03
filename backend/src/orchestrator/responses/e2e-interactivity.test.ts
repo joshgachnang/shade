@@ -46,6 +46,10 @@ class FakeConnector implements ChannelConnector {
 }
 
 const setupManager = async () => {
+  // Start from a clean slate: leftover channels/groups from other test files
+  // would be connected by manager.initialize() and greeted via the fake
+  // connector, polluting the fake's call lists.
+  await Promise.all([Channel.deleteMany({}), Group.deleteMany({}), Message.deleteMany({})]);
   await AppConfig.deleteMany({});
   await AppConfig.create({richResponses: {enabled: true, autoTruncate: true}});
   await reloadAppConfig();
