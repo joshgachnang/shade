@@ -19,7 +19,6 @@ See `CLAUDE.md` for IP lifecycle stages and management guidelines.
 | IP-009 | Agent Task Board & Worker Pool | Pending Verification | Big batch (1-2 weeks) | High |
 | IP-010 | Gateway/Worker Process Split | Pending Verification | Big batch (1-2 weeks) | Medium |
 | IP-011 | Channel & Scheduler Polish | Pending Verification | Small batch (1-2 days) | Medium |
-| IP-012 | AI Testability Harness | Pending Verification | Big batch (~1 week) | High |
 
 **Suggested implementation order for IP-008–011** (from `docs/architecture/assessment-and-hermes.md`): IP-011 and IP-008 first in either order (both independent; IP-011 is a small warm-up, IP-008 is highest leverage), then IP-009, then IP-010 (hard dependency on IP-009). IP-008's and IP-009's prompt-block tasks touch `orchestrator/memory.ts` — whichever lands second rebases trivially.
 
@@ -27,7 +26,7 @@ See `CLAUDE.md` for IP lifecycle stages and management guidelines.
 
 | IP | Title | Completed | Notes |
 |----|-------|-----------|-------|
-| - | - | - | No completed plans yet |
+| IP-012 | AI Testability Harness | 2026-07-04 | PRs #84/#86. `SHADE_TEST_MODE=1` offline harness: MockAgentRunner + LlmFixture, "test" channel type, /test/* control API, sensitive-integration guards. Docs: `docs/testing/ai-harness.md`. Options B (fake Anthropic wire API) and C (real-Haiku smoke tier) deferred as future work. |
 
 ## Deferred / Closed
 
