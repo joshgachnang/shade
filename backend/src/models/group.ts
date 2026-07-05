@@ -14,12 +14,14 @@ const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
     modelConfig: {
       defaultBackend: {
         type: String,
-        enum: ["claude", "ollama", "codex", "gemini"],
+        // "mock" is the AI-testability harness backend (IP-012): the group's
+        // runs execute through MockAgentRunner instead of a real model.
+        enum: ["claude", "ollama", "codex", "gemini", "mock"],
         default: "claude",
       },
       defaultModel: {type: String},
       endpoint: {type: String},
-      fallbackBackend: {type: String, enum: ["claude", "ollama", "codex", "gemini"]},
+      fallbackBackend: {type: String, enum: ["claude", "ollama", "codex", "gemini", "mock"]},
     },
     executionConfig: {
       mode: {type: String, enum: ["direct", "container"], default: "direct"},

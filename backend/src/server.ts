@@ -14,6 +14,7 @@ import {MovieActionsPlugin} from "./api/movies";
 import {NotificationsPlugin} from "./api/notifications";
 import {OrchestratorPreviewPlugin} from "./api/orchestratorPreview";
 import {SearchPlugin} from "./api/search";
+import {TestHarnessPlugin} from "./api/testHarness";
 import {RecordingsPlugin} from "./api/transcripts";
 import {TriviaMonitorPlugin} from "./api/triviaMonitor";
 import {boot} from "./boot";
@@ -21,6 +22,7 @@ import {startHealthMonitor} from "./edge/healthMonitor";
 import {User} from "./models/user";
 import {startOrchestrator} from "./orchestrator";
 import {logError} from "./orchestrator/errors";
+import {isTestMode} from "./testMode/flag";
 
 const isDeployed = process.env.NODE_ENV === "production";
 
@@ -93,7 +95,7 @@ export const start = async (skipListen = false) => {
     builder.register(route);
   }
 
-  const app = builder
+  builder
     .register(new RecordingsPlugin())
     .register(new FeatureActionsPlugin())
     .register(new MovieActionsPlugin())
@@ -104,14 +106,26 @@ export const start = async (skipListen = false) => {
     .register(new NotificationsPlugin())
     .register(new OrchestratorPreviewPlugin())
     .register(new EdgePlugin())
-    .register(adminPlugin)
-    .start();
+    .register(adminPlugin);
+
+  // Test control API (IP-012). Mounted only in test mode and never in
+  // production — the plugin's own routes re-check the DB name before anything
+  // destructive.
+  if (isTestMode() && !isDeployed) {
+    builder.register(new TestHarnessPlugin());
+  }
+
+  const app = builder.start();
 
   if (!skipListen) {
     startOrchestrator(app).catch((err) => {
       logError("Failed to start orchestrator", err);
     });
-    startHealthMonitor();
+    if (isTestMode()) {
+      logger.info("Test mode: edge health monitor not started");
+    } else {
+      startHealthMonitor();
+    }
   }
 
   return app;

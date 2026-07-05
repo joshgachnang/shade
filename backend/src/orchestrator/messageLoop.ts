@@ -13,6 +13,9 @@ export class MessageLoop {
   private channelManager: ChannelManager;
   private groupQueue: GroupQueue;
   private triviaMonitor: TriviaMonitor | null = null;
+  /** In-flight guard: a forced tick racing the interval must not double-enqueue
+   *  a message (processedAt is only set after the agent run completes). */
+  private polling = false;
 
   constructor(channelManager: ChannelManager, groupQueue: GroupQueue) {
     this.channelManager = channelManager;
@@ -48,15 +51,29 @@ export class MessageLoop {
     }
   }
 
-  private async poll(): Promise<void> {
-    const groups = this.channelManager.getAllGroups();
+  /** Force an immediate poll (POST /test/tick). No-ops if a poll is in flight. */
+  async tickNow(): Promise<void> {
+    await this.poll();
+  }
 
-    for (const group of groups) {
-      try {
-        await this.pollGroup(group);
-      } catch (err) {
-        logError(`Error polling group ${group.name}`, err);
+  private async poll(): Promise<void> {
+    if (this.polling) {
+      return;
+    }
+    this.polling = true;
+
+    try {
+      const groups = this.channelManager.getAllGroups();
+
+      for (const group of groups) {
+        try {
+          await this.pollGroup(group);
+        } catch (err) {
+          logError(`Error polling group ${group.name}`, err);
+        }
       }
+    } finally {
+      this.polling = false;
     }
   }
 

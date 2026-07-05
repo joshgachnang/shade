@@ -6,11 +6,14 @@ import {Group} from "../models/group";
 import {Message} from "../models/message";
 import {User} from "../models/user";
 import {start} from "../server";
+import {TEST_ADMIN_EMAIL, TEST_PASSWORD, TEST_USER_EMAIL} from "../testMode/constants";
 import type {ChannelDocument, GroupDocument, UserDocument} from "../types";
 
-export const TEST_PASSWORD = "TestPassword123!";
-export const ADMIN_EMAIL = "admin@shade-test.com";
-export const USER_EMAIL = "user@shade-test.com";
+// Re-exported so existing tests keep importing from testHelper; the values
+// live in testMode/constants.ts so the boot seed uses the same identity.
+export {TEST_PASSWORD};
+export const ADMIN_EMAIL = TEST_ADMIN_EMAIL;
+export const USER_EMAIL = TEST_USER_EMAIL;
 
 export interface TestData {
   admin: UserDocument;
@@ -45,7 +48,7 @@ export const setupTestData = async (): Promise<TestData> => {
 
   const channel = await Channel.create({
     name: "test-channel",
-    type: "webhook",
+    type: "test",
     status: "connected",
     config: {},
   });
@@ -162,6 +165,79 @@ export const sendCommand = async (
  */
 export const getGroupMessages = async (groupId: string) => {
   return Message.find({groupId}).sort({created: 1});
+};
+
+export interface OutboxEntry {
+  id: string;
+  groupId: string;
+  content: string;
+  richPayload?: Record<string, unknown>;
+  correlationId?: string;
+  created: string;
+}
+
+/**
+ * Reads the harness outbox — outbound bot messages. Requires the server to be
+ * running in test mode (SHADE_TEST_MODE=1) and an admin token.
+ */
+export const getOutbox = async (
+  baseUrl: string,
+  token: string,
+  options: {groupId?: string; since?: string} = {}
+): Promise<OutboxEntry[]> => {
+  const params = new URLSearchParams();
+  if (options.groupId) {
+    params.set("groupId", options.groupId);
+  }
+  if (options.since) {
+    params.set("since", options.since);
+  }
+  const res = await fetch(`${baseUrl}/test/outbox?${params}`, {
+    headers: {Authorization: `Bearer ${token}`},
+  });
+  if (!res.ok) {
+    throw new Error(`getOutbox failed (${res.status}): ${await res.text()}`);
+  }
+  const body = (await res.json()) as {data: OutboxEntry[]};
+  return body.data;
+};
+
+/**
+ * Resets the harness to freshly-seeded state (users and AppConfig survive).
+ */
+export const resetHarness = async (
+  baseUrl: string,
+  token: string
+): Promise<{adminId: string; userId: string; channelId: string; groupId: string}> => {
+  const res = await fetch(`${baseUrl}/test/reset`, {
+    method: "POST",
+    headers: {Authorization: `Bearer ${token}`},
+  });
+  if (!res.ok) {
+    throw new Error(`resetHarness failed (${res.status}): ${await res.text()}`);
+  }
+  const body = (await res.json()) as {
+    data: {adminId: string; userId: string; channelId: string; groupId: string};
+  };
+  return body.data;
+};
+
+/**
+ * Forces an immediate loop pass in the running orchestrator.
+ */
+export const tickHarness = async (
+  baseUrl: string,
+  token: string,
+  target: "scheduler" | "messageLoop" | "ipc" | "taskWorker" | "all"
+): Promise<void> => {
+  const res = await fetch(`${baseUrl}/test/tick`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
+    body: JSON.stringify({target}),
+  });
+  if (!res.ok) {
+    throw new Error(`tickHarness failed (${res.status}): ${await res.text()}`);
+  }
 };
 
 /**

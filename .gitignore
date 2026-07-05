@@ -11,3 +11,6 @@ backend/.env.local
 .netlify
 
 backend/data/recordings
+
+# AI testability harness sandbox (bun run dev:test)
+backend/data-test/

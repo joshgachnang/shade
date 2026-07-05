@@ -241,6 +241,14 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
     maps: {
       mapboxAccessToken: {type: String, default: ""},
     },
+
+    // AI testability harness (IP-012). Only read when SHADE_TEST_MODE=1.
+    testMode: {
+      // When no LlmFixture matches a prompt, echo it back instead of failing.
+      echoFallback: {type: Boolean, default: true},
+      // Base latency added to every mock agent run (fixture delayMs stacks on top).
+      simulateLatencyMs: {type: Number, default: 0},
+    },
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

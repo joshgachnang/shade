@@ -2,6 +2,12 @@ import {exec} from "node:child_process";
 import {promisify} from "node:util";
 import {logger} from "@terreno/api";
 import {DateTime} from "luxon";
+import {
+  createTestCalendarEvent,
+  getTestCalendarEvents,
+  getTestCalendars,
+} from "../testMode/fixtures";
+import {isTestMode} from "../testMode/flag";
 
 const defaultExecAsync = promisify(exec);
 
@@ -55,6 +61,9 @@ const runAppleScriptFile = async (script: string): Promise<string> => {
 };
 
 export const listCalendars = async (): Promise<AppleCalendarInfo[]> => {
+  if (isTestMode()) {
+    return getTestCalendars();
+  }
   const script = `
 tell application "Calendar"
   set calList to {}
@@ -93,6 +102,10 @@ export const getEvents = async ({
 
   if (!start.isValid || !end.isValid) {
     throw new Error("Invalid date format. Use ISO 8601.");
+  }
+
+  if (isTestMode()) {
+    return getTestCalendarEvents({calendarNames, startDate});
   }
 
   // AppleScript date format
@@ -170,6 +183,10 @@ export const createEvent = async (input: CreateEventInput): Promise<AppleCalenda
 
   if (!start.isValid || !end.isValid) {
     throw new Error("Invalid date format. Use ISO 8601.");
+  }
+
+  if (isTestMode()) {
+    return createTestCalendarEvent(input);
   }
 
   const startStr = start.toFormat("MMMM d, yyyy h:mm:ss a");

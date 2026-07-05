@@ -2,6 +2,7 @@ import {logger} from "@terreno/api";
 import type express from "express";
 import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
+import {isTestMode} from "../testMode/flag";
 import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
@@ -11,6 +12,7 @@ import {IpcWatcher} from "./ipc";
 import {ensureGroupDirectory, getGroupMemoryPath, initGlobalMemory, writeMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
+import {MockAgentRunner} from "./runners/mock";
 import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {PrWatcher} from "./services/prWatcher";
@@ -128,11 +130,15 @@ export const startOrchestrator = async (
     logger.error(`Failed to initialize global memory (non-fatal): ${err}`);
   }
 
-  const runner = new DirectAgentRunner();
+  // Test mode (IP-012): every agent turn runs through the deterministic mock —
+  // no Anthropic/OpenAI calls. The single runner instance is shared with
+  // GroupQueue, PrWatcher, and TaskWorkerService below, so one swap covers
+  // every consumer; the mock also stands in for the OpenAI planner.
+  const runner: AgentRunner = isTestMode() ? new MockAgentRunner() : new DirectAgentRunner();
   // Planner runner is used for feature-channel groups while they are in the
   // `planning` phase. It drives the /ip workflow via the OpenAI Chat
   // Completions API (model from AppConfig.models.planner, default gpt-5.4).
-  const plannerRunner = new OpenAIAgentRunner();
+  const plannerRunner: AgentRunner = isTestMode() ? runner : new OpenAIAgentRunner();
 
   // Create and initialize channel manager. ChannelManager.initialize logs its
   // own channel count, so we don't need a separate "initialized" line here.
@@ -262,30 +268,35 @@ export const startOrchestrator = async (
     logger.info(`Feature channel created: #${data.name} (${slackChannelId}), group ${group._id}`);
   });
 
-  // Start radio transcriber (non-fatal if it fails)
+  // Radio transcriber, PR watcher, and trivia monitor talk to external
+  // services (radio streams/Deepgram, GitHub/Anthropic, Anthropic/webhooks) —
+  // test mode constructs them for a uniform OrchestratorState but never
+  // starts them.
   const radioTranscriber = new RadioTranscriber(channelManager);
-  try {
-    await radioTranscriber.start();
-  } catch (err) {
-    logError("Radio transcriber start error (non-fatal)", err);
-  }
-
-  // Start PR watcher (non-fatal if it fails)
   const prWatcher = new PrWatcher(channelManager, runner);
-  try {
-    await prWatcher.start();
-  } catch (err) {
-    logError("PR watcher start error (non-fatal)", err);
-  }
-
-  // Start trivia monitor — unified service (formerly TriviaMonitor +
-  // TriviaAutoSearch). Also hooks chat-command routing for `!trivia`.
   const triviaMonitor = new TriviaMonitor(channelManager);
   messageLoop.setTriviaMonitor(triviaMonitor);
-  try {
-    await triviaMonitor.start();
-  } catch (err) {
-    logError("Trivia monitor start error (non-fatal)", err);
+
+  if (isTestMode()) {
+    logger.info("Test mode: radio transcriber, PR watcher, and trivia monitor not started");
+  } else {
+    try {
+      await radioTranscriber.start();
+    } catch (err) {
+      logError("Radio transcriber start error (non-fatal)", err);
+    }
+
+    try {
+      await prWatcher.start();
+    } catch (err) {
+      logError("PR watcher start error (non-fatal)", err);
+    }
+
+    try {
+      await triviaMonitor.start();
+    } catch (err) {
+      logError("Trivia monitor start error (non-fatal)", err);
+    }
   }
 
   // Start scheduler (non-fatal if it fails) — dispatches due ScheduledTasks.

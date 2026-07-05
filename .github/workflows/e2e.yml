@@ -23,6 +23,9 @@ jobs:
       TOKEN_SECRET: test-secret-for-ci
       REFRESH_TOKEN_SECRET: test-refresh-secret-for-ci
       EXPO_PUBLIC_API_URL: http://localhost:4020
+      # IP-012 AI testability harness: mock agent runner, "test" channel only,
+      # no external services — E2E never needs real credentials.
+      SHADE_TEST_MODE: "1"
 
     steps:
       - uses: actions/checkout@v4

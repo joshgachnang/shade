@@ -20,6 +20,7 @@ import {
   Frame,
   FrameAnalysis,
   Group,
+  LlmFixture,
   Message,
   Movie,
   Plugin,
@@ -250,6 +251,13 @@ const descriptors: CrudRouteDescriptor[] = [
     permissions: ADMIN_WRITES,
     queryFields: [],
     sort: "-created",
+  },
+  {
+    path: "/llmFixtures",
+    model: LlmFixture,
+    permissions: ADMIN_WRITES,
+    queryFields: ["name", "priority", "consumeOnce"],
+    sort: "-priority",
   },
 ];
 

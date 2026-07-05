@@ -2,10 +2,10 @@
 delete process.env.CLAUDECODE;
 delete process.env.CLAUDE_CODE_ENTRYPOINT;
 
-import path from "node:path";
 import {query} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
 import {createShadeMcpServer} from "../../agentRunner/mcpServer";
+import {paths} from "../../config";
 import {loadAppConfig} from "../../models/appConfig";
 import {buildAgentEnv, redactSecrets} from "../security";
 import type {AgentRunConfig, AgentRunner, AgentRunResult} from "./types";
@@ -86,7 +86,8 @@ export class DirectAgentRunner implements AgentRunner {
     try {
       const env = buildAgentEnv({
         SHADE_GROUP_ID: config.groupId,
-        SHADE_IPC_DIR: path.join(process.cwd(), "data/ipc"),
+        // paths.ipc honors SHADE_DATA_DIR — must match what IpcWatcher polls.
+        SHADE_IPC_DIR: paths.ipc,
         SHADE_CHANNEL_ID: "",
         ...config.env,
       });
@@ -102,7 +103,7 @@ export class DirectAgentRunner implements AgentRunner {
       const shadeMcp = createShadeMcpServer({
         groupId: config.groupId,
         channelId: config.env?.SHADE_CHANNEL_ID ?? "",
-        ipcDir: path.join(process.cwd(), "data/ipc"),
+        ipcDir: paths.ipc,
         groupFolder: config.groupFolder,
         messageTs: config.messageTs,
         senderExternalId: config.senderExternalId,
