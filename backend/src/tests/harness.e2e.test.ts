@@ -204,6 +204,41 @@ describe("AI testability harness (e2e over HTTP)", () => {
     }
   });
 
+  test("control API validates input: bad tick target and bad since are 400s", async () => {
+    const tickRes = await fetch(`${baseUrl}/test/tick`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
+      body: JSON.stringify({target: "warp-drive"}),
+    });
+    expect(tickRes.status).toBe(400);
+
+    const outboxRes = await fetch(`${baseUrl}/test/outbox?since=not-a-date`, {
+      headers: {Authorization: `Bearer ${token}`},
+    });
+    expect(outboxRes.status).toBe(400);
+  });
+
+  test("DELETE /test/llm-fixtures/:id retires a fixture from the active list", async () => {
+    const createRes = await fetch(`${baseUrl}/test/llm-fixtures`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", Authorization: `Bearer ${token}`},
+      body: JSON.stringify({name: "to-delete", match: {pattern: "never"}, response: "x"}),
+    });
+    const created = ((await createRes.json()) as {data: {id: string}}).data;
+
+    const deleteRes = await fetch(`${baseUrl}/test/llm-fixtures/${created.id}`, {
+      method: "DELETE",
+      headers: {Authorization: `Bearer ${token}`},
+    });
+    expect(deleteRes.status).toBe(204);
+
+    const listRes = await fetch(`${baseUrl}/test/llm-fixtures`, {
+      headers: {Authorization: `Bearer ${token}`},
+    });
+    const fixtures = ((await listRes.json()) as {data: {name: string}[]}).data;
+    expect(fixtures.some((f) => f.name === "to-delete")).toBe(false);
+  });
+
   test("/test/reset wipes to a freshly-seeded world", async () => {
     const seeded = await resetHarness(baseUrl, token);
     expect(seeded.groupId).toBeTruthy();
