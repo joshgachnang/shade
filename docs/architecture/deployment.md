@@ -48,7 +48,8 @@ defaults to `~/Library/Application Support/Shade` on macOS and
 - Executable at `~/Library/Application Support/Shade/dist/shade`; data at
   `~/Library/Application Support/Shade/data`; env files in `~/.config/shade/`;
   logs in `~/Library/Logs/Shade/`.
-- MongoDB: local Homebrew `mongodb-community` (`mongodb://localhost:27017/shade`).
+- MongoDB: hosted Atlas cluster (`shadeproduction.tgdndkz.mongodb.net`, db
+  `shade`); the local Homebrew instance is dev-only.
 - GitHub Actions runner installed at `~/actions-runner` (launchd service
   `actions.runner.joshgachnang-shade.nangstudio`).
 

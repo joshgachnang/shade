@@ -29,16 +29,23 @@ The `SHADE_SERVICE` env var selects what a process runs: `backend` (default),
 - **Data**: `~/Library/Application Support/Shade/data` (`SHADE_DATA_DIR`)
 - **Env files**: `~/.config/shade/shade-{backend,worker,imessage}.env`
 - **Logs**: `~/Library/Logs/Shade/` (`./shade logs backend`)
-- **MongoDB**: local Homebrew instance, `mongodb://localhost:27017/shade`
+- **MongoDB**: hosted Atlas cluster `shadeproduction.tgdndkz.mongodb.net`, db
+  `shade` (URI in `~/.config/shade/shade-*.env`); local Homebrew Mongo is for
+  dev only
 - **Ports**: backend 4020, worker health 4021
+- **iMessage**: `com.shade.imessage` runs the same executable with
+  `SHADE_SERVICE=imessage`; requires Full Disk Access for
+  `~/Library/Application Support/Shade/dist/shade`. The binary is ad-hoc
+  signed, so the FDA grant is tied to the exact build — re-grant after
+  deploys that change the binary (or start signing with a stable identity).
 - **CI**: push to master → `build-release.yml` publishes `shade.js` to the
   `latest` GitHub release → `deploy-studio.yml` runs on the self-hosted runner
   (`nangstudio`, labels `[self-hosted, macOS, studio]`, installed at
   `~/actions-runner`) and runs `./shade update`.
 
-Caution: dev (`bun run dev`) against the same Mongo DB competes with the
-running service for unprocessed messages. Use `bun run dev:test` (harness) or a
-different `MONGO_URI` for local dev on this machine.
+Dev (`bun run dev`) uses the local Homebrew Mongo, so it does not compete with
+the deployed service (which is on Atlas). Don't point dev at the Atlas URI —
+two backends on one DB race for unprocessed messages.
 
 ## Linux server (legacy)
 
