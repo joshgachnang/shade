@@ -2,9 +2,10 @@
 
 ## The single-artifact model
 
-Everything ships as **one self-contained bundle**: `dist/shade.js`, built by
-`./shade build` from `backend/src/index.ts` (~20 MB, no `node_modules` needed at
-runtime). The `SHADE_SERVICE` env var selects what a process runs:
+Everything ships as **one self-contained bun executable**: `dist/shade`, built
+by `./shade build` (`bun build --compile`) from `backend/src/index.ts` (~80 MB,
+embeds the bun runtime — no bun install or `node_modules` needed on the target).
+The `SHADE_SERVICE` env var selects what a process runs:
 
 | SHADE_SERVICE | Service | Notes |
 |---------------|---------|-------|
@@ -12,20 +13,21 @@ runtime). The `SHADE_SERVICE` env var selects what a process runs:
 | `worker` | AgentTask board worker | `WORKER_PORT` (4021) health endpoint |
 | `imessage` | iMessage edge agent | needs `SHADE_URL`, `SHADE_BOOTSTRAP_SECRET`, macOS Full Disk Access |
 
-Agent runs from the bundle use the host `claude` binary (the Agent SDK's own
-`cli.js` isn't inside the bundle); override with `SHADE_CLAUDE_CODE_PATH`.
+Agent runs from the executable use the host `claude` binary (the Agent SDK's
+own `cli.js` isn't inside the bundle); override with `SHADE_CLAUDE_CODE_PATH`.
 
 The `shade` CLI provisions a machine (`./shade deploy [service...]` → build +
 env files in `~/.config/shade/` + launchd plists or systemd units + start) and
-updates it (`./shade update <shade.js> [service...]` → swap the bundle at
-`$SHADE_HOME/dist/shade.js` and restart installed services). `SHADE_HOME`
+updates it (`./shade update <shade-executable> [service...]` → swap the binary
+at `$SHADE_HOME/dist/shade` and restart installed services). `SHADE_HOME`
 defaults to `~/Library/Application Support/Shade` on macOS and
 `~/.local/share/shade` on Linux.
 
 ## CI deploys
 
-- `.github/workflows/build-release.yml` — on push to master, builds
-  `dist/shade.js` and publishes it to the `latest` GitHub release.
+- `.github/workflows/build-release.yml` — on push to master, cross-compiles
+  `shade-darwin-arm64` and `shade-linux-x64` and publishes them to the
+  `latest` GitHub release.
 - `.github/workflows/deploy-studio.yml` — chained to Build & Release; runs on
   the studio Mac's self-hosted runner (`nangstudio`, labels
   `[self-hosted, macOS, studio]`), downloads the artifact, runs
@@ -43,7 +45,7 @@ defaults to `~/Library/Application Support/Shade` on macOS and
 
 - Host: `NangStudio`; services `com.shade.backend`, `com.shade.worker`, and
   `com.shade.imessage` (installed, opt-in) as user LaunchAgents.
-- Bundle at `~/Library/Application Support/Shade/dist/shade.js`; data at
+- Executable at `~/Library/Application Support/Shade/dist/shade`; data at
   `~/Library/Application Support/Shade/data`; env files in `~/.config/shade/`;
   logs in `~/Library/Logs/Shade/`.
 - MongoDB: local Homebrew `mongodb-community` (`mongodb://localhost:27017/shade`).

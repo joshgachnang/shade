@@ -1,9 +1,9 @@
 name: Build & Release
 
-# Builds the single-file bundle (dist/shade.js — backend, worker, and edge
-# agents in one artifact, selected at runtime via SHADE_SERVICE) and publishes
-# it to the `latest` GitHub release. Deploy workflows (deploy-studio.yml) pull
-# this artifact and restart services.
+# Builds the shade single-file executable (backend, worker, and edge agents in
+# one bun-compiled binary, selected at runtime via SHADE_SERVICE) for each
+# deploy platform and publishes them to the `latest` GitHub release. Deploy
+# workflows (deploy-studio.yml) pull the artifact and restart services.
 
 on:
   push:
@@ -31,15 +31,19 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build bundle
-        run: ./shade build
+      - name: Build executables
+        run: |
+          bun build backend/src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/shade-darwin-arm64
+          bun build backend/src/index.ts --compile --target=bun-linux-x64 --outfile dist/shade-linux-x64
 
-      - name: Upload bundle to release
+      - name: Upload executables to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Build
-          files: dist/shade.js
+          files: |
+            dist/shade-darwin-arm64
+            dist/shade-linux-x64
           prerelease: false
           make_latest: true
           body: |

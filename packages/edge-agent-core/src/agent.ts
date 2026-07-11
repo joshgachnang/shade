@@ -78,7 +78,7 @@ export abstract class EdgeAgentBase {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.state.token}`,
+        "X-Agent-Token": this.state.token,
       },
       body: JSON.stringify(data),
     });
@@ -104,7 +104,7 @@ export abstract class EdgeAgentBase {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.state.token}`,
+        "X-Agent-Token": this.state.token,
       },
       body: JSON.stringify({
         type: "channel_request",

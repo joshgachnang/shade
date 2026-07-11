@@ -24,8 +24,9 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUN_PATH="$(command -v bun)"
 
 # --- Service Registry ---
-# Every service runs the SAME single-file bundle (dist/shade.js, built from
-# backend/src/index.ts); SHADE_SERVICE selects what the process does.
+# Every service runs the SAME compiled executable (dist/shade, a bun
+# single-file executable built from backend/src/index.ts); SHADE_SERVICE
+# selects what the process does.
 # To add a service: add its name here and a case to backend/src/index.ts.
 ALL_SERVICES="backend worker imessage"
 # imessage is opt-in (needs SHADE_URL/SHADE_BOOTSTRAP_SECRET config and macOS
@@ -59,8 +60,8 @@ detect_platform() {
 PLATFORM="$(detect_platform)"
 
 # --- Directory Defaults ---
-# SHADE_HOME is the stable install root: services run $SHADE_HOME/dist/shade.js,
-# so CI can swap the bundle and kickstart without regenerating plists/units.
+# SHADE_HOME is the stable install root: services run $SHADE_HOME/dist/shade,
+# so CI can swap the executable and kickstart without regenerating plists/units.
 # Override with the SHADE_HOME env var (e.g. /opt/shade on provisioned servers).
 if [[ "$PLATFORM" == "macos" ]]; then
   SHADE_HOME="${SHADE_HOME:-$HOME/Library/Application Support/Shade}"
@@ -163,9 +164,9 @@ ensure_data_dirs() {
 # One self-contained bundle for every service — no externals, no node_modules.
 cmd_build() {
   mkdir -p "$PROJECT_DIR/dist"
-  echo "Building shade.js..."
-  (cd "$PROJECT_DIR" && bun build "$BUNDLE_ENTRY" --outfile "dist/shade.js" --target bun)
-  echo "  Built: dist/shade.js"
+  echo "Building shade executable..."
+  (cd "$PROJECT_DIR" && bun build "$BUNDLE_ENTRY" --compile --outfile "dist/shade")
+  echo "  Built: dist/shade"
 }
 
 # --- Install (generate service definitions) ---
@@ -210,9 +211,7 @@ install_launchd() {
 
   <key>ProgramArguments</key>
   <array>
-    <string>${BUN_PATH}</string>
-    <string>run</string>
-    <string>${SHADE_HOME}/dist/shade.js</string>
+    <string>${SHADE_HOME}/dist/shade</string>
   </array>
 
   <key>WorkingDirectory</key>
@@ -271,7 +270,7 @@ ${after_clause}
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bun run ${SHADE_HOME}/dist/shade.js
+ExecStart=${SHADE_HOME}/dist/shade
 Environment=SHADE_SERVICE=${name}
 EnvironmentFile=${env_file}
 WorkingDirectory=${SHADE_HOME}
@@ -291,14 +290,19 @@ cmd_install() {
   local names
   names="$(resolve_services "$@")"
 
-  # Stage the bundle at its stable run location ($SHADE_HOME/dist/shade.js) so
-  # deploys can swap the file without touching plists/units.
+  # Stage the executable at its stable run location ($SHADE_HOME/dist/shade)
+  # so deploys can swap the file without touching plists/units. Copy + rename
+  # (never cp over the existing file): macOS validates code signatures
+  # per-inode, and overwriting an exec'd binary in place gets new processes
+  # SIGKILLed with "Taskgated Invalid Signature".
   mkdir -p "$SHADE_HOME/dist"
-  if [[ -f "$PROJECT_DIR/dist/shade.js" ]]; then
-    cp "$PROJECT_DIR/dist/shade.js" "$SHADE_HOME/dist/shade.js"
-    echo "Staged bundle: $SHADE_HOME/dist/shade.js"
+  if [[ -f "$PROJECT_DIR/dist/shade" ]]; then
+    cp "$PROJECT_DIR/dist/shade" "$SHADE_HOME/dist/shade.new"
+    chmod +x "$SHADE_HOME/dist/shade.new"
+    mv "$SHADE_HOME/dist/shade.new" "$SHADE_HOME/dist/shade"
+    echo "Staged executable: $SHADE_HOME/dist/shade"
   else
-    echo "WARNING: $PROJECT_DIR/dist/shade.js not found — run 'shade build' first" >&2
+    echo "WARNING: $PROJECT_DIR/dist/shade not found — run 'shade build' first" >&2
   fi
 
   for name in $names; do
@@ -359,22 +363,23 @@ cmd_restart() {
   cmd_start "$@"
 }
 
-# --- Update (swap bundle + restart, used by CI deploys) ---
-# Replaces $SHADE_HOME/dist/shade.js with the given file and restarts every
+# --- Update (swap executable + restart, used by CI deploys) ---
+# Replaces $SHADE_HOME/dist/shade with the given file and restarts every
 # installed service (or just the named ones). Does not regenerate plists/units.
 cmd_update() {
   local bundle="${1:-}"
   shift || true
 
   if [[ -z "$bundle" || ! -f "$bundle" ]]; then
-    echo "Usage: shade update <path-to-shade.js> [service...]" >&2
+    echo "Usage: shade update <path-to-shade-executable> [service...]" >&2
     exit 1
   fi
 
   mkdir -p "$SHADE_HOME/dist"
-  cp "$bundle" "$SHADE_HOME/dist/shade.js.new"
-  mv "$SHADE_HOME/dist/shade.js.new" "$SHADE_HOME/dist/shade.js"
-  echo "Updated bundle: $SHADE_HOME/dist/shade.js"
+  cp "$bundle" "$SHADE_HOME/dist/shade.new"
+  chmod +x "$SHADE_HOME/dist/shade.new"
+  mv "$SHADE_HOME/dist/shade.new" "$SHADE_HOME/dist/shade"
+  echo "Updated executable: $SHADE_HOME/dist/shade"
 
   local names
   if [[ $# -gt 0 ]]; then
@@ -497,7 +502,7 @@ cmd_deploy() {
   echo "  shade stop [service]    Stop services"
   echo ""
   echo "Config: $CONFIG_DIR/"
-  echo "Bundle: $SHADE_HOME/dist/shade.js"
+  echo "Executable: $SHADE_HOME/dist/shade"
   if [[ "$PLATFORM" == "macos" ]]; then
     echo "Logs: $LOG_DIR/"
   else
@@ -676,12 +681,12 @@ case "$COMMAND" in
     echo "Usage: shade <command> [service...]"
     echo ""
     echo "Local:   deploy, build, install, start, stop, restart, status, logs, uninstall"
-    echo "         update <path-to-shade.js> [service...]  (swap bundle + restart; used by CI)"
+    echo "         update <path-to-shade-executable> [service...]  (swap + restart; used by CI)"
     echo "Movie:   search <query> [--type objects|characters|text|tags]"
     echo "Trivia:  scrape-scores, scrape-scores-loop, scrape-vault, trivia-answer"
     echo "Remote:  remote-setup <host>, remote-deploy <host> [service...] (source-based)"
     echo ""
-    echo "Services: $ALL_SERVICES (default: $DEFAULT_SERVICES; all run dist/shade.js via SHADE_SERVICE)"
+    echo "Services: $ALL_SERVICES (default: $DEFAULT_SERVICES; all run dist/shade via SHADE_SERVICE)"
     exit 1
     ;;
 esac

@@ -7,24 +7,25 @@ paths:
 
 ## Single-artifact model
 
-Everything deploys as **one self-contained bundle** — `dist/shade.js`, built by
-`./shade build` from `backend/src/index.ts`. The `SHADE_SERVICE` env var selects
-what a process runs: `backend` (default), `worker`, or `imessage` (edge agent).
-Adding a service = a case in `backend/src/index.ts` + `ALL_SERVICES` in the
-`shade` CLI.
+Everything deploys as **one self-contained bun executable** — `dist/shade`,
+built by `./shade build` (`bun build --compile`) from `backend/src/index.ts`.
+The `SHADE_SERVICE` env var selects what a process runs: `backend` (default),
+`worker`, or `imessage` (edge agent). Adding a service = a case in
+`backend/src/index.ts` + `ALL_SERVICES` in the `shade` CLI.
 
 - Provision a machine: `./shade deploy [service...]` (env files in
   `~/.config/shade/`, launchd plists / systemd units, start)
-- Update a machine: `./shade update <path-to-shade.js>` (swap bundle at
-  `$SHADE_HOME/dist/shade.js`, restart installed services)
-- Agent runs from the bundle use the host `claude` binary (override:
+- Update a machine: `./shade update <path-to-shade-executable>` (swap binary at
+  `$SHADE_HOME/dist/shade`, restart installed services)
+- CI publishes `shade-darwin-arm64` + `shade-linux-x64` to the `latest` release
+- Agent runs from the executable use the host `claude` binary (override:
   `SHADE_CLAUDE_CODE_PATH`)
 
 ## Studio Mac (primary)
 
 - **Host**: `NangStudio` (this Mac), launchd LaunchAgents `com.shade.backend`,
   `com.shade.worker`, `com.shade.imessage` (installed, opt-in)
-- **Bundle**: `~/Library/Application Support/Shade/dist/shade.js`
+- **Executable**: `~/Library/Application Support/Shade/dist/shade`
 - **Data**: `~/Library/Application Support/Shade/data` (`SHADE_DATA_DIR`)
 - **Env files**: `~/.config/shade/shade-{backend,worker,imessage}.env`
 - **Logs**: `~/Library/Logs/Shade/` (`./shade logs backend`)

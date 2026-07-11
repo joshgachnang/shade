@@ -20,6 +20,7 @@
     "cheerio": "^1.2.0",
     "cron-parser": "^5.5.0",
     "dotenv": "^16.4.7",
+    "express": "^4.21.0",
     "imapflow": "^1.2.18",
     "luxon": "^3.7.2",
     "mailparser": "^3.9.6",

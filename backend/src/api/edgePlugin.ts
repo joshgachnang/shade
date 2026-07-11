@@ -21,13 +21,15 @@ import {Group} from "../models/group";
 import {Message} from "../models/message";
 import type {EdgeAgentDocument} from "../types";
 
+// Agents authenticate with the X-Agent-Token header (matching X-Bootstrap-Secret
+// on register), NOT Authorization: Bearer — the global decodeJWTMiddleware 401s
+// any Bearer value that isn't a valid JWT before routes ever see the request.
 const validateAgentToken = async (req: express.Request): Promise<EdgeAgentDocument> => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new APIError({status: 401, title: "Missing or invalid Authorization header"});
+  const token = req.headers["x-agent-token"];
+  if (!token || typeof token !== "string") {
+    throw new APIError({status: 401, title: "Missing X-Agent-Token header"});
   }
 
-  const token = authHeader.slice(7);
   const tokenHash = hashToken(token);
 
   const agent = await EdgeAgent.findOne({authTokenHash: tokenHash});

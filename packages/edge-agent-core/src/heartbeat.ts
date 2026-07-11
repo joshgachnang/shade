@@ -48,7 +48,7 @@ const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${options.state.token}`,
+        "X-Agent-Token": options.state.token,
       },
       body: JSON.stringify(body),
     });

@@ -1,10 +1,10 @@
 name: Deploy to Studio
 
-# Deploys the shade.js bundle published by `Build & Release` to the studio Mac
-# (NangStudio) via its self-hosted runner: pull the artifact, swap it into
+# Deploys the shade executable published by `Build & Release` to the studio
+# Mac (NangStudio) via its self-hosted runner: pull the artifact, swap it into
 # place, kickstart the launchd services. Provisioning (plists, env files) is
 # done once on the machine with `./shade deploy` — this workflow only updates
-# the bundle.
+# the executable.
 
 on:
   workflow_run:
@@ -19,15 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download bundle from release
+      - name: Download executable from release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           export PATH="/opt/homebrew/bin:$PATH"
-          gh release download latest --repo ${{ github.repository }} --pattern 'shade.js' --dir "$RUNNER_TEMP" --clobber
+          gh release download latest --repo ${{ github.repository }} --pattern 'shade-darwin-arm64' --dir "$RUNNER_TEMP" --clobber
 
-      - name: Swap bundle and restart services
-        run: ./shade update "$RUNNER_TEMP/shade.js"
+      - name: Swap executable and restart services
+        run: ./shade update "$RUNNER_TEMP/shade-darwin-arm64"
 
       - name: Health check
         run: |
