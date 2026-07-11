@@ -95,7 +95,9 @@ export class ChannelManager {
     );
   }
 
-  private async connectChannel(channelDoc: ChannelDocument): Promise<void> {
+  // Public so channels created after startup (e.g. edge agent channel_request)
+  // can be connected without a restart.
+  async connectChannel(channelDoc: ChannelDocument): Promise<void> {
     const factory = this.connectorFactories[channelDoc.type];
     if (!factory) {
       logger.warn(`Unknown channel type: ${channelDoc.type}`);

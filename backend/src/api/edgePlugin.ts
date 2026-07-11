@@ -19,6 +19,7 @@ import {EdgeAgent} from "../models/edgeAgent";
 import {EdgeAgentEvent} from "../models/edgeAgentEvent";
 import {Group} from "../models/group";
 import {Message} from "../models/message";
+import {getOrchestrator} from "../orchestrator";
 import type {EdgeAgentDocument} from "../types";
 
 // Agents authenticate with the X-Agent-Token header (matching X-Bootstrap-Secret
@@ -245,6 +246,11 @@ export class EdgePlugin implements TerrenoPlugin {
                 isMain: false,
               });
 
+              // Register with the live orchestrator — the message loop only
+              // sees groups in the channel manager's cache, so without this
+              // the new chat would be dead until the next restart.
+              getOrchestrator()?.channelManager.registerGroup(newGroup);
+
               await Message.create({
                 groupId: newGroup._id,
                 channelId,
@@ -296,7 +302,7 @@ export class EdgePlugin implements TerrenoPlugin {
 
           // Create a default Group for this channel
           const externalId = `edge-${agent.agentType}-${agent._id}`;
-          await Group.create({
+          const defaultGroup = await Group.create({
             name: `${body.payload.name} — Default`,
             folder: `edge/${agent.agentType}/default`,
             channelId: channel._id,
@@ -305,6 +311,18 @@ export class EdgePlugin implements TerrenoPlugin {
             requiresTrigger: false,
             isMain: true,
           });
+
+          // Connect the channel and cache the group in the live orchestrator
+          // so inbound/outbound work without a restart.
+          const orchestrator = getOrchestrator();
+          if (orchestrator) {
+            orchestrator.channelManager.registerGroup(defaultGroup);
+            try {
+              await orchestrator.channelManager.connectChannel(channel);
+            } catch (err) {
+              logger.error(`Failed to connect edge channel "${channel.name}": ${err}`);
+            }
+          }
 
           // Link the channel to the agent
           await EdgeAgent.findByIdAndUpdate(agent._id, {$set: {channelId: channel._id}});

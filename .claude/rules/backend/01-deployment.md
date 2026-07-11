@@ -35,9 +35,12 @@ The `SHADE_SERVICE` env var selects what a process runs: `backend` (default),
 - **Ports**: backend 4020, worker health 4021
 - **iMessage**: `com.shade.imessage` runs the same executable with
   `SHADE_SERVICE=imessage`; requires Full Disk Access for
-  `~/Library/Application Support/Shade/dist/shade`. The binary is ad-hoc
-  signed, so the FDA grant is tied to the exact build — re-grant after
-  deploys that change the binary (or start signing with a stable identity).
+  `~/Library/Application Support/Shade/dist/shade`.
+- **Code signing**: `shade build`/`update`/`install` sign the binary with the
+  self-signed "Shade Code Signing" identity (login keychain, identifier
+  `io.nang.shade`) when present. This keeps TCC grants (Full Disk Access)
+  valid across deploys — ad-hoc signatures change per build and silently
+  revoke them. If the identity is ever recreated, re-grant FDA once.
 - **CI**: push to master → `build-release.yml` publishes `shade.js` to the
   `latest` GitHub release → `deploy-studio.yml` runs on the self-hosted runner
   (`nangstudio`, labels `[self-hosted, macOS, studio]`, installed at

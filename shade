@@ -160,12 +160,33 @@ ensure_data_dirs() {
   echo "  Data directories: $data_dir"
 }
 
+# --- Signing (macOS) ---
+# Sign with the stable "Shade Code Signing" identity when present. macOS TCC
+# ties permission grants (e.g. Full Disk Access for the imessage service) to
+# the binary's code signature; ad-hoc signatures change every build, so
+# without a stable identity every deploy silently revokes those grants.
+SIGNING_IDENTITY="Shade Code Signing"
+
+sign_binary() {
+  local bin="$1"
+  if [[ "$PLATFORM" != "macos" ]]; then
+    return 0
+  fi
+  if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGNING_IDENTITY"; then
+    codesign -f -s "$SIGNING_IDENTITY" --identifier io.nang.shade --timestamp=none "$bin"
+    echo "  Signed: $bin ($SIGNING_IDENTITY)"
+  else
+    echo "  NOTE: no '$SIGNING_IDENTITY' identity found — leaving ad-hoc signature (TCC grants will not survive updates)"
+  fi
+}
+
 # --- Build ---
 # One self-contained bundle for every service — no externals, no node_modules.
 cmd_build() {
   mkdir -p "$PROJECT_DIR/dist"
   echo "Building shade executable..."
   (cd "$PROJECT_DIR" && bun build "$BUNDLE_ENTRY" --compile --outfile "dist/shade")
+  sign_binary "$PROJECT_DIR/dist/shade"
   echo "  Built: dist/shade"
 }
 
@@ -299,6 +320,7 @@ cmd_install() {
   if [[ -f "$PROJECT_DIR/dist/shade" ]]; then
     cp "$PROJECT_DIR/dist/shade" "$SHADE_HOME/dist/shade.new"
     chmod +x "$SHADE_HOME/dist/shade.new"
+    sign_binary "$SHADE_HOME/dist/shade.new"
     mv "$SHADE_HOME/dist/shade.new" "$SHADE_HOME/dist/shade"
     echo "Staged executable: $SHADE_HOME/dist/shade"
   else
@@ -378,6 +400,7 @@ cmd_update() {
   mkdir -p "$SHADE_HOME/dist"
   cp "$bundle" "$SHADE_HOME/dist/shade.new"
   chmod +x "$SHADE_HOME/dist/shade.new"
+  sign_binary "$SHADE_HOME/dist/shade.new"
   mv "$SHADE_HOME/dist/shade.new" "$SHADE_HOME/dist/shade"
   echo "Updated executable: $SHADE_HOME/dist/shade"
 
