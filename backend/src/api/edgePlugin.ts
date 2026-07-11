@@ -117,9 +117,14 @@ export class EdgePlugin implements TerrenoPlugin {
           }
         }
 
-        // Atomically deliver and clear pending commands
+        // Atomically deliver and clear pending commands. A live heartbeat
+        // recovers offline/error agents (the health monitor sets those on
+        // stale heartbeats); only pending/rejected stay as-is.
         const newStatus =
-          agent.status === "approved" || agent.status === "online" || agent.status === "offline"
+          agent.status === "approved" ||
+          agent.status === "online" ||
+          agent.status === "offline" ||
+          agent.status === "error"
             ? "online"
             : agent.status;
 
