@@ -2,7 +2,7 @@ name: Deploy to Server
 
 # Source-based deploy to the shade host: pulls origin/master on /opt/shade/src,
 # runs `bun install`, and restarts the systemd service (which executes
-# `bun run src/index.ts`). For the mini deploy see deploy-mini.yml.
+# `bun run src/index.ts`). For the studio Mac deploy see deploy-studio.yml.
 
 on:
   push:
@@ -16,7 +16,9 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    # Pin to the Linux runner on the shade host — a bare `self-hosted` would
+    # also match the macOS studio runner.
+    runs-on: [self-hosted, Linux]
     steps:
       - name: Pull master and restart
         run: |

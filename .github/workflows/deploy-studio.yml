@@ -1,0 +1,54 @@
+name: Deploy to Studio
+
+# Deploys the shade.js bundle published by `Build & Release` to the studio Mac
+# (NangStudio) via its self-hosted runner: pull the artifact, swap it into
+# place, kickstart the launchd services. Provisioning (plists, env files) is
+# done once on the machine with `./shade deploy` — this workflow only updates
+# the bundle.
+
+on:
+  workflow_run:
+    workflows: ["Build & Release"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy-studio:
+    runs-on: [self-hosted, studio]
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download bundle from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export PATH="/opt/homebrew/bin:$PATH"
+          gh release download latest --repo ${{ github.repository }} --pattern 'shade.js' --dir "$RUNNER_TEMP" --clobber
+
+      - name: Swap bundle and restart services
+        run: ./shade update "$RUNNER_TEMP/shade.js"
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -sf --max-time 5 http://localhost:4020/health
+          curl -sf --max-time 5 http://localhost:4021/health
+          echo "Studio deploy healthy"
+
+      - name: Notify Slack on success
+        if: success()
+        run: |
+          COMMIT_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Shade deployed to studio :computer:\\n\`${SHORT_SHA}\`\"}"
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"Shade studio deploy failed :x: — <${RUN_URL}|View logs>\"}"

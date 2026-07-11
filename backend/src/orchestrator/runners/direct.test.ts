@@ -1,6 +1,11 @@
 import {afterEach, describe, expect, test} from "bun:test";
 import {AppConfig, reloadAppConfig} from "../../models/appConfig";
-import {buildAllowedTools, resolveModel, SHADE_MCP_WILDCARD} from "./direct";
+import {
+  buildAllowedTools,
+  resolveClaudeCodeExecutable,
+  resolveModel,
+  SHADE_MCP_WILDCARD,
+} from "./direct";
 
 const CONFIGURED_DEFAULTS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"];
 
@@ -72,6 +77,22 @@ describe("resolveModel", () => {
       "claude-sonnet-4-20250514"
     );
     expect(resolveModel({groupModel: "  ", globalModel: " "})).toBeUndefined();
+  });
+});
+
+describe("resolveClaudeCodeExecutable", () => {
+  afterEach(() => {
+    delete process.env.SHADE_CLAUDE_CODE_PATH;
+  });
+
+  test("SHADE_CLAUDE_CODE_PATH override wins", () => {
+    process.env.SHADE_CLAUDE_CODE_PATH = "/custom/claude";
+    expect(resolveClaudeCodeExecutable()).toBe("/custom/claude");
+  });
+
+  test("returns undefined when the SDK cli.js is on disk (source mode)", () => {
+    // Tests run from source with node_modules present, so the SDK default applies.
+    expect(resolveClaudeCodeExecutable()).toBeUndefined();
   });
 });
 

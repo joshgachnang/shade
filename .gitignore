@@ -14,3 +14,6 @@ backend/data/recordings
 
 # AI testability harness sandbox (bun run dev:test)
 backend/data-test/
+
+# Built bundle (shade build)
+dist/

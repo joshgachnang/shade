@@ -1,0 +1,46 @@
+name: Build & Release
+
+# Builds the single-file bundle (dist/shade.js — backend, worker, and edge
+# agents in one artifact, selected at runtime via SHADE_SERVICE) and publishes
+# it to the `latest` GitHub release. Deploy workflows (deploy-studio.yml) pull
+# this artifact and restart services.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - "packages/**"
+      - "shade"
+      - ".github/workflows/build-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build bundle
+        run: ./shade build
+
+      - name: Upload bundle to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          files: dist/shade.js
+          prerelease: false
+          make_latest: true
+          body: |
+            Automated build from ${{ github.sha }}
