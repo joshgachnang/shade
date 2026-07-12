@@ -6,6 +6,9 @@ export const heartbeatRequestSchema = z.object({
   platform: z.string().optional(),
   arch: z.string().optional(),
   version: z.string().optional(),
+  // Advertised on every heartbeat so upgrades that add capabilities take
+  // effect without re-registering the agent.
+  capabilities: z.array(z.string()).optional(),
   hostname: z.string().optional(),
   uptime: z.number().optional(), // seconds
   memoryUsage: z.number().optional(), // bytes

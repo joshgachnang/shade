@@ -139,6 +139,9 @@ export class EdgePlugin implements TerrenoPlugin {
               ...(body.platform && {platform: body.platform}),
               ...(body.arch && {arch: body.arch}),
               ...(body.version && {version: body.version}),
+              // Upgrades can add capabilities; refresh from the live agent so
+              // capability-gated commands don't require re-registration.
+              ...(body.capabilities?.length && {capabilities: body.capabilities}),
               ...(body.hostname && {hostname: body.hostname}),
               ...(body.commandResults.length > 0 && {lastCommandResults: body.commandResults}),
             },

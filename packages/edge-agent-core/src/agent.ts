@@ -48,6 +48,7 @@ export abstract class EdgeAgentBase {
       state: this.state,
       intervalMs: heartbeatInterval,
       version: this.options.version,
+      capabilities: this.options.capabilities,
       onCommand: async (cmd) => this.onCommand(cmd),
     });
 

@@ -18,6 +18,7 @@ export interface HeartbeatLoopOptions {
   state: AgentState;
   intervalMs: number;
   version: string;
+  capabilities?: string[];
   onCommand: CommandHandler;
 }
 
@@ -40,6 +41,7 @@ const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
     platform: os.platform(),
     arch: os.arch(),
     version: options.version,
+    capabilities: options.capabilities,
     hostname: os.hostname(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
     memoryUsage: process.memoryUsage().rss,

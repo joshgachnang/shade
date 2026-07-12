@@ -46,4 +46,17 @@ describe("heartbeatTick", () => {
     // Success cleared the backoff: next tick sends immediately
     expect(await heartbeatTick(options, Date.now())).toBe(true);
   });
+
+  test("advertises capabilities in the heartbeat body", async () => {
+    resetHeartbeatBackoff();
+
+    let sentBody: Record<string, unknown> | null = null;
+    globalThis.fetch = (async (_url: string, init: {body: string}) => {
+      sentBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({status: "online", commands: []}));
+    }) as never;
+
+    await heartbeatTick({...options, capabilities: ["read_messages", "manage_reminders"]});
+    expect(sentBody?.capabilities).toEqual(["read_messages", "manage_reminders"]);
+  });
 });
