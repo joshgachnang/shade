@@ -1,26 +1,16 @@
-import {Box, Button, Heading, Page, Text} from "@terreno/ui";
-import {type Href, useRouter} from "expo-router";
 import type React from "react";
+import {Chat} from "@/components/console/Chat";
+import {useConsole} from "@/components/console/ConsoleContext";
+import {ConsoleScreen} from "@/components/console/ConsoleScreen";
 
+// The Shade Console chat is the home page; the console's panes live as their
+// own sidebar routes (Activity, Approvals, System, …) sharing the same vm.
 const HomeScreen: React.FC = () => {
-  const router = useRouter();
+  const vm = useConsole();
   return (
-    <Page navigation={undefined} title="Home">
-      <Box padding={4} gap={4} testID="home-screen">
-        <Heading>Welcome to Shade</Heading>
-        <Text>Your app is ready for development!</Text>
-        <Text color="secondaryLight">
-          Start by adding models to the backend and screens to the frontend.
-        </Text>
-        <Box marginTop={2}>
-          <Button
-            testID="home-open-console-button"
-            text="Open Shade Console"
-            onClick={() => router.push("/console" as Href)}
-          />
-        </Box>
-      </Box>
-    </Page>
+    <ConsoleScreen testID="home-screen">
+      <Chat vm={vm} />
+    </ConsoleScreen>
   );
 };
 

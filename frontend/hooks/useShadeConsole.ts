@@ -895,6 +895,7 @@ export const useShadeConsole = (shell: ShellMode = "cursor") => {
         set({offline: !s.offline});
         pushToast({title: wasOffline ? "Back online" : "Offline mode", body: wasOffline ? "Frontier models available again." : "All routing pinned to local models (Qwen3, Whisper). Nothing leaves the network.", accent: "var(--secondary-500)"});
       },
+      pendingApprovalCount: pendingN,
       hasUnreadAlerts: unread > 0,
       unreadCount: unread,
       alertsOpen: s.alertsOpen,

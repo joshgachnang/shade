@@ -13,5 +13,6 @@ Last updated: 2026-07-11
 | accessibility.md | Accessibility | 4 | 0 | 0 | 4 | 1/4 |
 | reminders.md | Reminders management | 10 | 5 | 3 | 2 | 5/10 |
 | calendars.md | Calendar management | 9 | 4 | 3 | 2 | 5/9 |
+| console-home.md | Console home & merged sidebar | 7 | 3 | 2 | 2 | 5/7 |
 
-**Total:** 53 test cases | 17 P0 | 19 P1 | 17 P2 | 27/53 automated
+**Total:** 60 test cases | 20 P0 | 21 P1 | 19 P2 | 32/60 automated
