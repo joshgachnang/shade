@@ -1,7 +1,5 @@
-import {execFile} from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {promisify} from "node:util";
 import {createSdkMcpServer, tool} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
 import {DateTime} from "luxon";
@@ -34,8 +32,7 @@ import {
   updateContact,
 } from "../utils/appleContacts";
 import {isHandleAllowed} from "../utils/smsAllowlist";
-
-const execFileAsync = promisify(execFile);
+import {buildAppleTools} from "./appleTools";
 
 export interface McpContext {
   groupId: string;
@@ -943,39 +940,6 @@ export const buildTools = (ctx: McpContext) => {
     }
   );
 
-  // --- Apple Reminders tools (macOS only, uses JXA via osascript) ---
-
-  const runJxa = async (script: string): Promise<string> => {
-    const {stdout} = await execFileAsync("osascript", ["-l", "JavaScript", "-e", script], {
-      timeout: 15_000,
-    });
-    return stdout.trim();
-  };
-
-  const listReminderListsTool = tool(
-    "list_reminder_lists",
-    "List all Apple Reminders lists on this Mac. Returns list names and their reminder counts.",
-    {},
-    async () => {
-      try {
-        const script = `
-          const app = Application("Reminders");
-          const lists = app.lists();
-          JSON.stringify(lists.map(l => ({
-            name: l.name(),
-            id: l.id(),
-            count: l.reminders.whose({completed: false})().length
-          })));
-        `;
-        const result = await runJxa(script);
-        return {content: [{type: "text" as const, text: result}]};
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Unknown error";
-        return {content: [{type: "text" as const, text: `Error listing reminder lists: ${msg}`}]};
-      }
-    }
-  );
-
   const deleteDataTool = tool(
     "delete_data",
     "Delete a saved piece of data by key.",
@@ -991,41 +955,6 @@ export const buildTools = (ctx: McpContext) => {
         return {
           content: [{type: "text" as const, text: `No data found for key "${args.key}".`}],
         };
-      }
-    }
-  );
-
-  const listRemindersTool = tool(
-    "list_reminders",
-    "List reminders from an Apple Reminders list. Returns reminder names, due dates, priorities, and completion status.",
-    {
-      listName: z.string().describe("Name of the reminders list (e.g., 'Reminders', 'Shopping')"),
-      includeCompleted: z
-        .boolean()
-        .default(false)
-        .describe("Include completed reminders (default: false)"),
-    },
-    async (args) => {
-      try {
-        const listNameEscaped = args.listName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const script = `
-          const app = Application("Reminders");
-          const list = app.lists.byName("${listNameEscaped}");
-          const reminders = ${args.includeCompleted ? "list.reminders()" : "list.reminders.whose({completed: false})()"};
-          JSON.stringify(reminders.map(r => ({
-            name: r.name(),
-            id: r.id(),
-            completed: r.completed(),
-            dueDate: r.dueDate() ? r.dueDate().toISOString() : null,
-            priority: r.priority(),
-            body: r.body() || null
-          })));
-        `;
-        const result = await runJxa(script);
-        return {content: [{type: "text" as const, text: result}]};
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Unknown error";
-        return {content: [{type: "text" as const, text: `Error listing reminders: ${msg}`}]};
       }
     }
   );
@@ -1098,128 +1027,6 @@ export const buildTools = (ctx: McpContext) => {
             },
           ],
         };
-      }
-    }
-  );
-
-  const createReminderTool = tool(
-    "create_reminder",
-    "Create a new reminder in Apple Reminders. Supports setting name, due date, priority, notes, and target list.",
-    {
-      name: z.string().describe("The reminder title"),
-      listName: z.string().default("Reminders").describe("Target list name (default: 'Reminders')"),
-      notes: z.string().optional().describe("Body/notes for the reminder"),
-      dueDate: z
-        .string()
-        .optional()
-        .describe("Due date as ISO 8601 string (e.g., '2025-12-25T09:00:00')"),
-      priority: z
-        .number()
-        .min(0)
-        .max(9)
-        .default(0)
-        .describe("Priority: 0=none, 1-4=high, 5=medium, 6-9=low"),
-    },
-    async (args) => {
-      try {
-        const listNameEscaped = args.listName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const nameEscaped = args.name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const notesEscaped = args.notes
-          ? args.notes.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-          : "";
-
-        let dueDateJs = "null";
-        if (args.dueDate) {
-          dueDateJs = `new Date("${args.dueDate}")`;
-        }
-
-        const script = `
-          const app = Application("Reminders");
-          const list = app.lists.byName("${listNameEscaped}");
-          const props = {
-            name: "${nameEscaped}",
-            priority: ${args.priority}
-          };
-          ${args.notes ? `props.body = "${notesEscaped}";` : ""}
-          const dueDate = ${dueDateJs};
-          if (dueDate) { props.dueDate = dueDate; }
-          const r = app.Reminder(props);
-          list.reminders.push(r);
-          JSON.stringify({id: r.id(), name: r.name()});
-        `;
-        const result = await runJxa(script);
-        return {content: [{type: "text" as const, text: `Reminder created: ${result}`}]};
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Unknown error";
-        return {content: [{type: "text" as const, text: `Error creating reminder: ${msg}`}]};
-      }
-    }
-  );
-
-  const completeReminderTool = tool(
-    "complete_reminder",
-    "Mark an Apple Reminder as completed by its name and list.",
-    {
-      name: z.string().describe("The exact name of the reminder to complete"),
-      listName: z
-        .string()
-        .default("Reminders")
-        .describe("The list containing the reminder (default: 'Reminders')"),
-    },
-    async (args) => {
-      try {
-        const listNameEscaped = args.listName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const nameEscaped = args.name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const script = `
-          const app = Application("Reminders");
-          const list = app.lists.byName("${listNameEscaped}");
-          const matches = list.reminders.whose({name: "${nameEscaped}", completed: false})();
-          if (matches.length === 0) {
-            JSON.stringify({error: "No matching incomplete reminder found"});
-          } else {
-            matches[0].completed = true;
-            JSON.stringify({completed: true, name: matches[0].name()});
-          }
-        `;
-        const result = await runJxa(script);
-        return {content: [{type: "text" as const, text: result}]};
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Unknown error";
-        return {content: [{type: "text" as const, text: `Error completing reminder: ${msg}`}]};
-      }
-    }
-  );
-
-  const deleteReminderTool = tool(
-    "delete_reminder",
-    "Delete an Apple Reminder by its name and list. This permanently removes the reminder.",
-    {
-      name: z.string().describe("The exact name of the reminder to delete"),
-      listName: z
-        .string()
-        .default("Reminders")
-        .describe("The list containing the reminder (default: 'Reminders')"),
-    },
-    async (args) => {
-      try {
-        const listNameEscaped = args.listName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const nameEscaped = args.name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        const script = `
-          const app = Application("Reminders");
-          const list = app.lists.byName("${listNameEscaped}");
-          const matches = list.reminders.whose({name: "${nameEscaped}"})();
-          if (matches.length === 0) {
-            JSON.stringify({error: "No matching reminder found"});
-          } else {
-            app.delete(matches[0]);
-            JSON.stringify({deleted: true, name: "${nameEscaped}"});
-          }
-        `;
-        const result = await runJxa(script);
-        return {content: [{type: "text" as const, text: result}]};
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Unknown error";
-        return {content: [{type: "text" as const, text: `Error deleting reminder: ${msg}`}]};
       }
     }
   );
@@ -1840,11 +1647,7 @@ export const buildTools = (ctx: McpContext) => {
     loadDataTool,
     listDataTool,
     deleteDataTool,
-    listReminderListsTool,
-    listRemindersTool,
-    createReminderTool,
-    completeReminderTool,
-    deleteReminderTool,
+    ...buildAppleTools(),
     searchContactsTool,
     getContactTool,
     matchContactTool,
