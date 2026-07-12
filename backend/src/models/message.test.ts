@@ -60,6 +60,7 @@ describe("Message richResponse fields", () => {
   });
 
   test("correlationId is indexed (sanity check via collection.indexInformation)", async () => {
+    await Message.init();
     const indexes = await Message.collection.indexInformation();
     const keys = Object.values(indexes).map((idx) => JSON.stringify(idx));
     const hasCorrIndex = keys.some((k) => k.includes("correlationId"));

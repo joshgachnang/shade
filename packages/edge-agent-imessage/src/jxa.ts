@@ -43,7 +43,24 @@ const spinUntil = (isDone, timeoutSeconds) => {
   return isDone();
 };
 
+// EKAuthorizationStatus: 0 notDetermined, 1 restricted, 2 denied,
+// 3 authorized/fullAccess, 4 writeOnly (macOS 14+)
 const requestAccess = (entityType) => {
+  const kind = entityType === $.EKEntityTypeReminder ? "Reminders" : "Calendars";
+  const status = Number($.EKEventStore.authorizationStatusForEntityType(entityType));
+  if (status === 3) {
+    return; // already authorized — no prompt needed
+  }
+  if (status === 1 || status === 2 || status === 4) {
+    throw new Error(
+      "EventKit " + kind + " access is " + (status === 4 ? "write-only" : "denied") +
+      ". Grant Full Access to the shade agent under System Settings > Privacy & Security > " + kind + "."
+    );
+  }
+
+  // notDetermined: request access. The prompt only renders when the requesting
+  // process has usage-description strings, which a bare launchd binary lacks —
+  // so keep the wait short and fail with instructions instead of hanging.
   let done = false;
   let granted = false;
   const handler = (ok, _err) => {
@@ -63,12 +80,16 @@ const requestAccess = (entityType) => {
   } else {
     store.requestAccessToEntityTypeCompletion(entityType, handler);
   }
-  if (!spinUntil(() => done, 30)) {
-    throw new Error("Timed out waiting for EventKit permission response");
+  if (!spinUntil(() => done, 20)) {
+    throw new Error(
+      "EventKit " + kind + " permission is undetermined and the consent prompt could not be " +
+      "answered. Pre-grant access for the shade agent (kTCCService" +
+      (entityType === $.EKEntityTypeReminder ? "Reminders" : "Calendar") + ")."
+    );
   }
   if (!granted) {
     throw new Error(
-      "EventKit access denied. Grant access in System Settings > Privacy & Security."
+      "EventKit " + kind + " access denied. Grant access in System Settings > Privacy & Security."
     );
   }
 };
