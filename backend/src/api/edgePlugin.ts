@@ -13,6 +13,7 @@ import {
   type TerrenoPlugin,
 } from "@terreno/api";
 import type express from "express";
+import {applyCalendarSync, applyRemindersSync} from "../edge/appleSync";
 import {decryptSecrets, generateToken, hashToken} from "../edge/crypto";
 import {Channel} from "../models/channel";
 import {EdgeAgent} from "../models/edgeAgent";
@@ -343,6 +344,36 @@ export class EdgePlugin implements TerrenoPlugin {
           );
 
           res.status(201).json({channelId: channel._id.toString()});
+        } else if (body.type === "reminders_sync") {
+          const counts = await applyRemindersSync(agent._id, body.payload);
+
+          await EdgeAgentEvent.create({
+            agentId: agent._id,
+            eventType: "data_pushed",
+            payload: {
+              type: "reminders_sync",
+              lists: body.payload.lists.length,
+              reminders: body.payload.reminders.length,
+              removed: counts.removed,
+            },
+          });
+
+          res.json({received: body.payload.reminders.length, removed: counts.removed});
+        } else if (body.type === "calendar_sync") {
+          const counts = await applyCalendarSync(agent._id, body.payload);
+
+          await EdgeAgentEvent.create({
+            agentId: agent._id,
+            eventType: "data_pushed",
+            payload: {
+              type: "calendar_sync",
+              calendars: body.payload.calendars.length,
+              events: body.payload.events.length,
+              removed: counts.removed,
+            },
+          });
+
+          res.json({received: body.payload.events.length, removed: counts.removed});
         } else if (body.type === "events") {
           await EdgeAgentEvent.create({
             agentId: agent._id,

@@ -10,10 +10,12 @@
 	},
 	"dependencies": {
 		"@shade/edge-agent-core": "workspace:*",
-		"@shade/edge-agent-types": "workspace:*"
+		"@shade/edge-agent-types": "workspace:*",
+		"luxon": "^3.5.0"
 	},
 	"devDependencies": {
 		"@types/bun": "^1.2.4",
+		"@types/luxon": "^3.4.2",
 		"typescript": "5.8.2"
 	}
 }

@@ -1,15 +1,19 @@
 import os from "node:os";
 import type {CommandResult, EdgeAgentConfig} from "@shade/edge-agent-types";
 import {EdgeAgentBase, type HeartbeatCommand} from "@shade/edge-agent-core";
+import {createCalendarEvent} from "./appleCalendar";
+import {completeReminder, createReminder, deleteReminder} from "./appleReminders";
 import {IMessageReader} from "./reader";
 import {type MessageService, sendIMessage} from "./sender";
+import {AppleSyncService} from "./sync";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 export class IMessageEdgeAgent extends EdgeAgentBase {
   private reader: IMessageReader | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private channelRequested = false;
+  private syncService = new AppleSyncService({pushData: (data) => this.pushData(data)});
 
   constructor() {
     const shadeUrl = process.env.SHADE_URL;
@@ -27,7 +31,14 @@ export class IMessageEdgeAgent extends EdgeAgentBase {
       name: agentName,
       agentType: "imessage",
       version: VERSION,
-      capabilities: ["read_messages", "send_messages"],
+      capabilities: [
+        "read_messages",
+        "send_messages",
+        "sync_reminders",
+        "sync_calendar",
+        "manage_reminders",
+        "manage_calendar",
+      ],
       shadeUrl,
       bootstrapSecret,
     });
@@ -48,6 +59,9 @@ export class IMessageEdgeAgent extends EdgeAgentBase {
     } catch (err) {
       console.error(`Failed to open iMessage database: ${err}`);
     }
+
+    // Full reminders + calendar sync on launch/config, then on an interval
+    this.syncService.start(config);
   }
 
   async onCommand(command: HeartbeatCommand): Promise<CommandResult> {
@@ -106,12 +120,99 @@ export class IMessageEdgeAgent extends EdgeAgentBase {
       };
     }
 
+    if (command.type === "create_reminder") {
+      const payload = command.payload as {
+        title: string;
+        listName?: string;
+        notes?: string;
+        dueDate?: string;
+        priority?: number;
+      };
+      return this.runCommand(command, async () => {
+        const created = await createReminder(payload);
+        console.info(`Reminder created in "${created.listName}" (${created.externalId})`);
+        await this.syncService.syncReminders();
+        return created;
+      });
+    }
+
+    if (command.type === "complete_reminder") {
+      const {externalId} = command.payload as {externalId: string};
+      return this.runCommand(command, async () => {
+        await completeReminder(externalId);
+        await this.syncService.syncReminders();
+        return {externalId};
+      });
+    }
+
+    if (command.type === "delete_reminder") {
+      const {externalId} = command.payload as {externalId: string};
+      return this.runCommand(command, async () => {
+        await deleteReminder(externalId);
+        await this.syncService.syncReminders();
+        return {externalId};
+      });
+    }
+
+    if (command.type === "create_calendar_event") {
+      const payload = command.payload as {
+        title: string;
+        calendarName?: string;
+        startDate: string;
+        endDate: string;
+        allDay?: boolean;
+        location?: string;
+        notes?: string;
+      };
+      return this.runCommand(command, async () => {
+        const created = await createCalendarEvent(payload);
+        console.info(`Event created in "${created.calendarName}" (${created.externalId})`);
+        const calendarConfig = this.config?.calendar;
+        await this.syncService.syncCalendar(
+          calendarConfig?.daysAhead ?? 90,
+          calendarConfig?.calendarFilters
+        );
+        return created;
+      });
+    }
+
+    if (command.type === "sync_now") {
+      return this.runCommand(command, async () => {
+        if (!this.config) {
+          throw new Error("No config received yet");
+        }
+        await this.syncService.syncAll(this.config);
+        return {synced: true};
+      });
+    }
+
     return {
       commandId: command.commandId,
       success: false,
       error: `Unknown command type: ${command.type}`,
       completedAt: new Date().toISOString(),
     };
+  }
+
+  private async runCommand(
+    command: HeartbeatCommand,
+    fn: () => Promise<unknown>
+  ): Promise<CommandResult> {
+    try {
+      await fn();
+      return {
+        commandId: command.commandId,
+        success: true,
+        completedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      return {
+        commandId: command.commandId,
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+        completedAt: new Date().toISOString(),
+      };
+    }
   }
 
   async start(): Promise<void> {
@@ -134,6 +235,7 @@ export class IMessageEdgeAgent extends EdgeAgentBase {
 
   async stop(): Promise<void> {
     this.stopPolling();
+    this.syncService.stop();
     if (this.reader) {
       this.reader.close();
       this.reader = null;
