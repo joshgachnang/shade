@@ -12,6 +12,20 @@ export const edgeAgentConfigSchema = z.object({
       chatFilters: z.array(z.string()).optional(),
     })
     .optional(),
+  reminders: z
+    .object({
+      enabled: z.boolean().default(true),
+      syncIntervalMs: z.number().default(15 * 60 * 1000),
+    })
+    .optional(),
+  calendar: z
+    .object({
+      enabled: z.boolean().default(true),
+      syncIntervalMs: z.number().default(15 * 60 * 1000),
+      daysAhead: z.number().default(90),
+      calendarFilters: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 
 export const configResponseSchema = z.object({
