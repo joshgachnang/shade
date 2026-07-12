@@ -1,6 +1,7 @@
 import {logger} from "@terreno/api";
 import type express from "express";
 import {loadAppConfig} from "../models/appConfig";
+import {Feature} from "../models/feature";
 import {Group} from "../models/group";
 import {isTestMode} from "../testMode/flag";
 import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
@@ -265,6 +266,20 @@ export const startOrchestrator = async (
     // Register in the live cache so messages flow immediately
     channelManager.registerGroup(group);
     await ensureGroupDirectory(folder);
+
+    // Create the Feature record so the frontend Features screen tracks this
+    // feature — the Slack flow previously created only the channel + group,
+    // leaving UI-created and Slack-created features inconsistent.
+    try {
+      await Feature.create({
+        name: data.name,
+        description: data.description ?? data.request?.slice(0, 500),
+        groupId: group._id,
+        status: "planned",
+      });
+    } catch (err) {
+      logError(`Failed to create Feature record for ${data.name}`, err);
+    }
 
     // Pin the /ip -> /implement workflow into the feature channel's group
     // memory so every agent turn in this channel is anchored to the flow.

@@ -2,6 +2,7 @@ import {logger} from "@terreno/api";
 import type {Types} from "mongoose";
 import {AIRequest} from "../models/aiRequest";
 import {loadAppConfig} from "../models/appConfig";
+import {Feature} from "../models/feature";
 import {Group} from "../models/group";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
@@ -174,6 +175,12 @@ export class GroupQueue {
       try {
         await Group.findByIdAndUpdate(group._id, {$set: {featurePhase: "implementing"}});
         group.featurePhase = "implementing";
+        // Keep the Feature record (frontend Features screen) in step with the
+        // channel phase.
+        await Feature.findOneAndUpdate(
+          {groupId: group._id, status: "planned"},
+          {$set: {status: "in_progress", startedAt: new Date()}}
+        );
         logger.info(
           `Feature group ${group.name} transitioned planning -> implementing (triggered by /implement in Slack)`
         );
