@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 import type {GroupDocument, GroupModel} from "../types";
 import {addDefaultPlugins} from "./modelPlugins";
 
+/** Wall-clock cap on a single agent run before it's aborted and auto-resumed. */
+export const DEFAULT_AGENT_TIMEOUT_MS = 900000;
+/** The pre-2026-07 default, persisted on existing group documents. */
+export const LEGACY_AGENT_TIMEOUT_MS = 300000;
+
 const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
   {
     name: {type: String, required: true, trim: true},
@@ -25,7 +30,7 @@ const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
     },
     executionConfig: {
       mode: {type: String, enum: ["direct", "container"], default: "direct"},
-      timeout: {type: Number, default: 300000},
+      timeout: {type: Number, default: DEFAULT_AGENT_TIMEOUT_MS},
       idleTimeout: {type: Number, default: 60000},
       maxConcurrent: {type: Number, default: 1},
     },

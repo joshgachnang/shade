@@ -2,6 +2,7 @@ import {afterEach, describe, expect, test} from "bun:test";
 import {AppConfig, reloadAppConfig} from "../../models/appConfig";
 import {
   buildAllowedTools,
+  isTimeoutAbort,
   resolveClaudeCodeExecutable,
   resolveModel,
   SHADE_MCP_WILDCARD,
@@ -48,6 +49,39 @@ describe("buildAllowedTools", () => {
     expect(buildAllowedTools({configured: [], enableSubagents: false})).toEqual([
       SHADE_MCP_WILDCARD,
     ]);
+  });
+});
+
+describe("isTimeoutAbort", () => {
+  // Mirrors the SDK's AbortError: subclasses Error without setting .name,
+  // so `error.name` is "Error" — the exact shape that used to be
+  // misclassified as a generic failure and skip the auto-resume path.
+  class SdkAbortError extends Error {}
+
+  test("classifies the SDK abort as a timeout when the runner's timer fired", () => {
+    const error = new SdkAbortError("Claude Code process aborted by user");
+    expect(error.name).toBe("Error");
+    expect(isTimeoutAbort({error, timedOut: true})).toBe(true);
+  });
+
+  test("does not classify an abort as a timeout when the timer did not fire (e.g. manual stop)", () => {
+    const error = new SdkAbortError("Claude Code process aborted by user");
+    expect(isTimeoutAbort({error, timedOut: false})).toBe(false);
+  });
+
+  test("still recognizes DOM-style AbortErrors by name", () => {
+    const error = new Error("The operation was aborted");
+    error.name = "AbortError";
+    expect(isTimeoutAbort({error, timedOut: false})).toBe(true);
+  });
+
+  test("ordinary errors are never timeouts", () => {
+    expect(isTimeoutAbort({error: new Error("boom"), timedOut: false})).toBe(false);
+    expect(isTimeoutAbort({error: "string error", timedOut: false})).toBe(false);
+  });
+
+  test("the timer flag wins regardless of error shape", () => {
+    expect(isTimeoutAbort({error: "string error", timedOut: true})).toBe(true);
   });
 });
 

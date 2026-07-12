@@ -75,6 +75,16 @@ export const resolveModel = ({
  * - otherwise (running as a single-file bundle, where import.meta.resolve
  *   fails) falls back to the host `claude` binary on PATH
  */
+/**
+ * Classifies an error thrown by the Agent SDK's query() as a timeout abort.
+ * The SDK's AbortError subclasses Error without setting `.name`, so a thrown
+ * abort arrives as name="Error" — the runner's own timer flag is the reliable
+ * signal. The name check remains for genuine DOM-style AbortErrors.
+ */
+export const isTimeoutAbort = ({error, timedOut}: {error: unknown; timedOut: boolean}): boolean => {
+  return timedOut || (error instanceof Error && error.name === "AbortError");
+};
+
 export const resolveClaudeCodeExecutable = (): string | undefined => {
   if (process.env.SHADE_CLAUDE_CODE_PATH) {
     return process.env.SHADE_CLAUDE_CODE_PATH;
@@ -109,8 +119,10 @@ export class DirectAgentRunner implements AgentRunner {
 
     this.activeAgents.set(config.sessionId, {abortController, startedAt});
 
+    let timedOut = false;
     const timeoutId = setTimeout(() => {
       logger.warn(`Agent ${config.sessionId} timed out after ${config.timeout}ms`);
+      timedOut = true;
       abortController.abort();
     }, config.timeout);
 
@@ -273,7 +285,7 @@ export class DirectAgentRunner implements AgentRunner {
         costUsd,
       };
     } catch (error) {
-      const isAbort = error instanceof Error && error.name === "AbortError";
+      const isAbort = isTimeoutAbort({error, timedOut});
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (isAbort) {
