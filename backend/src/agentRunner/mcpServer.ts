@@ -961,7 +961,7 @@ export const buildTools = (ctx: McpContext) => {
 
   const createFeatureTool = tool(
     "create_feature",
-    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group pre-configured to drive the feature through the `/ip` planning skill and then `/implement` to execute the resulting plan. Use this when someone wants to start working on a new feature.",
+    "Create a new Slack channel for a focused feature discussion. Creates the channel, invites the requesting user, and sets up a new Shade group pre-configured to plan the feature with the blend workflow and then implement it with roast. Pass the user's original request text so planning starts immediately — the user should not have to repeat themselves in the new channel. Use this when someone wants to start working on a new feature.",
     {
       name: z
         .string()
@@ -972,6 +972,12 @@ export const buildTools = (ctx: McpContext) => {
         .string()
         .optional()
         .describe("Brief description of the feature for the channel topic"),
+      request: z
+        .string()
+        .optional()
+        .describe(
+          "The user's original feature request, verbatim (their message text). Seeds the new channel so blend planning starts from it immediately."
+        ),
     },
     async (args) => {
       logger.info(
@@ -1001,6 +1007,7 @@ export const buildTools = (ctx: McpContext) => {
           channelId: ctx.channelId,
           name: channelName,
           description: args.description,
+          request: args.request,
           senderExternalId: ctx.senderExternalId,
         });
         logger.info(

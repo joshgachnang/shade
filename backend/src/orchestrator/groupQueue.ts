@@ -12,8 +12,8 @@ import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import {resolveModel} from "./runners/direct";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
 
-/** Regex matching `/implement` or `!implement` as a standalone command. */
-const IMPLEMENT_COMMAND = /(^|\s)[/!]implement\b/i;
+/** Regex matching `/roast` or `/implement` (or `!`-prefixed) as a standalone command. */
+const IMPLEMENT_COMMAND = /(^|\s)[/!](implement|roast)\b/i;
 
 import {
   appendToTranscript,

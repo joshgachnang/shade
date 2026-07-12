@@ -33,65 +33,90 @@ ${description ? `\n**Initial description:** ${description}\n` : ""}
 ## Runners
 
 - **Planning** (phase \`planning\`) — OpenAI model from
-  \`AppConfig.models.planner\` (default \`gpt-5.4\`). Drives the \`/ip\`
+  \`AppConfig.models.planner\` (default \`gpt-5.4\`). Drives the **blend**
   workflow conversationally. Writes plan drafts to
   \`docs/implementationPlans/<feature>.md\` inside this group folder.
 - **Implementation** (phases \`implementing\` and \`complete\`) — Claude Agent
-  SDK. Executes the approved plan via the \`/implement\` skill.
+  SDK. Executes the approved plan via the **roast** workflow.
 
-The user flips from planning to implementing by typing \`/implement\` or
-\`!implement\` in the channel. The orchestrator detects this and sets
-\`featurePhase\` on the group before handing to Claude.
+The user flips from planning to implementing by typing \`/roast\` or
+\`/implement\` (or the \`!\`-prefixed forms) in the channel. The orchestrator
+detects this and sets \`featurePhase\` on the group before handing to Claude.
 
 ## What YOU (the agent running this turn) must do
 
 Because this same \`CLAUDE.md\` is in the system prompt for both runners, each
 runner follows the part that applies to it:
 
-### If you are the planner (OpenAI)
+### If you are the planner (OpenAI) — blend workflow
 
-- Drive \`/ip\` as a chat. One step per turn. Ask for confirmation before
-  advancing.
+**Triage the request first:**
+
+- **SIMPLE** — small bounded scope, clear precedent in the codebase, no
+  unmade product decisions, no migrations/rollout concerns. **Skip all
+  confirmation pauses**: research briefly, then produce the full plan
+  (models, APIs, UI, phases, task list) in one pass, with an
+  \`## Assumptions\` section listing everything you decided without asking.
+- **COMPLEX or ambiguous** — anything else. Go through the full blend
+  steps: ingest → research → **blocking questions (pause for answers;
+  present options A/B/C, never pick silently)** → shape (models + APIs
+  first, then UI/phases/risks) → generate the plan.
+
+Rules either way:
+
 - Never output application source code. Your job is plan prose, tables, and
   task lists.
 - When you emit the final plan, wrap it in a \`\`\`markdown ... \`\`\` fenced
   block so the orchestrator can persist it.
 - When the plan is done and the user is happy, tell them to type
-  \`/implement\` to hand off.
+  \`/roast\` to hand off to implementation.
 
-### If you are the implementor (Claude Agent SDK)
+### If you are the implementor (Claude Agent SDK) — roast workflow
 
 - The plan already exists at
   \`docs/implementationPlans/${featureName}.md\` (written by the planner).
   Read it first.
-- Run the \`/implement\` skill to execute the plan end-to-end. Mark tasks
-  complete in the plan document as you go.
+- **Always work in a dedicated git worktree for the PR** — never on the
+  main checkout. Create it off the default branch with a kebab-case branch
+  name, then set up the environment by running \`bun bootstrap\` at the
+  worktree root (all projects support it; fall back to \`bun install\` if
+  missing and say so).
+- Implement via TDD in small, behavior-scoped commits. Mark tasks complete
+  in the plan document as you go.
 - Post periodic progress updates in the channel.
 - All service credentials and config live in \`AppConfig\` (loaded via
   \`loadAppConfig()\`). Do not read API keys or endpoints from ad-hoc env
   vars — go through AppConfig.
-- When everything is done, summarize what shipped and link the final plan.
+- When everything is done, open a PR from the worktree, then summarize what
+  shipped and link the final plan and PR.
 
 ## Hard rules (both runners)
 
 - **Never** write implementation code during the \`planning\` phase.
-- **Never** invoke \`/implement\` before the user has approved the plan.
-- If the user changes scope mid-flight, re-run the affected \`/ip\` substep
+- **Never** start roast before the user has approved the plan.
+- If the user changes scope mid-flight, re-run the affected blend step
   rather than patching code ad-hoc. If we're already in \`implementing\`, the
   operator can manually reset \`Group.featurePhase\` back to \`planning\`.
 - Prefer small, verifiable commits.
 `;
 };
 
-const FEATURE_CHANNEL_GREETING = (featureName: string, plannerModel: string): string => {
+const FEATURE_CHANNEL_GREETING = (
+  featureName: string,
+  plannerModel: string,
+  hasRequest: boolean
+): string => {
+  const kickoff = hasRequest
+    ? `I've already kicked off planning from your original request — a first pass is on its way. Add any constraints or corrections here and I'll fold them in.`
+    : `To kick things off: what are you trying to build, and why? A few sentences is enough — I'll shape it from there.`;
   return (
     `Feature channel ready for *${featureName}*! :sparkles:\n\n` +
     `*You don't need to \`@Shade\` me in this channel* — every message you send here goes straight to me.\n\n` +
     `Here's how we'll work in this channel:\n` +
-    `1. *Planning phase* — I'll drive the \`/ip\` workflow with you using OpenAI \`${plannerModel}\` (research, shape, tasks, acceptance criteria, adversarial review). You describe the idea; I ask clarifying questions and produce a plan draft you can review.\n` +
-    `2. *Handoff* — when you're happy with the plan, type \`/implement\` (or \`!implement\`). That flips this channel to implementation mode.\n` +
-    `3. *Implementation phase* — the Claude Agent SDK takes over, reads the plan, and executes it end-to-end.\n\n` +
-    `To kick things off: what are you trying to build, and why? A few sentences is enough — I'll shape it from there.`
+    `1. *Planning (blend)* — I'll shape the idea into an implementation plan using \`${plannerModel}\`. Simple asks get a plan straight away; bigger or ambiguous ones get clarifying questions first.\n` +
+    `2. *Handoff* — when you're happy with the plan, type \`/roast\` (or \`/implement\`). That flips this channel to implementation mode.\n` +
+    `3. *Implementation (roast)* — the Claude Agent SDK spins up a dedicated worktree, bootstraps it with \`bun bootstrap\`, and executes the plan end-to-end toward a PR.\n\n` +
+    kickoff
   );
 };
 
@@ -255,15 +280,36 @@ export const startOrchestrator = async (
     // Load AppConfig lazily so the greeting surfaces the actual planner model
     // the operator has configured (don't hardcode "gpt-5.4" here — AppConfig
     // is the single source of truth per project rules).
-    const {loadAppConfig} = await import("../models/appConfig");
     const appConfig = await loadAppConfig();
     const plannerModel = appConfig.models?.planner || "gpt-5.4";
 
     await channelManager.sendMessage(
       sourceGroup.channelId.toString(),
       slackChannelId,
-      FEATURE_CHANNEL_GREETING(data.name, plannerModel)
+      FEATURE_CHANNEL_GREETING(data.name, plannerModel, Boolean(data.request))
     );
+
+    // Seed the channel with the user's original request so blend planning
+    // starts immediately — the message loop picks this up like any inbound
+    // message and hands it to the planner. Without it the user would have to
+    // repeat themselves in the new channel.
+    if (data.request) {
+      try {
+        const {Message} = await import("../models/message");
+        await Message.create({
+          groupId: group._id,
+          channelId: sourceGroup.channelId,
+          sender: `<@${data.senderExternalId}>`,
+          senderExternalId: data.senderExternalId,
+          content: data.request,
+          isFromBot: false,
+          metadata: {source: "create_feature_seed"},
+        });
+        logger.info(`Seeded #${data.name} with the original feature request — planning starts now`);
+      } catch (err) {
+        logError(`Failed to seed feature request message for ${data.name}`, err);
+      }
+    }
 
     logger.info(`Feature channel created: #${data.name} (${slackChannelId}), group ${group._id}`);
   });
