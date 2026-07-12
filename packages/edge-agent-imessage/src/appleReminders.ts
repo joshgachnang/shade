@@ -1,5 +1,5 @@
 import type {ReminderListPayload, ReminderPayload} from "@shade/edge-agent-types";
-import {EVENTKIT_PREAMBLE, runJxa} from "./jxa";
+import {runJxa} from "./jxa";
 
 export interface RemindersSnapshot {
   lists: ReminderListPayload[];
@@ -19,56 +19,47 @@ export interface CreatedReminder {
   listName: string;
 }
 
+/**
+ * All Apple access goes through Reminders.app/Calendar.app scripting (Apple
+ * events) rather than EventKit: EventKit permission prompts can never be shown
+ * for a bare launchd binary (no usage-description strings), while automation
+ * consent prompts work — the same mechanism the agent already uses to send
+ * iMessages. Properties are bulk-fetched per list to keep Apple event counts low.
+ */
+
 /** Fetch every reminder list plus all incomplete (not completed, not deleted) reminders. */
 export const fetchRemindersSnapshot = async (): Promise<RemindersSnapshot> => {
   const script = `
-${EVENTKIT_PREAMBLE}
-requestAccess($.EKEntityTypeReminder);
-
-const calendars = store.calendarsForEntityType($.EKEntityTypeReminder);
+const app = Application("Reminders");
+const allLists = app.lists();
 const lists = [];
-for (let i = 0; i < calendars.count; i++) {
-  const c = calendars.objectAtIndex(i);
-  lists.push({
-    externalId: ObjC.unwrap(c.calendarIdentifier),
-    name: ObjC.unwrap(c.title),
-  });
-}
-
-const predicate = store.predicateForIncompleteRemindersWithDueDateStartingEndingCalendars(
-  $(), $(), $()
-);
-let fetched = null;
-let done = false;
-store.fetchRemindersMatchingPredicateCompletion(predicate, (rems) => {
-  fetched = rems;
-  done = true;
-});
-if (!spinUntil(() => done, 60)) {
-  throw new Error("Timed out fetching reminders");
-}
-
 const reminders = [];
-const count = fetched.count;
-for (let i = 0; i < count; i++) {
-  const r = fetched.objectAtIndex(i);
-  let dueIso = null;
-  if (!r.dueDateComponents.isNil()) {
-    const due = $.NSCalendar.currentCalendar.dateFromComponents(r.dueDateComponents);
-    if (!due.isNil()) {
-      dueIso = ObjC.unwrap(due).toISOString();
-    }
+
+for (let i = 0; i < allLists.length; i++) {
+  const list = allLists[i];
+  const listName = list.name();
+  const listId = list.id();
+  lists.push({externalId: listId, name: listName});
+
+  const pending = list.reminders.whose({completed: false});
+  const ids = pending.id();
+  const names = pending.name();
+  const bodies = pending.body();
+  const dueDates = pending.dueDate();
+  const priorities = pending.priority();
+
+  for (let j = 0; j < ids.length; j++) {
+    reminders.push({
+      externalId: ids[j],
+      title: names[j] || "",
+      notes: bodies[j] || null,
+      dueDate: dueDates[j] ? dueDates[j].toISOString() : null,
+      priority: priorities[j] || 0,
+      completed: false,
+      listName,
+      listExternalId: listId,
+    });
   }
-  reminders.push({
-    externalId: ObjC.unwrap(r.calendarItemIdentifier),
-    title: ObjC.unwrap(r.title) || "",
-    notes: r.notes.isNil() ? null : ObjC.unwrap(r.notes),
-    dueDate: dueIso,
-    priority: Number(r.priority) || 0,
-    completed: false,
-    listName: ObjC.unwrap(r.calendar.title),
-    listExternalId: ObjC.unwrap(r.calendar.calendarIdentifier),
-  });
 }
 
 JSON.stringify({lists, reminders});
@@ -84,100 +75,90 @@ JSON.stringify({lists, reminders});
  */
 export const createReminder = async (input: CreateReminderInput): Promise<CreatedReminder> => {
   const script = `
-${EVENTKIT_PREAMBLE}
-requestAccess($.EKEntityTypeReminder);
-
+const app = Application("Reminders");
 const args = ${JSON.stringify(input)};
 
 let target = null;
 if (args.listName) {
-  const calendars = store.calendarsForEntityType($.EKEntityTypeReminder);
-  for (let i = 0; i < calendars.count; i++) {
-    const c = calendars.objectAtIndex(i);
-    if (ObjC.unwrap(c.title).toLowerCase() === args.listName.toLowerCase()) {
-      target = c;
+  const allLists = app.lists();
+  for (let i = 0; i < allLists.length; i++) {
+    if (allLists[i].name().toLowerCase() === args.listName.toLowerCase()) {
+      target = allLists[i];
       break;
     }
   }
 }
 if (!target) {
-  target = store.defaultCalendarForNewReminders;
-  if (!target || target.isNil()) {
-    throw new Error("No target reminder list found and no default list configured");
+  try {
+    target = app.defaultList();
+  } catch (_err) {
+    target = null;
   }
 }
+if (!target) {
+  const allLists = app.lists();
+  if (allLists.length === 0) {
+    throw new Error("No reminder lists exist");
+  }
+  target = allLists[0];
+}
 
-const reminder = $.EKReminder.reminderWithEventStore(store);
-reminder.title = args.title;
-reminder.calendar = target;
+const props = {name: args.title};
 if (args.notes) {
-  reminder.notes = args.notes;
+  props.body = args.notes;
 }
 if (args.priority) {
-  reminder.priority = args.priority;
+  props.priority = args.priority;
 }
 if (args.dueDate) {
-  const ms = new Date(args.dueDate).getTime();
-  if (Number.isNaN(ms)) {
+  const due = new Date(args.dueDate);
+  if (Number.isNaN(due.getTime())) {
     throw new Error("Invalid dueDate: " + args.dueDate);
   }
-  const nsDate = $.NSDate.dateWithTimeIntervalSince1970(ms / 1000);
-  const units =
-    $.NSCalendarUnitYear |
-    $.NSCalendarUnitMonth |
-    $.NSCalendarUnitDay |
-    $.NSCalendarUnitHour |
-    $.NSCalendarUnitMinute;
-  reminder.dueDateComponents = $.NSCalendar.currentCalendar.componentsFromDate(units, nsDate);
+  props.dueDate = due;
 }
 
-const err = Ref();
-if (!store.saveReminderCommitError(reminder, true, err)) {
-  throw new Error("Failed to save reminder: " + ObjC.unwrap(err[0].localizedDescription));
-}
+const reminder = app.Reminder(props);
+target.reminders.push(reminder);
 
-JSON.stringify({
-  externalId: ObjC.unwrap(reminder.calendarItemIdentifier),
-  listName: ObjC.unwrap(target.title),
-});
+JSON.stringify({externalId: reminder.id(), listName: target.name()});
 `;
 
   const output = await runJxa(script);
   return JSON.parse(output) as CreatedReminder;
 };
 
-/** Mark a reminder completed by its EventKit calendarItemIdentifier. */
+/** Mark a reminder completed by its Reminders.app id. */
 export const completeReminder = async (externalId: string): Promise<void> => {
   await mutateReminder(externalId, "complete");
 };
 
-/** Permanently delete a reminder by its EventKit calendarItemIdentifier. */
+/** Permanently delete a reminder by its Reminders.app id. */
 export const deleteReminder = async (externalId: string): Promise<void> => {
   await mutateReminder(externalId, "delete");
 };
 
 const mutateReminder = async (externalId: string, action: "complete" | "delete"): Promise<void> => {
   const script = `
-${EVENTKIT_PREAMBLE}
-requestAccess($.EKEntityTypeReminder);
-
+const app = Application("Reminders");
 const args = ${JSON.stringify({externalId, action})};
 
-const item = store.calendarItemWithIdentifier(args.externalId);
-if (item.isNil()) {
+let found = null;
+const allLists = app.lists();
+for (let i = 0; i < allLists.length && !found; i++) {
+  const matches = allLists[i].reminders.whose({id: args.externalId});
+  if (matches.length > 0) {
+    found = matches[0];
+  }
+}
+if (!found) {
   throw new Error("Reminder not found: " + args.externalId);
 }
 
-const err = Ref();
 if (args.action === "complete") {
-  item.completed = true;
-  if (!store.saveReminderCommitError(item, true, err)) {
-    throw new Error("Failed to complete reminder: " + ObjC.unwrap(err[0].localizedDescription));
-  }
+  found.completed = true;
 } else {
-  if (!store.removeReminderCommitError(item, true, err)) {
-    throw new Error("Failed to delete reminder: " + ObjC.unwrap(err[0].localizedDescription));
-  }
+  app.delete(found);
 }
 
 JSON.stringify({ok: true});
