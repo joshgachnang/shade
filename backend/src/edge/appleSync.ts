@@ -16,6 +16,8 @@ export interface SyncCounts {
  * reminders by externalId; reminders no longer present in the snapshot (they
  * were completed or deleted on the device) are marked syncStatus "removed".
  * User-curated fields (description, isDefault) are never overwritten.
+ * Everything goes through bulkWrite — snapshots can hold thousands of items,
+ * and sequential round trips to the database take minutes per sync.
  */
 export const applyRemindersSync = async (
   agentId: mongoose.Types.ObjectId,
@@ -23,35 +25,51 @@ export const applyRemindersSync = async (
 ): Promise<SyncCounts> => {
   const syncedAt = new Date(payload.syncedAt);
 
-  for (const list of payload.lists) {
-    await ReminderList.findOneAndUpdate(
-      {externalId: list.externalId},
-      {
-        $set: {name: list.name, agentId, lastSyncedAt: syncedAt},
-        $setOnInsert: {isDefault: false},
-      },
-      {upsert: true}
+  if (payload.lists.length > 0) {
+    await ReminderList.bulkWrite(
+      payload.lists.map((list) => ({
+        updateOne: {
+          filter: {externalId: list.externalId},
+          update: {
+            $set: {name: list.name, agentId, lastSyncedAt: syncedAt},
+            $setOnInsert: {isDefault: false},
+          },
+          upsert: true,
+        },
+      }))
     );
   }
 
-  for (const reminder of payload.reminders) {
-    await Reminder.findOneAndUpdate(
-      {externalId: reminder.externalId},
-      {
-        $set: {
-          title: reminder.title,
-          notes: reminder.notes ?? undefined,
-          dueDate: reminder.dueDate ? new Date(reminder.dueDate) : undefined,
-          priority: reminder.priority,
-          completed: reminder.completed,
-          listName: reminder.listName,
-          listExternalId: reminder.listExternalId,
-          syncStatus: "active",
-          agentId,
-          lastSyncedAt: syncedAt,
+  if (payload.reminders.length > 0) {
+    await Reminder.bulkWrite(
+      payload.reminders.map((reminder) => ({
+        updateOne: {
+          filter: {externalId: reminder.externalId},
+          update: {
+            $set: {
+              title: reminder.title,
+              ...(reminder.notes != null && {notes: reminder.notes}),
+              ...(reminder.dueDate != null && {dueDate: new Date(reminder.dueDate)}),
+              priority: reminder.priority,
+              completed: reminder.completed,
+              listName: reminder.listName,
+              listExternalId: reminder.listExternalId,
+              syncStatus: "active",
+              agentId,
+              lastSyncedAt: syncedAt,
+            },
+            ...(reminder.notes == null || reminder.dueDate == null
+              ? {
+                  $unset: {
+                    ...(reminder.notes == null && {notes: ""}),
+                    ...(reminder.dueDate == null && {dueDate: ""}),
+                  },
+                }
+              : {}),
+          },
+          upsert: true,
         },
-      },
-      {upsert: true}
+      }))
     );
   }
 
@@ -81,43 +99,65 @@ export const applyCalendarSync = async (
 ): Promise<SyncCounts> => {
   const syncedAt = new Date(payload.syncedAt);
 
-  for (const calendar of payload.calendars) {
-    await AppleCalendar.findOneAndUpdate(
-      {externalId: calendar.externalId},
-      {
-        $set: {
-          name: calendar.name,
-          writable: calendar.writable ?? true,
-          agentId,
-          lastSyncedAt: syncedAt,
+  if (payload.calendars.length > 0) {
+    await AppleCalendar.bulkWrite(
+      payload.calendars.map((calendar) => ({
+        updateOne: {
+          filter: {externalId: calendar.externalId},
+          update: {
+            $set: {
+              name: calendar.name,
+              writable: calendar.writable ?? true,
+              agentId,
+              lastSyncedAt: syncedAt,
+            },
+            $setOnInsert: {isDefault: false},
+          },
+          upsert: true,
         },
-        $setOnInsert: {isDefault: false},
-      },
-      {upsert: true}
+      }))
     );
   }
 
-  for (const event of payload.events) {
-    await CalendarEvent.findOneAndUpdate(
-      {externalId: event.externalId},
-      {
-        $set: {
-          title: event.title,
-          notes: event.notes ?? undefined,
-          location: event.location ?? undefined,
-          url: event.url ?? undefined,
-          startDate: new Date(event.startDate),
-          endDate: new Date(event.endDate),
-          allDay: event.allDay,
-          status: event.status ?? undefined,
-          calendarName: event.calendarName,
-          calendarExternalId: event.calendarExternalId,
-          syncStatus: "active",
-          agentId,
-          lastSyncedAt: syncedAt,
-        },
-      },
-      {upsert: true}
+  if (payload.events.length > 0) {
+    await CalendarEvent.bulkWrite(
+      payload.events.map((event) => {
+        const optional = {
+          notes: event.notes,
+          location: event.location,
+          url: event.url,
+          status: event.status,
+        };
+        const unset = Object.fromEntries(
+          Object.entries(optional)
+            .filter(([, value]) => value == null)
+            .map(([key]) => [key, ""])
+        );
+        const set = Object.fromEntries(
+          Object.entries(optional).filter(([, value]) => value != null)
+        );
+        return {
+          updateOne: {
+            filter: {externalId: event.externalId},
+            update: {
+              $set: {
+                title: event.title,
+                ...set,
+                startDate: new Date(event.startDate),
+                endDate: new Date(event.endDate),
+                allDay: event.allDay,
+                calendarName: event.calendarName,
+                calendarExternalId: event.calendarExternalId,
+                syncStatus: "active",
+                agentId,
+                lastSyncedAt: syncedAt,
+              },
+              ...(Object.keys(unset).length > 0 ? {$unset: unset} : {}),
+            },
+            upsert: true,
+          },
+        };
+      })
     );
   }
 
