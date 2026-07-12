@@ -50,6 +50,19 @@ const QUERY = `
   LIMIT 50
 `;
 
+// Service of the most recently active chat for an identifier. The same phone
+// number can have both an iMessage and an SMS chat row; the one with the
+// latest message is the conversation we're actually in.
+const SERVICE_QUERY = `
+  SELECT c.service_name as service_name
+  FROM chat c
+  JOIN chat_message_join cmj ON cmj.chat_id = c.ROWID
+  JOIN message m ON m.ROWID = cmj.message_id
+  WHERE c.chat_identifier = ?1
+  ORDER BY m.date DESC
+  LIMIT 1
+`;
+
 /**
  * Extracts the plain text from an Apple typedstream attributedBody blob.
  * Layout after the "NSString" class name: a few tag bytes, then '+' (0x2b),
@@ -140,6 +153,23 @@ export class IMessageReader {
       this.db.close();
       this.db = null;
     }
+  }
+
+  /**
+   * The Messages service ("iMessage", "SMS", "RCS", …) of the most recently
+   * active chat with this identifier, or null when unknown. Used to reply over
+   * the transport the conversation actually uses — sending iMessage to an
+   * SMS-only contact fails asynchronously with "Not Delivered".
+   */
+  getServiceForChat(chatIdentifier: string): string | null {
+    if (!this.db) {
+      return null;
+    }
+
+    const row = this.db
+      .query<{service_name: string | null}, [string]>(SERVICE_QUERY)
+      .get(chatIdentifier);
+    return row?.service_name ?? null;
   }
 
   poll(): MessagePayload[] {

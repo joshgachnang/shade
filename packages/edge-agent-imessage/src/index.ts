@@ -2,7 +2,7 @@ import os from "node:os";
 import type {CommandResult, EdgeAgentConfig} from "@shade/edge-agent-types";
 import {EdgeAgentBase, type HeartbeatCommand} from "@shade/edge-agent-core";
 import {IMessageReader} from "./reader";
-import {sendIMessage} from "./sender";
+import {type MessageService, sendIMessage} from "./sender";
 
 const VERSION = "0.1.0";
 
@@ -56,7 +56,13 @@ export class IMessageEdgeAgent extends EdgeAgentBase {
     if (command.type === "send_message") {
       const {to, text} = command.payload as {to: string; text: string};
       try {
-        sendIMessage(to, text);
+        // Reply over the service the conversation actually uses — an iMessage
+        // send to an SMS/RCS-only contact fails async with "Not Delivered"
+        // (SMS covers RCS chats too; both relay through the paired iPhone).
+        const chatService = this.reader?.getServiceForChat(to) ?? null;
+        const service: MessageService =
+          chatService && chatService !== "iMessage" ? "SMS" : "iMessage";
+        sendIMessage(to, text, service);
         return {
           commandId: command.commandId,
           success: true,

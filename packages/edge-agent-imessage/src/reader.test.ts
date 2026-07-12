@@ -1,5 +1,9 @@
-import {describe, expect, test} from "bun:test";
-import {parseAttributedBody} from "./reader";
+import {afterEach, describe, expect, test} from "bun:test";
+import {Database} from "bun:sqlite";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {IMessageReader, parseAttributedBody} from "./reader";
 
 const hexToBytes = (hex: string): Uint8Array => {
   const bytes = new Uint8Array(hex.length / 2);
@@ -49,5 +53,62 @@ describe("parseAttributedBody", () => {
     const prefix = new TextEncoder().encode("NSString");
     const blob = new Uint8Array([...prefix, 0x01, 0x95, 0x84, 0x01, 0x2b, 0xff, 0x61, 0x62]);
     expect(parseAttributedBody(blob)).toBeNull();
+  });
+});
+
+describe("getServiceForChat", () => {
+  const tempPaths: string[] = [];
+
+  afterEach(() => {
+    for (const p of tempPaths.splice(0)) {
+      fs.rmSync(p, {force: true});
+    }
+  });
+
+  // Minimal chat.db slice: just the tables/columns the reader queries.
+  const createFixtureDb = (): string => {
+    const dbPath = path.join(os.tmpdir(), `chatdb-test-${Math.random().toString(36).slice(2)}.db`);
+    tempPaths.push(dbPath);
+
+    const db = new Database(dbPath);
+    db.run(`CREATE TABLE message (ROWID INTEGER PRIMARY KEY, date INTEGER)`);
+    db.run(
+      `CREATE TABLE chat (ROWID INTEGER PRIMARY KEY, chat_identifier TEXT, service_name TEXT)`
+    );
+    db.run(`CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER)`);
+
+    // +15550001111 has both an old iMessage chat and a newer SMS chat.
+    db.run(`INSERT INTO chat VALUES (1, '+15550001111', 'iMessage')`);
+    db.run(`INSERT INTO chat VALUES (2, '+15550001111', 'SMS')`);
+    db.run(`INSERT INTO chat VALUES (3, '+15550002222', 'iMessage')`);
+    db.run(`INSERT INTO message VALUES (1, 100)`);
+    db.run(`INSERT INTO message VALUES (2, 200)`);
+    db.run(`INSERT INTO message VALUES (3, 150)`);
+    db.run(`INSERT INTO chat_message_join VALUES (1, 1)`);
+    db.run(`INSERT INTO chat_message_join VALUES (2, 2)`);
+    db.run(`INSERT INTO chat_message_join VALUES (3, 3)`);
+    db.close();
+
+    return dbPath;
+  };
+
+  test("returns the service of the most recently active chat for the identifier", () => {
+    const reader = new IMessageReader(createFixtureDb());
+    reader.open();
+    expect(reader.getServiceForChat("+15550001111")).toBe("SMS");
+    expect(reader.getServiceForChat("+15550002222")).toBe("iMessage");
+    reader.close();
+  });
+
+  test("returns null for an unknown identifier", () => {
+    const reader = new IMessageReader(createFixtureDb());
+    reader.open();
+    expect(reader.getServiceForChat("+19998887777")).toBeNull();
+    reader.close();
+  });
+
+  test("returns null when the reader is not open", () => {
+    const reader = new IMessageReader(createFixtureDb());
+    expect(reader.getServiceForChat("+15550001111")).toBeNull();
   });
 });
