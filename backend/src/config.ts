@@ -45,3 +45,14 @@ export const paths = Object.defineProperties({} as Record<keyof typeof overrides
   movies: makePathAccessor("movies", "movies"),
   skills: makePathAccessor("skills", "skills"),
 });
+
+/**
+ * Remove a test override so the path falls back to the SHADE_DATA_DIR-derived
+ * default. Tests must restore with this rather than assigning the previously
+ * captured value: assigning a string pins the override permanently, so a later
+ * test file that redirects SHADE_DATA_DIR (e.g. the harness e2e suite) would
+ * still write through the stale absolute path into the real data directory.
+ */
+export const clearPathOverride = (key: keyof typeof overrides): void => {
+  delete overrides[key];
+};

@@ -63,6 +63,27 @@ export interface AppConfigScheduler {
   useTaskBoard: boolean;
 }
 
+export interface AppConfigBuiltinTaskSettings {
+  enabled: boolean;
+  /** 5-field cron expression, evaluated in server time. */
+  cron: string;
+}
+
+export interface AppConfigBuiltinTasks {
+  dailyTriage: AppConfigBuiltinTaskSettings;
+  sessionReview: AppConfigBuiltinTaskSettings;
+}
+
+export interface AppConfigSessionReview {
+  lookbackHours: number;
+  /** Task runs at or over this duration are flagged. */
+  longRunMs: number;
+  /** Sessions with at least this many messages are flagged. */
+  longSessionMessages: number;
+  /** Sessions whose summed AIRequest cost meets this are flagged. */
+  sessionCostUsd: number;
+}
+
 export interface AppConfigApiKeys {
   braveSearch: string;
   exa: string;
@@ -188,6 +209,8 @@ export interface AppConfigFields {
   memory: AppConfigMemory;
   taskWorker: AppConfigTaskWorker;
   scheduler: AppConfigScheduler;
+  builtinTasks: AppConfigBuiltinTasks;
+  sessionReview: AppConfigSessionReview;
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;

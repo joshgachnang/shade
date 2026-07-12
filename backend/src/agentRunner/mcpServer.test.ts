@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {DateTime} from "luxon";
 import mongoose from "mongoose";
-import {paths} from "../config";
+import {clearPathOverride, paths} from "../config";
 import {AgentTask} from "../models/agentTask";
 import {reloadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
@@ -280,7 +280,6 @@ describe("search_history tool", () => {
 
 describe("update_memory tool", () => {
   let tmpDir: string;
-  let originalGroupsPath: string;
 
   beforeEach(async () => {
     tmpDir = path.join(
@@ -288,12 +287,11 @@ describe("update_memory tool", () => {
       `tmp-test-mcp-memory-${Date.now()}-${Math.floor(Math.random() * 100000)}`
     );
     await fs.mkdir(tmpDir, {recursive: true});
-    originalGroupsPath = paths.groups;
     paths.groups = tmpDir;
   });
 
   afterEach(async () => {
-    paths.groups = originalGroupsPath;
+    clearPathOverride("groups");
     await fs.rm(tmpDir, {recursive: true, force: true});
   });
 
@@ -459,7 +457,6 @@ describe("update_memory tool", () => {
 
 describe("skill tools", () => {
   let tmpDir: string;
-  let originalSkillsPath: string;
 
   const makeSkillContext = (): McpContext =>
     makeContext(new mongoose.Types.ObjectId().toString(), new mongoose.Types.ObjectId().toString());
@@ -470,12 +467,11 @@ describe("skill tools", () => {
       `tmp-test-mcp-skills-${Date.now()}-${Math.floor(Math.random() * 100000)}`
     );
     await fs.mkdir(tmpDir, {recursive: true});
-    originalSkillsPath = paths.skills;
     paths.skills = tmpDir;
   });
 
   afterEach(async () => {
-    paths.skills = originalSkillsPath;
+    clearPathOverride("skills");
     await fs.rm(tmpDir, {recursive: true, force: true});
   });
 

@@ -21,6 +21,7 @@ import {
   getUserProfilePath,
 } from "../orchestrator/memory";
 import {RichResponse} from "../orchestrator/responses/schema";
+import {collectSessionReview} from "../orchestrator/sessionReview";
 import {listSkills, loadSkill, saveSkill} from "../orchestrator/skills";
 import {
   addShadeContext,
@@ -693,6 +694,28 @@ export const buildTools = (ctx: McpContext) => {
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Unknown error";
         return {content: [{type: "text" as const, text: `Error searching history: ${msg}`}]};
+      }
+    }
+  );
+
+  const reviewSessionsTool = tool(
+    "review_sessions",
+    "Audit recent agent activity: AI request/cost totals plus task runs and sessions flagged as failing, unusually long, or expensive (thresholds from server config). Read-only; used by the session-review skill.",
+    {
+      hours: z
+        .number()
+        .min(1)
+        .max(24 * 30)
+        .optional()
+        .describe("Lookback window in hours (default from server config, usually 24)"),
+    },
+    async (args) => {
+      try {
+        const report = await collectSessionReview({hours: args.hours});
+        return {content: [{type: "text" as const, text: JSON.stringify(report, null, 2)}]};
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error reviewing sessions: ${msg}`}]};
       }
     }
   );
@@ -1639,6 +1662,7 @@ export const buildTools = (ctx: McpContext) => {
     getWeatherTool,
     getChannelHistoryTool,
     searchHistoryTool,
+    reviewSessionsTool,
     updateMemoryTool,
     saveSkillTool,
     listSkillsTool,
