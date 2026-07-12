@@ -1,6 +1,6 @@
 # QA Test Case Index
 
-Last updated: 2026-04-18
+Last updated: 2026-07-11
 
 | File | Feature | # Cases | P0 | P1 | P2 | Automated |
 |------|---------|---------|----|----|-----|-----------|
@@ -11,5 +11,7 @@ Last updated: 2026-04-18
 | navigation-tabs.md | Tab navigation | 6 | 0 | 5 | 1 | 4/6 |
 | not-found.md | Not Found screen | 3 | 0 | 0 | 3 | 2/3 |
 | accessibility.md | Accessibility | 4 | 0 | 0 | 4 | 1/4 |
+| reminders.md | Reminders management | 10 | 5 | 3 | 2 | 5/10 |
+| calendars.md | Calendar management | 9 | 4 | 3 | 2 | 5/9 |
 
-**Total:** 34 test cases | 8 P0 | 13 P1 | 11 P2 | 17/34 automated
+**Total:** 53 test cases | 17 P0 | 19 P1 | 17 P2 | 27/53 automated

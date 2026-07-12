@@ -9,6 +9,8 @@ const SidebarLayout: React.FC = () => {
         {label: "Search", route: "search", iconName: "magnifying-glass"},
         {label: "Movies", route: "movies", iconName: "film"},
         {label: "Features", route: "features", iconName: "list-check"},
+        {label: "Reminders", route: "reminders", iconName: "circle-check"},
+        {label: "Calendar", route: "calendars", iconName: "calendar"},
       ]}
       bottomItems={[
         {label: "Admin", route: "admin", iconName: "gear"},
@@ -20,6 +22,8 @@ const SidebarLayout: React.FC = () => {
       <SidebarNavigation.Screen name="features" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="profile" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="movies" options={{headerShown: false}} />
+      <SidebarNavigation.Screen name="reminders" options={{headerShown: false}} />
+      <SidebarNavigation.Screen name="calendars" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="admin" options={{headerShown: false}} />
     </SidebarNavigation>
   );

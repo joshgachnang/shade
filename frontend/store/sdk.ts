@@ -217,6 +217,80 @@ export interface EdgeAgentEvent {
   created: string;
 }
 
+// Apple Reminders / Calendar types (synced from the Mac by the edge agent)
+export interface ReminderList {
+  _id: string;
+  externalId: string;
+  name: string;
+  description?: string;
+  isDefault: boolean;
+  lastSyncedAt?: string;
+}
+
+export interface Reminder {
+  _id: string;
+  externalId: string;
+  title: string;
+  notes?: string;
+  dueDate?: string;
+  priority: number;
+  completed: boolean;
+  completedAt?: string;
+  listName: string;
+  listExternalId: string;
+  syncStatus: "active" | "removed";
+  lastSyncedAt?: string;
+}
+
+export interface AppleCalendar {
+  _id: string;
+  externalId: string;
+  name: string;
+  description?: string;
+  isDefault: boolean;
+  writable: boolean;
+  lastSyncedAt?: string;
+}
+
+export interface CalendarEvent {
+  _id: string;
+  externalId: string;
+  title: string;
+  notes?: string;
+  location?: string;
+  url?: string;
+  status?: string;
+  startDate: string;
+  endDate: string;
+  allDay: boolean;
+  calendarName: string;
+  calendarExternalId: string;
+  syncStatus: "active" | "removed";
+  lastSyncedAt?: string;
+}
+
+export interface QueuedAppleCommand {
+  data: {commandId: string; agentName?: string; reminderId?: string};
+}
+
+export interface CreateReminderRequest {
+  title: string;
+  listName?: string;
+  notes?: string;
+  dueDate?: string;
+  priority?: number;
+}
+
+export interface CreateCalendarEventRequest {
+  title: string;
+  calendarName?: string;
+  startDate: string;
+  endDate: string;
+  allDay?: boolean;
+  location?: string;
+  notes?: string;
+}
+
 export const terrenoApi = openapi
   .injectEndpoints({
     endpoints: (builder) => ({
@@ -435,6 +509,66 @@ export const terrenoApi = openapi
         providesTags: ["EdgeAgentEvents" as any],
         query: ({agentId}) => ({url: `/edgeAgentEvents?agentId=${agentId}`}),
       }),
+      // Apple Reminders endpoints. Reads come from the synced Mongo models;
+      // mutations go through /apple/* actions, which queue edge-agent commands.
+      listReminderLists: builder.query<ListResponse<ReminderList>, void>({
+        providesTags: ["Reminders" as any],
+        query: () => ({url: "/reminderLists?limit=100"}),
+      }),
+      listReminders: builder.query<
+        ListResponse<Reminder>,
+        {listName?: string; completed?: boolean} | undefined
+      >({
+        providesTags: ["Reminders" as any],
+        query: (args) => {
+          const params = new URLSearchParams({syncStatus: "active", limit: "250"});
+          if (args?.listName) {
+            params.set("listName", args.listName);
+          }
+          if (args?.completed !== undefined) {
+            params.set("completed", String(args.completed));
+          }
+          return {url: `/reminders?${params.toString()}`};
+        },
+      }),
+      createReminder: builder.mutation<QueuedAppleCommand, CreateReminderRequest>({
+        invalidatesTags: ["Reminders" as any],
+        query: (body) => ({body, method: "POST", url: "/apple/reminders"}),
+      }),
+      completeReminder: builder.mutation<QueuedAppleCommand, string>({
+        invalidatesTags: ["Reminders" as any],
+        query: (id) => ({method: "POST", url: `/apple/reminders/${id}/complete`}),
+      }),
+      removeReminder: builder.mutation<QueuedAppleCommand, string>({
+        invalidatesTags: ["Reminders" as any],
+        query: (id) => ({method: "POST", url: `/apple/reminders/${id}/remove`}),
+      }),
+      // Apple Calendar endpoints
+      listAppleCalendars: builder.query<ListResponse<AppleCalendar>, void>({
+        providesTags: ["CalendarEvents" as any],
+        query: () => ({url: "/appleCalendars?limit=100"}),
+      }),
+      listCalendarEvents: builder.query<
+        ListResponse<CalendarEvent>,
+        {calendarName?: string} | undefined
+      >({
+        providesTags: ["CalendarEvents" as any],
+        query: (args) => {
+          const params = new URLSearchParams({syncStatus: "active", limit: "500"});
+          if (args?.calendarName) {
+            params.set("calendarName", args.calendarName);
+          }
+          return {url: `/calendarEvents?${params.toString()}`};
+        },
+      }),
+      createCalendarEvent: builder.mutation<QueuedAppleCommand, CreateCalendarEventRequest>({
+        invalidatesTags: ["CalendarEvents" as any],
+        query: (body) => ({body, method: "POST", url: "/apple/calendar-events"}),
+      }),
+      appleSyncNow: builder.mutation<QueuedAppleCommand, void>({
+        invalidatesTags: ["Reminders" as any, "CalendarEvents" as any],
+        query: () => ({method: "POST", url: "/apple/sync"}),
+      }),
       // Rich-response admin endpoints (IP-005).
       previewCard: builder.mutation<PreviewCardResponse, PreviewCardRequest>({
         query: (body) => ({body, method: "POST", url: "/orchestrator/preview-card"}),
@@ -445,7 +579,15 @@ export const terrenoApi = openapi
     }),
   })
   .enhanceEndpoints({
-    addTagTypes: ["profile", "Movies", "EdgeAgents", "EdgeAgentEvents", "Features"],
+    addTagTypes: [
+      "profile",
+      "Movies",
+      "EdgeAgents",
+      "EdgeAgentEvents",
+      "Features",
+      "Reminders",
+      "CalendarEvents",
+    ],
     endpoints: {
       ...generateTags(openapi, [...addTagTypes]),
     },
@@ -490,5 +632,14 @@ export const {
   useListResumableFeaturesQuery,
   usePreviewCardMutation,
   useGetMessageRichQuery,
+  useListReminderListsQuery,
+  useListRemindersQuery,
+  useCreateReminderMutation,
+  useCompleteReminderMutation,
+  useRemoveReminderMutation,
+  useListAppleCalendarsQuery,
+  useListCalendarEventsQuery,
+  useCreateCalendarEventMutation,
+  useAppleSyncNowMutation,
 } = terrenoApi;
 export * from "./openApiSdk";
