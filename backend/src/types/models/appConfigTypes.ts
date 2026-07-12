@@ -94,6 +94,11 @@ export interface AppConfigPrWatch {
   prompts: AppConfigPrWatchPrompts;
 }
 
+export interface AppConfigIMessage {
+  /** Handles allowed to receive replies over iMessage/SMS; empty = reply to no one. */
+  replyAllowlist: string[];
+}
+
 export interface AppConfigTriviaMonitor {
   enabled: boolean;
   groupId: string;
@@ -187,6 +192,7 @@ export interface AppConfigFields {
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;
   prWatch: AppConfigPrWatch;
+  imessage: AppConfigIMessage;
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;
   notifications: AppConfigNotifications;
