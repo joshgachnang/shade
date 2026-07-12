@@ -25,98 +25,53 @@ import {TriviaMonitor} from "./services/triviaMonitor";
 const FEATURE_CHANNEL_MEMORY = (featureName: string, description?: string): string => {
   return `# Feature Channel: ${featureName}
 
-You are driving a feature-development workflow inside a dedicated Slack
-channel. Every message in this channel is routed to you automatically —
-the user does **not** need to \`@Shade\`-mention you to trigger a reply,
-so don't tell them they have to. This channel is split between two
-runners, configured by the orchestrator based on \`Group.featurePhase\`:
+You are driving feature development inside a dedicated Slack channel. Every
+message in this channel is routed to you automatically — the user does
+**not** need to \`@Shade\`-mention you to trigger a reply, so don't tell
+them they have to.
 ${description ? `\n**Initial description:** ${description}\n` : ""}
-## Runners
+## Workflow (roast)
 
-- **Planning** (phase \`planning\`) — OpenAI model from
-  \`AppConfig.models.planner\` (default \`gpt-5.4\`). Drives the **blend**
-  workflow conversationally. Writes plan drafts to
-  \`docs/implementationPlans/<feature>.md\` inside this group folder.
-- **Implementation** (phases \`implementing\` and \`complete\`) — Claude Agent
-  SDK. Executes the approved plan via the **roast** workflow.
+The user's original feature request is seeded as the first message in this
+channel. Take it — plus anything else they add here — and implement it:
 
-The user flips from planning to implementing by typing \`/roast\` or
-\`/implement\` (or the \`!\`-prefixed forms) in the channel. The orchestrator
-detects this and sets \`featurePhase\` on the group before handing to Claude.
+1. **Work in a dedicated git worktree, never on a main checkout.** Repos
+   live under the configured repos directory (AppConfig
+   \`prWatch.reposBaseDir\`, laid out \`<base>/<owner>/<repo>\`). Create the
+   worktree off the default branch with a kebab-case branch name, then run
+   \`bun bootstrap\` at its root (fall back to \`bun install\` if missing and
+   say so). If it isn't obvious which repo the feature targets, ask in the
+   channel before starting.
+2. **Sketch a short plan first.** Write it to
+   \`docs/implementationPlans/${featureName}.md\` inside this group folder
+   and post a summary to the channel. Then get to work — don't wait for
+   approval unless the request is ambiguous or has unmade product
+   decisions; ask blocking questions in the channel when it does.
+3. **Implement via TDD** in small, behavior-scoped commits. Mark plan tasks
+   complete in the plan document as you go.
+4. **Post progress updates** to the channel at meaningful checkpoints.
+5. **Open a PR** from the worktree when done, then post a summary of what
+   shipped with links to the plan and the PR.
 
-## What YOU (the agent running this turn) must do
+## Hard rules
 
-Because this same \`CLAUDE.md\` is in the system prompt for both runners, each
-runner follows the part that applies to it:
-
-### If you are the planner (OpenAI) — blend workflow
-
-**Triage the request first:**
-
-- **SIMPLE** — small bounded scope, clear precedent in the codebase, no
-  unmade product decisions, no migrations/rollout concerns. **Skip all
-  confirmation pauses**: research briefly, then produce the full plan
-  (models, APIs, UI, phases, task list) in one pass, with an
-  \`## Assumptions\` section listing everything you decided without asking.
-- **COMPLEX or ambiguous** — anything else. Go through the full blend
-  steps: ingest → research → **blocking questions (pause for answers;
-  present options A/B/C, never pick silently)** → shape (models + APIs
-  first, then UI/phases/risks) → generate the plan.
-
-Rules either way:
-
-- Never output application source code. Your job is plan prose, tables, and
-  task lists.
-- When you emit the final plan, wrap it in a \`\`\`markdown ... \`\`\` fenced
-  block so the orchestrator can persist it.
-- When the plan is done and the user is happy, tell them to type
-  \`/roast\` to hand off to implementation.
-
-### If you are the implementor (Claude Agent SDK) — roast workflow
-
-- The plan already exists at
-  \`docs/implementationPlans/${featureName}.md\` (written by the planner).
-  Read it first.
-- **Always work in a dedicated git worktree for the PR** — never on the
-  main checkout. Create it off the default branch with a kebab-case branch
-  name, then set up the environment by running \`bun bootstrap\` at the
-  worktree root (all projects support it; fall back to \`bun install\` if
-  missing and say so).
-- Implement via TDD in small, behavior-scoped commits. Mark tasks complete
-  in the plan document as you go.
-- Post periodic progress updates in the channel.
 - All service credentials and config live in \`AppConfig\` (loaded via
   \`loadAppConfig()\`). Do not read API keys or endpoints from ad-hoc env
   vars — go through AppConfig.
-- When everything is done, open a PR from the worktree, then summarize what
-  shipped and link the final plan and PR.
-
-## Hard rules (both runners)
-
-- **Never** write implementation code during the \`planning\` phase.
-- **Never** start roast before the user has approved the plan.
-- If the user changes scope mid-flight, re-run the affected blend step
-  rather than patching code ad-hoc. If we're already in \`implementing\`, the
-  operator can manually reset \`Group.featurePhase\` back to \`planning\`.
+- If the user changes scope mid-flight, update the plan document before
+  patching code.
 - Prefer small, verifiable commits.
 `;
 };
 
-const FEATURE_CHANNEL_GREETING = (
-  featureName: string,
-  plannerModel: string,
-  hasRequest: boolean
-): string => {
+const FEATURE_CHANNEL_GREETING = (featureName: string, hasRequest: boolean): string => {
   const kickoff = hasRequest
-    ? `I've already kicked off planning from your original request — a first pass is on its way. Add any constraints or corrections here and I'll fold them in.`
-    : `To kick things off: what are you trying to build, and why? A few sentences is enough — I'll shape it from there.`;
+    ? `I've already picked up your original request — implementation is kicking off now. Add constraints or corrections here anytime and I'll fold them in.`
+    : `To kick things off: what are you trying to build, and why? A few sentences is enough — I'll take it from there.`;
   return (
     `Feature channel ready for *${featureName}*! :sparkles:\n\n` +
     `*You don't need to \`@Shade\` me in this channel* — every message you send here goes straight to me.\n\n` +
-    `Here's how we'll work in this channel:\n` +
-    `1. *Planning (blend)* — I'll shape the idea into an implementation plan using \`${plannerModel}\`. Simple asks get a plan straight away; bigger or ambiguous ones get clarifying questions first.\n` +
-    `2. *Handoff* — when you're happy with the plan, type \`/roast\` (or \`/implement\`). That flips this channel to implementation mode.\n` +
-    `3. *Implementation (roast)* — the Claude Agent SDK spins up a dedicated worktree, bootstraps it with \`bun bootstrap\`, and executes the plan end-to-end toward a PR.\n\n` +
+    `I'll sketch a quick plan, implement it in a dedicated worktree (TDD, small commits), and post progress here until there's a PR.\n\n` +
     kickoff
   );
 };
@@ -244,9 +199,9 @@ export const startOrchestrator = async (
     );
 
     // Create a Group record so the orchestrator listens to this channel.
-    // `featurePhase: "planning"` causes GroupQueue to route messages to the
-    // OpenAI planner runner until the user types `/implement`, which flips
-    // the phase to `implementing` and hands control to the Claude Agent SDK.
+    // `featurePhase: "implementing"` routes messages straight to the Claude
+    // Agent SDK runner, which takes the seeded request into the roast
+    // workflow immediately — no separate planner phase or `/implement` step.
     const folder = `features/${data.name}`;
     const group = await Group.create({
       name: data.name,
@@ -260,7 +215,7 @@ export const startOrchestrator = async (
       isMain: false,
       modelConfig: sourceGroup.modelConfig,
       executionConfig: sourceGroup.executionConfig,
-      featurePhase: "planning",
+      featurePhase: "implementing",
     });
 
     // Register in the live cache so messages flow immediately
@@ -275,14 +230,17 @@ export const startOrchestrator = async (
         name: data.name,
         description: data.description ?? data.request?.slice(0, 500),
         groupId: group._id,
-        status: "planned",
+        // Implementation starts immediately from the seeded request, so the
+        // feature is in progress from the moment the channel exists.
+        status: "in_progress",
+        startedAt: new Date(),
       });
     } catch (err) {
       logError(`Failed to create Feature record for ${data.name}`, err);
     }
 
-    // Pin the /ip -> /implement workflow into the feature channel's group
-    // memory so every agent turn in this channel is anchored to the flow.
+    // Pin the roast workflow into the feature channel's group memory so
+    // every agent turn in this channel is anchored to the flow.
     try {
       await writeMemory(
         getGroupMemoryPath(folder),
@@ -292,22 +250,16 @@ export const startOrchestrator = async (
       logError(`Failed to write feature channel memory for ${data.name}`, err);
     }
 
-    // Load AppConfig lazily so the greeting surfaces the actual planner model
-    // the operator has configured (don't hardcode "gpt-5.4" here — AppConfig
-    // is the single source of truth per project rules).
-    const appConfig = await loadAppConfig();
-    const plannerModel = appConfig.models?.planner || "gpt-5.4";
-
     await channelManager.sendMessage(
       sourceGroup.channelId.toString(),
       slackChannelId,
-      FEATURE_CHANNEL_GREETING(data.name, plannerModel, Boolean(data.request))
+      FEATURE_CHANNEL_GREETING(data.name, Boolean(data.request))
     );
 
-    // Seed the channel with the user's original request so blend planning
+    // Seed the channel with the user's original request so implementation
     // starts immediately — the message loop picks this up like any inbound
-    // message and hands it to the planner. Without it the user would have to
-    // repeat themselves in the new channel.
+    // message and hands it to the Claude runner. Without it the user would
+    // have to repeat themselves in the new channel.
     if (data.request) {
       try {
         const {Message} = await import("../models/message");
@@ -320,7 +272,9 @@ export const startOrchestrator = async (
           isFromBot: false,
           metadata: {source: "create_feature_seed"},
         });
-        logger.info(`Seeded #${data.name} with the original feature request — planning starts now`);
+        logger.info(
+          `Seeded #${data.name} with the original feature request — implementation starts now`
+        );
       } catch (err) {
         logError(`Failed to seed feature request message for ${data.name}`, err);
       }

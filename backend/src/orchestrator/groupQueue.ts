@@ -8,6 +8,7 @@ import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
+import {featureRoutingPromptBlock} from "./featureRoutingPromptBlock";
 import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import {resolveModel} from "./runners/direct";
@@ -222,10 +223,12 @@ export class GroupQueue {
     const session = await getOrCreateSession(groupId);
     const appConfig = await loadAppConfig();
     const groupFolder = await ensureGroupDirectory(group.folder);
-    const systemPrompt = await buildSystemPrompt(
+    const baseSystemPrompt = await buildSystemPrompt(
       group.folder,
       `You are ${appConfig.assistantName}, an AI assistant in the "${group.name}" group.`
     );
+    const routingBlock = featureRoutingPromptBlock({isMain: group.isMain});
+    const systemPrompt = routingBlock ? `${baseSystemPrompt}\n\n${routingBlock}` : baseSystemPrompt;
 
     const taskRunLog = await TaskRunLog.create({
       groupId: group._id,
