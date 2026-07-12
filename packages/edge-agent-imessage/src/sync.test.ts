@@ -70,7 +70,7 @@ describe("fetchCalendarSnapshot", () => {
     let capturedScript = "";
     setRunJxa(async (script) => {
       capturedScript = script;
-      return JSON.stringify({calendars: [], inWindow: [], recurringMasters: []});
+      return JSON.stringify({calendars: [], events: []});
     });
 
     await fetchCalendarSnapshot({
@@ -81,45 +81,6 @@ describe("fetchCalendarSnapshot", () => {
 
     expect(capturedScript).toContain("2026-07-06T00:00:00.000Z");
     expect(capturedScript).toContain("Family");
-  });
-
-  test("expands recurring masters into occurrence rows", async () => {
-    setRunJxa(async () =>
-      JSON.stringify({
-        calendars: [{externalId: "c1", name: "Work", writable: true}],
-        inWindow: [],
-        recurringMasters: [
-          {
-            uid: "series-1",
-            title: "Standup",
-            notes: null,
-            location: null,
-            url: null,
-            // Series started long before the window, weekly on its start weekday
-            startDate: "2026-01-05T17:00:00.000Z", // a Monday
-            endDate: "2026-01-05T17:15:00.000Z",
-            allDay: false,
-            status: "confirmed",
-            recurrence: "FREQ=WEEKLY;INTERVAL=1",
-            calendarName: "Work",
-            calendarExternalId: "c1",
-          },
-        ],
-      })
-    );
-
-    const snapshot = await fetchCalendarSnapshot({
-      startDate: "2026-07-06T00:00:00.000Z",
-      endDate: "2026-07-20T00:00:00.000Z",
-    });
-
-    expect(snapshot.events.length).toBe(2); // two Mondays in the window
-    expect(snapshot.events[0].externalId).toStartWith("series-1/");
-    expect(snapshot.events[0].title).toBe("Standup");
-    // 15-minute duration carried onto each occurrence
-    const start = DateTime.fromISO(snapshot.events[0].startDate);
-    const end = DateTime.fromISO(snapshot.events[0].endDate);
-    expect(end.diff(start, "minutes").minutes).toBe(15);
   });
 });
 
@@ -156,9 +117,7 @@ describe("sync push builders", () => {
   });
 
   test("buildCalendarSyncPush wraps the snapshot with the synced range", async () => {
-    setRunJxa(async () =>
-      JSON.stringify({calendars: [], inWindow: [], recurringMasters: []})
-    );
+    setRunJxa(async () => JSON.stringify({calendars: [], events: []}));
 
     const push: DataPush = await buildCalendarSyncPush(30);
     expect(push.type).toBe("calendar_sync");
