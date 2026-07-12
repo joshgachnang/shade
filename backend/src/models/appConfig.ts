@@ -213,6 +213,15 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       },
     },
 
+    imessage: {
+      // Handles (phone numbers or iMessage email addresses) Shade is allowed
+      // to reply to over iMessage/SMS. Messages from anyone else are still
+      // stored (catalogued) but never trigger an agent reply. Empty list =
+      // reply to no one. Managed via the add/remove_sms_reply_number MCP
+      // tools or the admin UI.
+      replyAllowlist: {type: [String], default: []},
+    },
+
     triviaMonitor: {
       enabled: {type: Boolean, default: false},
       groupId: {type: String, default: ""},

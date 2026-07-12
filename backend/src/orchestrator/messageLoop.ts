@@ -1,7 +1,9 @@
 import {logger} from "@terreno/api";
 import {loadAppConfig} from "../models/appConfig";
+import {Channel} from "../models/channel";
 import {Message} from "../models/message";
-import type {GroupDocument} from "../types";
+import type {GroupDocument, MessageDocument} from "../types";
+import {isHandleAllowed} from "../utils/smsAllowlist";
 import type {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import type {GroupQueue} from "./groupQueue";
@@ -16,6 +18,8 @@ export class MessageLoop {
   /** In-flight guard: a forced tick racing the interval must not double-enqueue
    *  a message (processedAt is only set after the agent run completes). */
   private polling = false;
+  /** channelId → channel type, so the per-tick allowlist gate doesn't hit the DB. */
+  private channelTypeCache = new Map<string, string>();
 
   constructor(channelManager: ChannelManager, groupQueue: GroupQueue) {
     this.channelManager = channelManager;
@@ -85,12 +89,17 @@ export class MessageLoop {
     }
 
     // Find unprocessed, non-bot messages for this group
-    const unprocessedMessages = await Message.find({
+    let unprocessedMessages: MessageDocument[] = await Message.find({
       groupId: group._id,
       processedAt: {$exists: false},
       isFromBot: false,
     }).sort({created: 1});
 
+    if (unprocessedMessages.length === 0) {
+      return;
+    }
+
+    unprocessedMessages = await this.applyImessageReplyAllowlist(group, unprocessedMessages);
     if (unprocessedMessages.length === 0) {
       return;
     }
@@ -124,5 +133,59 @@ export class MessageLoop {
 
     // Enqueue the triggering message — the group queue will build the full context
     this.groupQueue.enqueue(group, triggeringMessage);
+  }
+
+  /**
+   * iMessage/SMS reply gate: only senders on AppConfig.imessage.replyAllowlist
+   * can trigger a reply. Everyone else's messages are catalogued — they stay
+   * stored (and appear as context in later conversations) but are marked
+   * processed here so they never reach the agent. Non-iMessage channels pass
+   * through untouched.
+   */
+  private async applyImessageReplyAllowlist(
+    group: GroupDocument,
+    messages: MessageDocument[]
+  ): Promise<MessageDocument[]> {
+    const channelType = await this.getChannelType(group.channelId.toString());
+    if (channelType !== "imessage") {
+      return messages;
+    }
+
+    const {replyAllowlist} = (await loadAppConfig()).imessage;
+    const catalogOnly = messages.filter(
+      (msg) => !isHandleAllowed(msg.senderExternalId || msg.sender, replyAllowlist)
+    );
+
+    if (catalogOnly.length === 0) {
+      return messages;
+    }
+
+    await Message.updateMany(
+      {_id: {$in: catalogOnly.map((msg) => msg._id)}},
+      {$set: {processedAt: new Date()}}
+    );
+    logger.info(
+      `Catalogued ${catalogOnly.length} iMessage message(s) in group ${group.name} from ` +
+        `non-allowlisted sender(s) ${[...new Set(catalogOnly.map((msg) => msg.sender))].join(", ")} — no reply`
+    );
+
+    return messages.filter((msg) =>
+      isHandleAllowed(msg.senderExternalId || msg.sender, replyAllowlist)
+    );
+  }
+
+  private async getChannelType(channelId: string): Promise<string | undefined> {
+    const cached = this.channelTypeCache.get(channelId);
+    if (cached) {
+      return cached;
+    }
+
+    const channel = await Channel.findOneOrNone({_id: channelId});
+    if (!channel) {
+      return undefined;
+    }
+
+    this.channelTypeCache.set(channelId, channel.type);
+    return channel.type;
   }
 }
