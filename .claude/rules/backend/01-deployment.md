@@ -33,6 +33,12 @@ The `SHADE_SERVICE` env var selects what a process runs: `backend` (default),
   `shade` (URI in `~/.config/shade/shade-*.env`); local Homebrew Mongo is for
   dev only
 - **Ports**: backend 4020, worker health 4021
+- **Public API URL**: `https://shade-api.nang.io` → Cloudflare Tunnel
+  `shade-studio` (62769ec0-6874-4f23-bbc8-ba5a1ddfb6f8) running on this Mac
+  as launchd agent `com.cloudflare.cloudflared` (config in
+  `~/.cloudflared/config.yml`, ingress → `http://localhost:4020`). The plist's
+  ProgramArguments must include `tunnel run` — a bare `cloudflared` invocation
+  exits immediately.
 - **iMessage**: `com.shade.imessage` runs the same executable with
   `SHADE_SERVICE=imessage`; requires Full Disk Access for
   `~/Library/Application Support/Shade/dist/shade`.
@@ -52,7 +58,9 @@ two backends on one DB race for unprocessed messages.
 
 ## Linux server (legacy)
 
-- **API URL**: `https://shade-api.nang.io` (behind Cloudflare)
+- **Status**: unreachable as of 2026-07-11; `shade-api.nang.io` now routes to
+  the studio Mac (see above). The old `Shade` Cloudflare tunnel
+  (73a2a064-4593-42e3-a977-cb2ad75db5eb) is orphaned and can be deleted.
 - **Server**: `shade` host on Tailscale (`100.71.181.113`), bun from
   `/opt/shade/src/backend/` as user `josh`, port 3000, env file
   `/opt/shade/backend.env`, local MongoDB
