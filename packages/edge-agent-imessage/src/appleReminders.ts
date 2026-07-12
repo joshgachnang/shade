@@ -117,17 +117,23 @@ if (args.priority) {
   reminder.priority = args.priority;
 }
 if (args.dueDate) {
-  const ms = new Date(args.dueDate).getTime();
+  // A bare date ("2026-07-20") parses as UTC midnight, which lands on the
+  // previous local day west of Greenwich. Append a local-midnight time so the
+  // components fall on the day the user actually named, and store it as an
+  // all-day due date (no hour/minute components).
+  const dateOnly = /^\\d{4}-\\d{2}-\\d{2}$/.test(args.dueDate);
+  const ms = new Date(dateOnly ? args.dueDate + "T00:00:00" : args.dueDate).getTime();
   if (Number.isNaN(ms)) {
     throw new Error("Invalid dueDate: " + args.dueDate);
   }
   const nsDate = $.NSDate.dateWithTimeIntervalSince1970(ms / 1000);
-  const units =
-    $.NSCalendarUnitYear |
-    $.NSCalendarUnitMonth |
-    $.NSCalendarUnitDay |
-    $.NSCalendarUnitHour |
-    $.NSCalendarUnitMinute;
+  const units = dateOnly
+    ? $.NSCalendarUnitYear | $.NSCalendarUnitMonth | $.NSCalendarUnitDay
+    : $.NSCalendarUnitYear |
+      $.NSCalendarUnitMonth |
+      $.NSCalendarUnitDay |
+      $.NSCalendarUnitHour |
+      $.NSCalendarUnitMinute;
   reminder.dueDateComponents = $.NSCalendar.currentCalendar.componentsFromDate(units, nsDate);
 }
 

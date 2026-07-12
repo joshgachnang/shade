@@ -168,7 +168,9 @@ export const buildAppleTools = () => {
         .string()
         .optional()
         .describe(
-          "Due date as ISO 8601 (e.g. '2026-07-12T09:00:00'). Timezone-less values use the Mac's local timezone."
+          "Due date as ISO 8601. Timezone-less values use the Mac's local timezone. " +
+            "Use a bare date ('2026-07-12') for an all-day due date, or a datetime " +
+            "('2026-07-12T09:00:00') for a specific time."
         ),
       priority: z
         .number()
