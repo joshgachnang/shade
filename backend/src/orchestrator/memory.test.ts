@@ -18,9 +18,7 @@ import {
 const tmpDir = path.join(process.cwd(), `tmp-test-memory-${Date.now()}`);
 
 // Override paths.groups for testing
-import {paths} from "../config";
-
-const originalGroupsPath = paths.groups;
+import {clearPathOverride, paths} from "../config";
 
 beforeEach(async () => {
   await fs.mkdir(tmpDir, {recursive: true});
@@ -28,7 +26,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  paths.groups = originalGroupsPath;
+  clearPathOverride("groups");
   await fs.rm(tmpDir, {recursive: true, force: true});
 });
 
@@ -168,7 +166,6 @@ describe("applyMemoryUpdate", () => {
 
 describe("buildSystemPrompt", () => {
   const skillsTmpDir = path.join(process.cwd(), `tmp-test-memory-skills-${Date.now()}`);
-  const originalSkillsPath = paths.skills;
 
   const setMemoryEnabled = async (enabled: boolean): Promise<void> => {
     // reload, don't load: another test file may have deleted the cached doc.
@@ -210,7 +207,7 @@ describe("buildSystemPrompt", () => {
   });
 
   afterEach(async () => {
-    paths.skills = originalSkillsPath;
+    clearPathOverride("skills");
     await fs.rm(skillsTmpDir, {recursive: true, force: true});
     await setMemoryEnabled(true);
     await setTaskWorkerEnabled(true);

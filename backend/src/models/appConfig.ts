@@ -136,6 +136,30 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       useTaskBoard: {type: Boolean, default: false},
     },
 
+    // Builtin proactive loops (seeded skills + their scheduled tasks). On boot
+    // ensureBuiltinScheduledTasks() upserts one cron ScheduledTask per entry
+    // against the main group: enabled=true keeps it active and in sync with
+    // `cron`; enabled=false pauses it. Cron expressions run in server time.
+    builtinTasks: {
+      dailyTriage: {
+        enabled: {type: Boolean, default: false},
+        cron: {type: String, default: "30 6 * * *"},
+      },
+      sessionReview: {
+        enabled: {type: Boolean, default: false},
+        cron: {type: String, default: "0 8 * * *"},
+      },
+    },
+
+    // Thresholds for the review_sessions MCP tool (driven by the builtin
+    // session-review skill). Runs/sessions at or over a threshold are flagged.
+    sessionReview: {
+      lookbackHours: {type: Number, default: 24},
+      longRunMs: {type: Number, default: 10 * 60 * 1000},
+      longSessionMessages: {type: Number, default: 40},
+      sessionCostUsd: {type: Number, default: 5},
+    },
+
     apiKeys: {
       braveSearch: {type: String, default: ""},
       exa: {type: String, default: ""},

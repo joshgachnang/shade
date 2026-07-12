@@ -4,6 +4,7 @@ import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
 import {isTestMode} from "../testMode/flag";
 import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
+import {ensureBuiltinScheduledTasks, seedBuiltinSkills} from "./builtinSkills";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
 import {GroupQueue} from "./groupQueue";
@@ -128,6 +129,21 @@ export const startOrchestrator = async (
     await initGlobalMemory();
   } catch (err) {
     logger.error(`Failed to initialize global memory (non-fatal): ${err}`);
+  }
+
+  // Seed builtin skills (daily-triage, session-review) and reconcile their
+  // scheduled-task loops with AppConfig.builtinTasks. Both are idempotent:
+  // existing skill files are never overwritten, and tasks are upserted/paused
+  // to match config.
+  try {
+    await seedBuiltinSkills();
+  } catch (err) {
+    logger.error(`Failed to seed builtin skills (non-fatal): ${err}`);
+  }
+  try {
+    await ensureBuiltinScheduledTasks();
+  } catch (err) {
+    logError("Failed to ensure builtin scheduled tasks (non-fatal)", err);
   }
 
   // Test mode (IP-012): every agent turn runs through the deterministic mock —
