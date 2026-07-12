@@ -8,7 +8,7 @@ import {DateTime} from "luxon";
 import mongoose from "mongoose";
 import {z} from "zod";
 import {AgentTask} from "../models/agentTask";
-import {loadAppConfig} from "../models/appConfig";
+import {AppConfig, loadAppConfig} from "../models/appConfig";
 import {Channel} from "../models/channel";
 import {Group} from "../models/group";
 import {Message} from "../models/message";
@@ -33,6 +33,7 @@ import {
   searchContacts,
   updateContact,
 } from "../utils/appleContacts";
+import {isHandleAllowed} from "../utils/smsAllowlist";
 
 const execFileAsync = promisify(execFile);
 
@@ -1498,6 +1499,131 @@ export const buildTools = (ctx: McpContext) => {
     }
   );
 
+  const listSmsReplyNumbersTool = tool(
+    "list_sms_reply_numbers",
+    "List the iMessage/SMS reply allowlist — the phone numbers and iMessage email handles Shade is allowed to reply to over text. Messages from anyone else are still catalogued (stored for context and searchable) but never get a reply.",
+    {},
+    async () => {
+      try {
+        const {replyAllowlist} = (await loadAppConfig()).imessage;
+        if (replyAllowlist.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "The SMS reply allowlist is empty — Shade replies to no one over iMessage/SMS; all texts are catalogued only.",
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `SMS reply allowlist (${replyAllowlist.length}):\n${replyAllowlist.join("\n")}`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error listing allowlist: ${msg}`}]};
+      }
+    }
+  );
+
+  const addSmsReplyNumberTool = tool(
+    "add_sms_reply_number",
+    "Add a phone number (or iMessage email handle) to the iMessage/SMS reply allowlist so Shade will reply to their texts. Takes effect immediately — no restart needed.",
+    {
+      handle: z
+        .string()
+        .describe(
+          "Phone number (E.164 preferred, e.g. '+19102755241'; other formats are matched on digits) or an iMessage email address"
+        ),
+    },
+    async (args) => {
+      try {
+        const handle = args.handle.trim();
+        if (handle.length === 0) {
+          return {content: [{type: "text" as const, text: "Error: handle is empty."}]};
+        }
+
+        const config = await loadAppConfig();
+        if (isHandleAllowed(handle, config.imessage.replyAllowlist)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${handle} is already on the SMS reply allowlist.`,
+              },
+            ],
+          };
+        }
+
+        await AppConfig.findOneAndUpdate(
+          {_id: config._id},
+          {$addToSet: {"imessage.replyAllowlist": handle}}
+        );
+        logger.info(`add_sms_reply_number: added ${handle} to the SMS reply allowlist`);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Added ${handle} to the SMS reply allowlist — Shade will now reply to their texts.`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error adding to allowlist: ${msg}`}]};
+      }
+    }
+  );
+
+  const removeSmsReplyNumberTool = tool(
+    "remove_sms_reply_number",
+    "Remove a phone number (or iMessage email handle) from the iMessage/SMS reply allowlist. Their texts will still be catalogued, but Shade will stop replying to them. Takes effect immediately.",
+    {
+      handle: z.string().describe("The phone number or email handle to remove (any format)"),
+    },
+    async (args) => {
+      try {
+        const config = await loadAppConfig();
+        const remaining = config.imessage.replyAllowlist.filter(
+          (entry) => !isHandleAllowed(entry, [args.handle])
+        );
+
+        if (remaining.length === config.imessage.replyAllowlist.length) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${args.handle} is not on the SMS reply allowlist.`,
+              },
+            ],
+          };
+        }
+
+        await AppConfig.findOneAndUpdate(
+          {_id: config._id},
+          {$set: {"imessage.replyAllowlist": remaining}}
+        );
+        logger.info(`remove_sms_reply_number: removed ${args.handle} from the SMS reply allowlist`);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Removed ${args.handle} from the SMS reply allowlist — their texts will be catalogued without a reply.`,
+            },
+          ],
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        return {content: [{type: "text" as const, text: `Error removing from allowlist: ${msg}`}]};
+      }
+    }
+  );
+
   const startRadioStreamTool = tool(
     "start_radio_stream",
     "Start a radio stream transcription. Begins streaming audio from the configured URL, transcribing it with Deepgram, and posting transcripts to the configured Slack channel.",
@@ -1726,6 +1852,9 @@ export const buildTools = (ctx: McpContext) => {
     updateContactTool,
     addContactContextTool,
     setAllowedUsersTool,
+    listSmsReplyNumbersTool,
+    addSmsReplyNumberTool,
+    removeSmsReplyNumberTool,
     startRadioStreamTool,
     stopRadioStreamTool,
     listRadioStreamsTool,
