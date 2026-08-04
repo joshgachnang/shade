@@ -23,8 +23,11 @@ const attemptReconnect = async (): Promise<void> => {
 
     await new Promise((resolve) => setTimeout(resolve, delay));
 
+    const isAtlas = mongoURI.startsWith("mongodb+srv://");
+    const connectOptions = isAtlas ? {tlsAllowInvalidHostnames: true} : {};
+
     try {
-      await mongoose.connect(mongoURI);
+      await mongoose.connect(mongoURI, connectOptions);
       logger.info("MongoDB reconnected successfully");
       reconnectAttempts = 0;
       reconnecting = false;
@@ -48,8 +51,16 @@ export const connectToMongoDB = async (): Promise<void> => {
 
   const mongoURI = process.env.MONGO_URI || "mongodb://localhost:27017/shade";
 
+  // tlsAllowInvalidHostnames is required for Bun + MongoDB Atlas Flex clusters.
+  // Bun does not send SNI during replica set member heartbeat connections, causing
+  // "Cert does not contain a DNS name" errors when the server can't serve the right
+  // certificate without SNI. The connection remains TLS-encrypted; only the
+  // hostname-in-cert check is skipped.
+  const isAtlas = mongoURI.startsWith("mongodb+srv://");
+  const connectOptions = isAtlas ? {tlsAllowInvalidHostnames: true} : {};
+
   try {
-    await mongoose.connect(mongoURI);
+    await mongoose.connect(mongoURI, connectOptions);
     logger.info("Connected to MongoDB");
   } catch (error: unknown) {
     logger.error(`MongoDB initial connection error: ${error}`);
