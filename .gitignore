@@ -17,3 +17,11 @@ backend/data-test/
 
 # Built bundle (shade build)
 dist/
+
+# Playwright / E2E artifacts
+playwright-report/
+test-results/
+e2e/.auth/
+
+# TypeScript incremental build info
+*.tsbuildinfo
