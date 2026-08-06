@@ -14,3 +14,11 @@ backend/data/recordings
 
 # AI testability harness sandbox (bun run dev:test)
 backend/data-test/
+
+# Playwright / E2E artifacts
+playwright-report/
+test-results/
+e2e/.auth/
+
+# TypeScript incremental build info
+*.tsbuildinfo
