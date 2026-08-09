@@ -63,6 +63,27 @@ export interface AppConfigScheduler {
   useTaskBoard: boolean;
 }
 
+export interface AppConfigBuiltinTaskSettings {
+  enabled: boolean;
+  /** 5-field cron expression, evaluated in server time. */
+  cron: string;
+}
+
+export interface AppConfigBuiltinTasks {
+  dailyTriage: AppConfigBuiltinTaskSettings;
+  sessionReview: AppConfigBuiltinTaskSettings;
+}
+
+export interface AppConfigSessionReview {
+  lookbackHours: number;
+  /** Task runs at or over this duration are flagged. */
+  longRunMs: number;
+  /** Sessions with at least this many messages are flagged. */
+  longSessionMessages: number;
+  /** Sessions whose summed AIRequest cost meets this are flagged. */
+  sessionCostUsd: number;
+}
+
 export interface AppConfigApiKeys {
   braveSearch: string;
   exa: string;
@@ -92,6 +113,44 @@ export interface AppConfigPrWatch {
   reposBaseDir: string;
   botResponseModel: string;
   prompts: AppConfigPrWatchPrompts;
+}
+
+/**
+ * One git-backed infrastructure repo the Infra Bot is allowed to modify.
+ * The set of these repos IS the blast radius — anything not listed is refused.
+ */
+export interface AppConfigInfraRepo {
+  /** Short handle used in tool calls (e.g. "docker-stacks"). */
+  name: string;
+  /** Clone URL. For github.com hosts the API token is injected at runtime. */
+  gitUrl: string;
+  /** GitHub owner/org, used to open the pull request. */
+  owner: string;
+  /** GitHub repo name, used to open the pull request. */
+  repo: string;
+  /** Branch GitOps deploys from. The bot branches off it but never pushes to it. */
+  deployBranch: string;
+  /** What this repo controls, shown to the agent when it lists repos. */
+  description: string;
+}
+
+export interface AppConfigInfraBot {
+  enabled: boolean;
+  /** Group that may use the infra-bot capability / receives its notifications. */
+  groupId: string;
+  /** Isolated working dir where managed repos are cloned. The bot only ever
+   * touches git here — it never reaches the running services. */
+  reposBaseDir: string;
+  /** Git identity for commits the bot authors. */
+  gitUserName: string;
+  gitUserEmail: string;
+  /** How often (ms) the InfraWatcher polls open infra PRs for status changes. */
+  watchPollIntervalMs: number;
+  /** Every feature branch the bot creates lives under this prefix. It can only
+   * push branches under this prefix — never a repo's deploy branch. */
+  branchPrefix: string;
+  /** Allowlist of repos the bot may modify. This list is the blast radius. */
+  repos: AppConfigInfraRepo[];
 }
 
 export interface AppConfigIMessage {
@@ -188,10 +247,13 @@ export interface AppConfigFields {
   memory: AppConfigMemory;
   taskWorker: AppConfigTaskWorker;
   scheduler: AppConfigScheduler;
+  builtinTasks: AppConfigBuiltinTasks;
+  sessionReview: AppConfigSessionReview;
   apiKeys: AppConfigApiKeys;
   models: AppConfigModels;
   mcpMedia: AppConfigMcpMedia;
   prWatch: AppConfigPrWatch;
+  infraBot: AppConfigInfraBot;
   imessage: AppConfigIMessage;
   triviaMonitor: AppConfigTriviaMonitor;
   triviaStats: AppConfigTriviaStats;

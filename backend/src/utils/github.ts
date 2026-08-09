@@ -19,6 +19,8 @@ export interface GitHubPRDetails {
   hasConflicts: boolean;
   isDraft: boolean;
   headSha: string;
+  state: "open" | "closed";
+  merged: boolean;
 }
 
 export interface GitHubReview {
@@ -113,6 +115,8 @@ export class GitHubClient {
           hasConflicts: result.data.mergeable_state === "dirty",
           isDraft: result.data.draft || false,
           headSha: result.data.head.sha,
+          state: result.data.state as "open" | "closed",
+          merged: result.data.merged || false,
         },
         etag,
         notModified: false,
@@ -166,6 +170,29 @@ export class GitHubClient {
     } catch (err) {
       logger.error(`Failed to fetch check runs for ${owner}/${repo}@${ref}: ${err}`);
       return [];
+    }
+  }
+
+  /**
+   * Open a pull request from `head` into `base`. The infra bot uses this to put
+   * a proposed change in front of a human — it never merges. Returns the new PR
+   * number and URL, or null on failure (e.g. a PR already exists for the branch).
+   */
+  async createPullRequest(params: {
+    owner: string;
+    repo: string;
+    head: string;
+    base: string;
+    title: string;
+    body: string;
+  }): Promise<{prNumber: number; url: string} | null> {
+    const {owner, repo, head, base, title, body} = params;
+    try {
+      const result = await this.octokit.pulls.create({owner, repo, head, base, title, body});
+      return {prNumber: result.data.number, url: result.data.html_url};
+    } catch (err) {
+      logger.error(`Failed to open PR ${owner}/${repo} ${head}->${base}: ${err}`);
+      return null;
     }
   }
 

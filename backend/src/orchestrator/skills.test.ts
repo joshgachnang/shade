@@ -6,9 +6,8 @@ import {getSkillPath, isValidSkillName, listSkills, loadSkill, saveSkill} from "
 const tmpDir = path.join(process.cwd(), `tmp-test-skills-${Date.now()}`);
 
 // Override paths.skills for testing
-import {paths} from "../config";
+import {clearPathOverride, paths} from "../config";
 
-const originalSkillsPath = paths.skills;
 const MAX_CHARS = 8000;
 
 beforeEach(async () => {
@@ -17,7 +16,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  paths.skills = originalSkillsPath;
+  clearPathOverride("skills");
   await fs.rm(tmpDir, {recursive: true, force: true});
 });
 

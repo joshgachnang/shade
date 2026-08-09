@@ -136,6 +136,30 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       useTaskBoard: {type: Boolean, default: false},
     },
 
+    // Builtin proactive loops (seeded skills + their scheduled tasks). On boot
+    // ensureBuiltinScheduledTasks() upserts one cron ScheduledTask per entry
+    // against the main group: enabled=true keeps it active and in sync with
+    // `cron`; enabled=false pauses it. Cron expressions run in server time.
+    builtinTasks: {
+      dailyTriage: {
+        enabled: {type: Boolean, default: false},
+        cron: {type: String, default: "30 6 * * *"},
+      },
+      sessionReview: {
+        enabled: {type: Boolean, default: false},
+        cron: {type: String, default: "0 8 * * *"},
+      },
+    },
+
+    // Thresholds for the review_sessions MCP tool (driven by the builtin
+    // session-review skill). Runs/sessions at or over a threshold are flagged.
+    sessionReview: {
+      lookbackHours: {type: Number, default: 24},
+      longRunMs: {type: Number, default: 10 * 60 * 1000},
+      longSessionMessages: {type: Number, default: 40},
+      sessionCostUsd: {type: Number, default: 5},
+    },
+
     apiKeys: {
       braveSearch: {type: String, default: ""},
       exa: {type: String, default: ""},
@@ -210,6 +234,41 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
         checkWatcher: {type: String, default: ""},
         // System prompt for generating replies to bot review comments.
         botReviewSystem: {type: String, default: ""},
+      },
+    },
+
+    // Infra Bot (GitOps-behind-PR-review). Lets the agent propose changes to
+    // git-backed infrastructure repos (docker compose stacks, Home Assistant
+    // config, etc.) on feature branches and open a pull request — but never
+    // merge or deploy. A human reviews and merges the PR; GitOps takes over
+    // from there. The `repos` allowlist is the blast radius: the bot can only
+    // touch what is listed, and only ever via git in `reposBaseDir` — it never
+    // reaches the running services.
+    infraBot: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      reposBaseDir: {type: String, default: "data/infra-repos"},
+      gitUserName: {type: String, default: "Shade Infra Bot"},
+      gitUserEmail: {type: String, default: "infra-bot@shade.local"},
+      // How often the InfraWatcher polls open infra PRs for review/CI/merge
+      // changes to report back to the group.
+      watchPollIntervalMs: {type: Number, default: 300000},
+      // Every feature branch the bot creates lives under this prefix, and it is
+      // only ever allowed to push branches under it — never a deploy branch.
+      branchPrefix: {type: String, default: "infra-bot/"},
+      repos: {
+        type: [
+          {
+            _id: false,
+            name: {type: String, default: ""},
+            gitUrl: {type: String, default: ""},
+            owner: {type: String, default: ""},
+            repo: {type: String, default: ""},
+            deployBranch: {type: String, default: "main"},
+            description: {type: String, default: ""},
+          },
+        ],
+        default: [],
       },
     },
 

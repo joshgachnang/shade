@@ -14,6 +14,7 @@ export * from "./featureTypes";
 export * from "./frameAnalysisTypes";
 export * from "./frameTypes";
 export * from "./groupTypes";
+export * from "./infraChangeTypes";
 export * from "./llmFixtureTypes";
 export * from "./messageTypes";
 export * from "./movieTypes";

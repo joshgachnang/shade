@@ -14,6 +14,7 @@ import {
   Frame,
   FrameAnalysis,
   Group,
+  InfraChange,
   Message,
   Movie,
   Plugin,
@@ -218,6 +219,22 @@ export const adminModelConfigs: AdminModelConfig[] = [
     displayName: "PR Watches",
     listFields: ["repo", "prNumber", "title", "status", "reviewDecision", "lastChangedAt"],
     defaultSort: "-lastChangedAt",
+  },
+  // --- Infra bot ---
+  {
+    model: InfraChange,
+    routePath: "/infra-changes",
+    displayName: "Infra Changes",
+    listFields: [
+      "repoName",
+      "prNumber",
+      "title",
+      "status",
+      "reviewDecision",
+      "ciPassing",
+      "updated",
+    ],
+    defaultSort: "-created",
   },
   // --- Trivia (separate MongoDB connection; read-only in practice) ---
   {
