@@ -3,6 +3,7 @@ import {AdminApp} from "@terreno/admin-backend";
 import {checkModelsStrict, logger, TerrenoApp} from "@terreno/api";
 import {adminScripts} from "./admin";
 import {adminModelConfigs} from "./adminConfig";
+import {AppleActionsPlugin} from "./api/appleActions";
 import {AppleCalendarPlugin} from "./api/appleCalendar";
 import {AppleContactsPlugin} from "./api/appleContacts";
 import {CommandPlugin} from "./api/command";
@@ -101,6 +102,7 @@ export const start = async (skipListen = false) => {
     .register(new MovieActionsPlugin())
     .register(new SearchPlugin())
     .register(new AppleCalendarPlugin())
+    .register(new AppleActionsPlugin())
     .register(new AppleContactsPlugin())
     .register(new TriviaMonitorPlugin())
     .register(new NotificationsPlugin())

@@ -20,15 +20,18 @@ import {EdgeAgent} from "../models/edgeAgent";
 import {EdgeAgentEvent} from "../models/edgeAgentEvent";
 import {Group} from "../models/group";
 import {Message} from "../models/message";
+import {getOrchestrator} from "../orchestrator";
 import type {EdgeAgentDocument} from "../types";
 
+// Agents authenticate with the X-Agent-Token header (matching X-Bootstrap-Secret
+// on register), NOT Authorization: Bearer — the global decodeJWTMiddleware 401s
+// any Bearer value that isn't a valid JWT before routes ever see the request.
 const validateAgentToken = async (req: express.Request): Promise<EdgeAgentDocument> => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new APIError({status: 401, title: "Missing or invalid Authorization header"});
+  const token = req.headers["x-agent-token"];
+  if (!token || typeof token !== "string") {
+    throw new APIError({status: 401, title: "Missing X-Agent-Token header"});
   }
 
-  const token = authHeader.slice(7);
   const tokenHash = hashToken(token);
 
   const agent = await EdgeAgent.findOne({authTokenHash: tokenHash});
@@ -115,9 +118,14 @@ export class EdgePlugin implements TerrenoPlugin {
           }
         }
 
-        // Atomically deliver and clear pending commands
+        // Atomically deliver and clear pending commands. A live heartbeat
+        // recovers offline/error agents (the health monitor sets those on
+        // stale heartbeats); only pending/rejected stay as-is.
         const newStatus =
-          agent.status === "approved" || agent.status === "online" || agent.status === "offline"
+          agent.status === "approved" ||
+          agent.status === "online" ||
+          agent.status === "offline" ||
+          agent.status === "error"
             ? "online"
             : agent.status;
 
@@ -131,6 +139,9 @@ export class EdgePlugin implements TerrenoPlugin {
               ...(body.platform && {platform: body.platform}),
               ...(body.arch && {arch: body.arch}),
               ...(body.version && {version: body.version}),
+              // Upgrades can add capabilities; refresh from the live agent so
+              // capability-gated commands don't require re-registration.
+              ...(body.capabilities?.length && {capabilities: body.capabilities}),
               ...(body.hostname && {hostname: body.hostname}),
               ...(body.commandResults.length > 0 && {lastCommandResults: body.commandResults}),
             },
@@ -244,6 +255,11 @@ export class EdgePlugin implements TerrenoPlugin {
                 isMain: false,
               });
 
+              // Register with the live orchestrator — the message loop only
+              // sees groups in the channel manager's cache, so without this
+              // the new chat would be dead until the next restart.
+              getOrchestrator()?.channelManager.registerGroup(newGroup);
+
               await Message.create({
                 groupId: newGroup._id,
                 channelId,
@@ -295,7 +311,7 @@ export class EdgePlugin implements TerrenoPlugin {
 
           // Create a default Group for this channel
           const externalId = `edge-${agent.agentType}-${agent._id}`;
-          await Group.create({
+          const defaultGroup = await Group.create({
             name: `${body.payload.name} — Default`,
             folder: `edge/${agent.agentType}/default`,
             channelId: channel._id,
@@ -304,6 +320,18 @@ export class EdgePlugin implements TerrenoPlugin {
             requiresTrigger: false,
             isMain: true,
           });
+
+          // Connect the channel and cache the group in the live orchestrator
+          // so inbound/outbound work without a restart.
+          const orchestrator = getOrchestrator();
+          if (orchestrator) {
+            orchestrator.channelManager.registerGroup(defaultGroup);
+            try {
+              await orchestrator.channelManager.connectChannel(channel);
+            } catch (err) {
+              logger.error(`Failed to connect edge channel "${channel.name}": ${err}`);
+            }
+          }
 
           // Link the channel to the agent
           await EdgeAgent.findByIdAndUpdate(agent._id, {$set: {channelId: channel._id}});

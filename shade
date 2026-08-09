@@ -24,37 +24,27 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUN_PATH="$(command -v bun)"
 
 # --- Service Registry ---
-# To add a service: add its name to ALL_SERVICES and entries to the two lookup functions.
-ALL_SERVICES="backend worker"
+# Every service runs the SAME compiled executable (dist/shade, a bun
+# single-file executable built from backend/src/index.ts); SHADE_SERVICE
+# selects what the process does.
+# To add a service: add its name here and a case to backend/src/index.ts.
+ALL_SERVICES="backend worker imessage"
+# imessage is opt-in (needs SHADE_URL/SHADE_BOOTSTRAP_SECRET config and macOS
+# Full Disk Access); plain `shade deploy` installs backend + worker.
+DEFAULT_SERVICES="backend worker"
+BUNDLE_ENTRY="backend/src/index.ts"
 
-service_entry() {
-  case "$1" in
-    backend) echo "backend/src/index.ts" ;;
-    worker)  echo "packages/shade-worker/src/index.ts" ;;
-    *)       echo "" ;;
+is_service() {
+  case " $ALL_SERVICES " in
+    *" $1 "*) return 0 ;;
+    *)        return 1 ;;
   esac
 }
 
 service_after() {
   case "$1" in
-    worker) echo "shade-backend" ;;
-    *)      echo "" ;;
-  esac
-}
-
-# Packages that fail to bundle (CJS interop issues) and must resolve from node_modules at runtime
-service_externals() {
-  case "$1" in
-    backend) echo "passport-local-mongoose @anthropic-ai/claude-agent-sdk" ;;
-    *)       echo "" ;;
-  esac
-}
-
-# Directory containing node_modules for external resolution (workspace that owns the deps)
-service_node_modules() {
-  case "$1" in
-    backend) echo "backend/node_modules" ;;
-    *)       echo "" ;;
+    worker|imessage) echo "shade-backend" ;;
+    *)               echo "" ;;
   esac
 }
 
@@ -70,24 +60,34 @@ detect_platform() {
 PLATFORM="$(detect_platform)"
 
 # --- Directory Defaults ---
+# SHADE_HOME is the stable install root: services run $SHADE_HOME/dist/shade,
+# so CI can swap the executable and kickstart without regenerating plists/units.
+# Override with the SHADE_HOME env var (e.g. /opt/shade on provisioned servers).
 if [[ "$PLATFORM" == "macos" ]]; then
-  DEFAULT_DATA_DIR="$HOME/Library/Application Support/Shade/data"
+  SHADE_HOME="${SHADE_HOME:-$HOME/Library/Application Support/Shade}"
   LOG_DIR="$HOME/Library/Logs/Shade"
   LAUNCHAGENT_DIR="$HOME/Library/LaunchAgents"
 else
-  DEFAULT_DATA_DIR="$HOME/.local/share/shade/data"
+  SHADE_HOME="${SHADE_HOME:-$HOME/.local/share/shade}"
   LOG_DIR=""  # systemd uses journal
   SYSTEMD_DIR="$HOME/.config/systemd/user"
 fi
 
+DEFAULT_DATA_DIR="$SHADE_HOME/data"
 CONFIG_DIR="$HOME/.config/shade"
 
 # --- Helpers ---
 resolve_services() {
   if [[ $# -gt 0 ]]; then
+    for name in "$@"; do
+      if ! is_service "$name"; then
+        echo "Unknown service: $name (available: $ALL_SERVICES)" >&2
+        exit 1
+      fi
+    done
     echo "$@"
   else
-    echo "$ALL_SERVICES"
+    echo "$DEFAULT_SERVICES"
   fi
 }
 
@@ -127,6 +127,21 @@ ensure_config() {
     sed -i.bak "s|^SHADE_DATA_DIR=$|SHADE_DATA_DIR=${DEFAULT_DATA_DIR}|" "$env_file" && rm -f "${env_file}.bak"
     echo "  Set SHADE_DATA_DIR=$DEFAULT_DATA_DIR"
   fi
+
+  # SHADE_BOOTSTRAP_SECRET is shared between the backend (edge registration
+  # endpoint) and edge agents like imessage — reuse the backend's value.
+  if grep -q '^SHADE_BOOTSTRAP_SECRET=$' "$env_file" 2>/dev/null; then
+    local backend_env="$CONFIG_DIR/shade-backend.env"
+    local secret=""
+    if [[ "$name" != "backend" && -f "$backend_env" ]]; then
+      secret="$(grep '^SHADE_BOOTSTRAP_SECRET=' "$backend_env" | cut -d= -f2- || true)"
+    fi
+    if [[ -z "$secret" ]]; then
+      secret="$(openssl rand -hex 32)"
+    fi
+    sed -i.bak "s/^SHADE_BOOTSTRAP_SECRET=$/SHADE_BOOTSTRAP_SECRET=${secret}/" "$env_file" && rm -f "${env_file}.bak"
+    echo "  Set SHADE_BOOTSTRAP_SECRET"
+  fi
 }
 
 ensure_data_dirs() {
@@ -145,42 +160,34 @@ ensure_data_dirs() {
   echo "  Data directories: $data_dir"
 }
 
+# --- Signing (macOS) ---
+# Sign with the stable "Shade Code Signing" identity when present. macOS TCC
+# ties permission grants (e.g. Full Disk Access for the imessage service) to
+# the binary's code signature; ad-hoc signatures change every build, so
+# without a stable identity every deploy silently revokes those grants.
+SIGNING_IDENTITY="Shade Code Signing"
+
+sign_binary() {
+  local bin="$1"
+  if [[ "$PLATFORM" != "macos" ]]; then
+    return 0
+  fi
+  if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGNING_IDENTITY"; then
+    codesign -f -s "$SIGNING_IDENTITY" --identifier io.nang.shade --timestamp=none "$bin"
+    echo "  Signed: $bin ($SIGNING_IDENTITY)"
+  else
+    echo "  NOTE: no '$SIGNING_IDENTITY' identity found — leaving ad-hoc signature (TCC grants will not survive updates)"
+  fi
+}
+
 # --- Build ---
+# One self-contained bundle for every service — no externals, no node_modules.
 cmd_build() {
-  local names
-  names="$(resolve_services "$@")"
-
   mkdir -p "$PROJECT_DIR/dist"
-
-  for name in $names; do
-    local entry
-    entry="$(service_entry "$name")"
-    if [[ -z "$entry" ]]; then
-      echo "Unknown service: $name" >&2
-      exit 1
-    fi
-
-    # Build external flags from service_externals
-    local ext_flags=""
-    local externals
-    externals="$(service_externals "$name")"
-    for ext in $externals; do
-      ext_flags="$ext_flags --external $ext"
-    done
-
-    echo "Building shade-${name}..."
-    # shellcheck disable=SC2086
-    (cd "$PROJECT_DIR" && bun build "$entry" --outfile "dist/shade-${name}.js" --target bun $ext_flags)
-
-    # Symlink node_modules into dist/ for external package resolution
-    local nm
-    nm="$(service_node_modules "$name")"
-    if [[ -n "$nm" && -d "$PROJECT_DIR/$nm" && ! -e "$PROJECT_DIR/dist/node_modules" ]]; then
-      ln -sf "../$nm" "$PROJECT_DIR/dist/node_modules"
-    fi
-
-    echo "  Built: dist/shade-${name}.js"
-  done
+  echo "Building shade executable..."
+  (cd "$PROJECT_DIR" && bun build "$BUNDLE_ENTRY" --compile --outfile "dist/shade")
+  sign_binary "$PROJECT_DIR/dist/shade"
+  echo "  Built: dist/shade"
 }
 
 # --- Install (generate service definitions) ---
@@ -206,9 +213,13 @@ install_launchd() {
     done < "$env_file"
   fi
 
+  # SHADE_SERVICE selects which service this process runs from the shared bundle
+  env_xml="${env_xml}      <key>SHADE_SERVICE</key>
+      <string>${name}</string>
+"
   # Add PATH so spawned processes (claude, etc.) can be found
   env_xml="${env_xml}      <key>PATH</key>
-      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin:${HOME}/.bun/bin</string>"
+      <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/bin:${HOME}/.local/bin:${HOME}/.bun/bin</string>"
 
   cat > "$plist_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -221,13 +232,11 @@ install_launchd() {
 
   <key>ProgramArguments</key>
   <array>
-    <string>${BUN_PATH}</string>
-    <string>run</string>
-    <string>${PROJECT_DIR}/dist/shade-${name}.js</string>
+    <string>${SHADE_HOME}/dist/shade</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>${PROJECT_DIR}</string>
+  <string>${SHADE_HOME}</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -282,9 +291,10 @@ ${after_clause}
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bun run ${PROJECT_DIR}/dist/shade-${name}.js
+ExecStart=${SHADE_HOME}/dist/shade
+Environment=SHADE_SERVICE=${name}
 EnvironmentFile=${env_file}
-WorkingDirectory=${PROJECT_DIR}
+WorkingDirectory=${SHADE_HOME}
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -300,6 +310,22 @@ EOF
 cmd_install() {
   local names
   names="$(resolve_services "$@")"
+
+  # Stage the executable at its stable run location ($SHADE_HOME/dist/shade)
+  # so deploys can swap the file without touching plists/units. Copy + rename
+  # (never cp over the existing file): macOS validates code signatures
+  # per-inode, and overwriting an exec'd binary in place gets new processes
+  # SIGKILLed with "Taskgated Invalid Signature".
+  mkdir -p "$SHADE_HOME/dist"
+  if [[ -f "$PROJECT_DIR/dist/shade" ]]; then
+    cp "$PROJECT_DIR/dist/shade" "$SHADE_HOME/dist/shade.new"
+    chmod +x "$SHADE_HOME/dist/shade.new"
+    sign_binary "$SHADE_HOME/dist/shade.new"
+    mv "$SHADE_HOME/dist/shade.new" "$SHADE_HOME/dist/shade"
+    echo "Staged executable: $SHADE_HOME/dist/shade"
+  else
+    echo "WARNING: $PROJECT_DIR/dist/shade not found — run 'shade build' first" >&2
+  fi
 
   for name in $names; do
     echo "Installing shade-${name}..."
@@ -357,6 +383,53 @@ cmd_restart() {
   cmd_stop "$@"
   cmd_install "$@"
   cmd_start "$@"
+}
+
+# --- Update (swap executable + restart, used by CI deploys) ---
+# Replaces $SHADE_HOME/dist/shade with the given file and restarts every
+# installed service (or just the named ones). Does not regenerate plists/units.
+cmd_update() {
+  local bundle="${1:-}"
+  shift || true
+
+  if [[ -z "$bundle" || ! -f "$bundle" ]]; then
+    echo "Usage: shade update <path-to-shade-executable> [service...]" >&2
+    exit 1
+  fi
+
+  mkdir -p "$SHADE_HOME/dist"
+  cp "$bundle" "$SHADE_HOME/dist/shade.new"
+  chmod +x "$SHADE_HOME/dist/shade.new"
+  sign_binary "$SHADE_HOME/dist/shade.new"
+  mv "$SHADE_HOME/dist/shade.new" "$SHADE_HOME/dist/shade"
+  echo "Updated executable: $SHADE_HOME/dist/shade"
+
+  local names
+  if [[ $# -gt 0 ]]; then
+    names="$(resolve_services "$@")"
+  else
+    names="$ALL_SERVICES"  # not-installed services are skipped below
+  fi
+
+  for name in $names; do
+    if [[ "$PLATFORM" == "macos" ]]; then
+      if [[ -f "$LAUNCHAGENT_DIR/com.shade.${name}.plist" ]]; then
+        echo "Restarting shade-${name}..."
+        launchctl kickstart -k "gui/$(id -u)/com.shade.${name}" \
+          || echo "  Warning: kickstart failed for shade-${name} (loaded?)"
+      else
+        echo "Skipping shade-${name} (not installed)"
+      fi
+    else
+      if [[ -f "$SYSTEMD_DIR/shade-${name}.service" ]]; then
+        echo "Restarting shade-${name}..."
+        systemctl --user restart "shade-${name}" \
+          || echo "  Warning: restart failed for shade-${name}"
+      else
+        echo "Skipping shade-${name} (not installed)"
+      fi
+    fi
+  done
 }
 
 # --- Status ---
@@ -436,7 +509,7 @@ cmd_deploy() {
   echo "Project: $PROJECT_DIR"
   echo ""
 
-  cmd_build "$@"
+  cmd_build
   echo ""
   cmd_install "$@"
   echo ""
@@ -452,7 +525,7 @@ cmd_deploy() {
   echo "  shade stop [service]    Stop services"
   echo ""
   echo "Config: $CONFIG_DIR/"
-  echo "Binaries: $PROJECT_DIR/dist/"
+  echo "Executable: $SHADE_HOME/dist/shade"
   if [[ "$PLATFORM" == "macos" ]]; then
     echo "Logs: $LOG_DIR/"
   else
@@ -485,59 +558,6 @@ git reset --hard origin/master
   for name in $names; do
     echo "Restarting shade-${name}..."
     ssh "$host" "sudo systemctl restart shade-${name}" || echo "  Warning: restart failed for shade-${name}"
-  done
-
-  echo ""
-  echo "=== Remote deploy complete ==="
-  echo "Check: ssh $host 'sudo systemctl status shade-backend'"
-  echo "Logs:  ssh $host 'sudo journalctl -u shade-backend -f'"
-}
-
-# --- Remote Deploy: binary-based (legacy, not currently used) ---
-# Cross-compiles a bun binary for linux-x64 and rsyncs it to /opt/shade/shade-${name}.
-# Preserved for future use if the systemd unit is ever switched to ExecStart=/opt/shade/shade-backend.
-# Note: bun --compile externals don't resolve from cwd at runtime — passport-local-mongoose
-# and @anthropic-ai/claude-agent-sdk fail to load from the binary's virtual FS. Resolve that
-# before flipping the unit. See deploy/shade-backend.service for the binary-mode unit template.
-cmd_remote_deploy_binary() {
-  local host="${1:-}"
-  shift || true
-  local names
-  names="$(resolve_services "$@")"
-
-  if [[ -z "$host" ]]; then
-    echo "Usage: shade remote-deploy-binary <host> [service...]" >&2
-    exit 1
-  fi
-
-  echo "=== Remote Deploy to $host (binary-based, legacy) ==="
-
-  mkdir -p "$PROJECT_DIR/dist"
-  for name in $names; do
-    local entry
-    entry="$(service_entry "$name")"
-    if [[ -z "$entry" ]]; then
-      echo "Unknown service: $name" >&2
-      exit 1
-    fi
-
-    local ext_flags=""
-    local externals
-    externals="$(service_externals "$name")"
-    for ext in $externals; do
-      ext_flags="$ext_flags --external $ext"
-    done
-
-    echo "Building shade-${name} for Linux..."
-    # shellcheck disable=SC2086
-    (cd "$PROJECT_DIR" && bun build "$entry" --compile --target=bun-linux-x64 --outfile "dist/shade-${name}-linux" $ext_flags)
-    echo "  Built: dist/shade-${name}-linux"
-
-    echo "Uploading to $host..."
-    rsync -avz --progress "$PROJECT_DIR/dist/shade-${name}-linux" "$host:/opt/shade/shade-${name}"
-
-    echo "Restarting shade-${name} on $host..."
-    ssh "$host" "sudo systemctl restart shade-${name}" || echo "  Warning: restart failed (service may not be installed yet)"
   done
 
   echo ""
@@ -664,16 +684,16 @@ shift || true
 
 case "$COMMAND" in
   deploy)            cmd_deploy "$@" ;;
-  build)             cmd_build "$@" ;;
+  build)             cmd_build ;;
   install)           cmd_install "$@" ;;
   start)             cmd_start "$@" ;;
   stop)              cmd_stop "$@" ;;
   restart)           cmd_restart "$@" ;;
+  update)            cmd_update "$@" ;;
   status)            cmd_status "$@" ;;
   logs)              cmd_logs "$@" ;;
   uninstall)         cmd_uninstall "$@" ;;
   remote-deploy)        cmd_remote_deploy "$@" ;;
-  remote-deploy-binary) cmd_remote_deploy_binary "$@" ;;
   remote-setup)         cmd_remote_setup "$@" ;;
   search)            cmd_search "$@" ;;
   scrape-scores)     cmd_scrape_scores "$@" ;;
@@ -684,12 +704,12 @@ case "$COMMAND" in
     echo "Usage: shade <command> [service...]"
     echo ""
     echo "Local:   deploy, build, install, start, stop, restart, status, logs, uninstall"
+    echo "         update <path-to-shade-executable> [service...]  (swap + restart; used by CI)"
     echo "Movie:   search <query> [--type objects|characters|text|tags]"
     echo "Trivia:  scrape-scores, scrape-scores-loop, scrape-vault, trivia-answer"
     echo "Remote:  remote-setup <host>, remote-deploy <host> [service...] (source-based)"
-    echo "         remote-deploy-binary <host> [service...] (binary-based, legacy)"
     echo ""
-    echo "Services: $ALL_SERVICES"
+    echo "Services: $ALL_SERVICES (default: $DEFAULT_SERVICES; all run dist/shade via SHADE_SERVICE)"
     exit 1
     ;;
 esac

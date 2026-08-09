@@ -117,6 +117,10 @@ export const appendToTranscript = async (
 ): Promise<void> => {
   try {
     const line = `${JSON.stringify({...entry, timestamp: new Date().toISOString()})}\n`;
+    // Resumed sessions carry a transcriptPath whose directory may no longer
+    // exist (data dir moved between deploys) — recreate it rather than lose
+    // the transcript.
+    await fs.mkdir(path.dirname(transcriptPath), {recursive: true});
     await fs.appendFile(transcriptPath, line, "utf-8");
     logger.debug(`Transcript appended: ${transcriptPath} (${line.length} chars)`);
   } catch (err) {

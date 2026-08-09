@@ -38,32 +38,28 @@ Implementation plans are tracked in `docs/implementationPlans/`. Each IP has a d
 | **Deferred** | Postponed (low priority or blocked) |
 | **Closed** | Won't implement (superseded or not needed) |
 
-### Slash Commands
+### Workflow Skills (coffee pipeline)
 
-| Command | Purpose |
-|---------|---------|
-| `/ip` | Full IP workflow (ingest -> research -> shape -> plan -> generate) |
-| `/ip:init` | Set up IP tracking in current project |
-| `/ip:ingest` | Ingest a PRD |
-| `/ip:shape` | Shape & question -- narrow scope, surface risks |
-| `/ip:plan` | Walk through plan sections interactively |
-| `/ip:generate` | Generate final plan + task list |
-| `/ip:explore` | Explore project -- overview, IP history, recent activity |
-| `/ip:deep` | Deep parallel analysis -- 4 agents explore from different angles |
-| `/ip:status` | Show active IPs with status and grooming |
-| `/ip:verify` | Post-implementation: commit, proofread, verify |
-| `/ip:attack` | Adversarial review -- OpenAI Codex red-teams the plan |
-| `/ip:close` | Complete/close an IP, archive file, update index |
+The `/ip` skill family is retired; planning and delivery run through these project skills (`.claude/skills/`):
+
+| Skill | Purpose |
+|-------|---------|
+| `/blend` | Turn a feature request/spec into an IP. **Use this whenever the user asks for a new feature.** Simple, unambiguous requests skip all confirmation pauses and go straight to a plan (with stated assumptions); in-depth or ambiguous ones get the full research → blocking-questions → shape flow. Also owns lifecycle ops (init/explore/status/close). |
+| `/roast` | Implement an approved IP via strict TDD. Always starts by creating a dedicated git worktree for the PR and running `bun bootstrap` at its root. |
+| `/pour` | Commit, push, open the draft PR, then hand off to dialin. |
+| `/dialin` | Reactive PR loop: watch/fix CI and review comments until mergeable (15 min window). |
+| `/cupping` | Independent verification of a finished implementation against the IP, with evidence. |
 
 ### Conventions
 
 - **IP files**: `docs/implementationPlans/{Title-Case-Name}.md` (e.g. `Zoom-Integration-Mvp.md`)
 - **Template**: `docs/implementationPlans/IP_TEMPLATE.md`
-- **Task files**: `docs/tasks/{feature-name}.md` (created by `/ip:generate`)
+- **Task files**: `docs/tasks/{feature-name}.md` (created by `/blend`)
 - **Commit format**: `IP-XXX: Brief description`
 - **Numbering**: Next number = highest across all index sections + 1
 - **Source of truth**: IP file status > index (if discrepancy, file wins)
 - **Archive**: Completed IPs move to `docs/implementationPlans/archive/`
+- **Environment setup**: every project supports `bun bootstrap` at the repo root — run it in any fresh clone or worktree before working.
 
 ## Skills
 

@@ -8,6 +8,7 @@ import type {
   PlainTextElement,
   SectionBlock,
 } from "@slack/types";
+import {markdownToMrkdwn} from "../../mrkdwn";
 import {mapStaticUrl} from "../mapbox";
 import type {Action, Card, RichResponse} from "../schema";
 import {
@@ -70,7 +71,10 @@ const actionsBlock = (actions: Action[]): Block => {
 };
 
 const renderTextCard = (card: Extract<Card, {kind: "text"}>): KnownBlock[] => {
-  const blocks: KnownBlock[] = [{type: "section", text: mrkdwn(card.markdown)} as SectionBlock];
+  // Card markdown is standard Markdown from the model; Slack blocks want mrkdwn.
+  const blocks: KnownBlock[] = [
+    {type: "section", text: mrkdwn(markdownToMrkdwn(card.markdown))} as SectionBlock,
+  ];
   if (card.actions?.length) blocks.push(actionsBlock(card.actions) as KnownBlock);
   return blocks;
 };

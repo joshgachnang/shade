@@ -2,6 +2,7 @@ import {App, LogLevel} from "@slack/bolt";
 import type {GenericMessageEvent, KnownBlock} from "@slack/types";
 import {logger} from "@terreno/api";
 import {logError} from "../errors";
+import {markdownToMrkdwn} from "../mrkdwn";
 import {SHADE_CORR_PLACEHOLDER, SHADE_GROUP_PLACEHOLDER} from "../responses/renderers/types";
 import {BaseChannelConnector} from "./baseConnector";
 import type {ChannelHealth, ConnectorFactory, RichSendOpts} from "./types";
@@ -364,7 +365,7 @@ export class SlackChannelConnector extends BaseChannelConnector {
     await this.app.client.chat.postMessage({
       token: config.botToken,
       channel: groupExternalId,
-      text: content,
+      text: markdownToMrkdwn(content),
     });
 
     logger.debug(`Message sent to ${groupExternalId} via "${this.channelDoc.name}"`);
@@ -383,7 +384,7 @@ export class SlackChannelConnector extends BaseChannelConnector {
     const result = await this.app.client.chat.postMessage({
       token: config.botToken,
       channel: groupExternalId,
-      text: content,
+      text: markdownToMrkdwn(content),
     });
 
     return result.ts || "";
@@ -463,7 +464,7 @@ export class SlackChannelConnector extends BaseChannelConnector {
         token: config.botToken,
         channel: groupExternalId,
         ts: messageTs,
-        text: content,
+        text: markdownToMrkdwn(content),
       });
     } catch (err) {
       logger.debug(`Could not update message: ${err}`);

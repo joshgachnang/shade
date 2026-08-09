@@ -139,8 +139,15 @@ if (!target) {
   }
 }
 
-const startMs = new Date(args.startDate).getTime();
-const endMs = new Date(args.endDate).getTime();
+// Bare dates ("2026-07-20", the natural form for all-day events) parse as UTC
+// midnight, which is the previous local day west of Greenwich. Append a
+// local-midnight time so the event lands on the day the user named.
+const asLocalMs = (value) => {
+  const dateOnly = /^\\d{4}-\\d{2}-\\d{2}$/.test(value);
+  return new Date(dateOnly ? value + "T00:00:00" : value).getTime();
+};
+const startMs = asLocalMs(args.startDate);
+const endMs = asLocalMs(args.endDate);
 if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
   throw new Error("Invalid startDate/endDate");
 }

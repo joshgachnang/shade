@@ -5,7 +5,13 @@ const escapeAppleScript = (str: string): string => {
   return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 };
 
-export const sendIMessage = (to: string, text: string): void => {
+export type MessageService = "iMessage" | "SMS";
+
+export const sendIMessage = (
+  to: string,
+  text: string,
+  service: MessageService = "iMessage"
+): void => {
   const escapedContent = escapeAppleScript(text);
   const escapedTarget = escapeAppleScript(to);
 
@@ -18,7 +24,7 @@ export const sendIMessage = (to: string, text: string): void => {
   send "${escapedContent}" to targetChat
 end tell`
     : `tell application "Messages"
-  set targetService to 1st account whose service type = iMessage
+  set targetService to 1st account whose service type = ${service}
   set targetBuddy to participant "${escapedTarget}" of targetService
   send "${escapedContent}" to targetBuddy
 end tell`;
@@ -28,5 +34,5 @@ end tell`;
     stdio: "pipe",
   });
 
-  console.info(`iMessage sent to ${to}`);
+  console.info(`${service} sent to ${to}`);
 };

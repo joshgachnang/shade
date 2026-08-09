@@ -18,14 +18,22 @@ export interface HeartbeatLoopOptions {
   state: AgentState;
   intervalMs: number;
   version: string;
+  capabilities?: string[];
   onCommand: CommandHandler;
 }
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let pendingResults: CommandResult[] = [];
 let backoffMs = 0;
+let backoffUntil = 0;
 const MAX_BACKOFF_MS = 60_000;
 const startTime = Date.now();
+
+/** Reset backoff state (called on loop start; exported for tests). */
+export const resetHeartbeatBackoff = (): void => {
+  backoffMs = 0;
+  backoffUntil = 0;
+};
 
 const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
   const body: HeartbeatRequest = {
@@ -33,6 +41,7 @@ const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
     platform: os.platform(),
     arch: os.arch(),
     version: options.version,
+    capabilities: options.capabilities,
     hostname: os.hostname(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
     memoryUsage: process.memoryUsage().rss,
@@ -48,7 +57,7 @@ const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${options.state.token}`,
+        "X-Agent-Token": options.state.token,
       },
       body: JSON.stringify(body),
     });
@@ -58,7 +67,7 @@ const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
     }
 
     const data = (await response.json()) as HeartbeatResponse;
-    backoffMs = 0;
+    resetHeartbeatBackoff();
 
     // Process commands
     for (const cmd of data.commands) {
@@ -78,12 +87,31 @@ const sendHeartbeat = async (options: HeartbeatLoopOptions): Promise<void> => {
     // Re-queue unsent results
     pendingResults.push(...sentResults);
     backoffMs = Math.min(backoffMs === 0 ? 1000 : backoffMs * 2, MAX_BACKOFF_MS);
+    backoffUntil = Date.now() + backoffMs;
     console.error(`Heartbeat failed, retry in ${backoffMs}ms: ${err}`);
   }
 };
 
+/**
+ * One heartbeat attempt, honoring the failure backoff deadline. Skips (returns
+ * false) while the deadline is in the future; otherwise sends. The deadline is
+ * a timestamp — a bare "skip while backoffMs > 0" flag would never retry,
+ * since only a successful send clears the backoff.
+ */
+export const heartbeatTick = async (
+  options: HeartbeatLoopOptions,
+  now = Date.now()
+): Promise<boolean> => {
+  if (now < backoffUntil) {
+    return false; // Still backing off
+  }
+  await sendHeartbeat(options);
+  return true;
+};
+
 export const startHeartbeatLoop = (options: HeartbeatLoopOptions): void => {
   stopHeartbeatLoop();
+  resetHeartbeatBackoff();
 
   // Send immediately
   sendHeartbeat(options).catch((err) => {
@@ -91,11 +119,7 @@ export const startHeartbeatLoop = (options: HeartbeatLoopOptions): void => {
   });
 
   heartbeatTimer = setInterval(() => {
-    const delay = backoffMs > 0 ? backoffMs : 0;
-    if (delay > 0) {
-      return; // Skip this tick, wait for backoff
-    }
-    sendHeartbeat(options).catch((err) => {
+    heartbeatTick(options).catch((err) => {
       console.error(`Heartbeat error: ${err}`);
     });
   }, options.intervalMs);

@@ -48,6 +48,7 @@ export abstract class EdgeAgentBase {
       state: this.state,
       intervalMs: heartbeatInterval,
       version: this.options.version,
+      capabilities: this.options.capabilities,
       onCommand: async (cmd) => this.onCommand(cmd),
     });
 
@@ -78,7 +79,7 @@ export abstract class EdgeAgentBase {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.state.token}`,
+        "X-Agent-Token": this.state.token,
       },
       body: JSON.stringify(data),
     });
@@ -104,7 +105,7 @@ export abstract class EdgeAgentBase {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.state.token}`,
+        "X-Agent-Token": this.state.token,
       },
       body: JSON.stringify({
         type: "channel_request",

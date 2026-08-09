@@ -48,6 +48,8 @@ export interface IpcCreateFeature {
   channelId: string;
   name: string;
   description?: string;
+  /** The user's original feature request, verbatim — seeds the new channel so planning starts immediately. */
+  request?: string;
   senderExternalId: string;
 }
 

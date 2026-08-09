@@ -28,6 +28,14 @@ describe("appendToTranscript", () => {
     expect(parsed.timestamp).toBeDefined();
   });
 
+  test("creates a missing parent directory instead of failing with ENOENT", async () => {
+    const filePath = path.join(tmpDir, "missing", "nested", "transcript.jsonl");
+    await appendToTranscript(filePath, {type: "user_message", content: "resumed"});
+
+    const raw = await fs.readFile(filePath, "utf-8");
+    expect(JSON.parse(raw.trim()).content).toBe("resumed");
+  });
+
   test("appends multiple entries as separate lines", async () => {
     const filePath = path.join(tmpDir, "multi.jsonl");
     await appendToTranscript(filePath, {type: "user_message", content: "first"});

@@ -30,6 +30,25 @@ const createMockChannelManager = () => ({
   setExpressApp: mock(() => {}),
 });
 
+describe("resolveAgentTimeout", () => {
+  test("defaults to 15 minutes when unset", async () => {
+    const {resolveAgentTimeout} = await import("./groupQueue");
+    expect(resolveAgentTimeout(undefined)).toBe(900000);
+    expect(resolveAgentTimeout(0)).toBe(900000);
+  });
+
+  test("treats the legacy persisted 5-minute default as unset", async () => {
+    const {resolveAgentTimeout} = await import("./groupQueue");
+    expect(resolveAgentTimeout(300000)).toBe(900000);
+  });
+
+  test("honors an explicitly configured timeout", async () => {
+    const {resolveAgentTimeout} = await import("./groupQueue");
+    expect(resolveAgentTimeout(600000)).toBe(600000);
+    expect(resolveAgentTimeout(1800000)).toBe(1800000);
+  });
+});
+
 describe("GroupQueue", () => {
   // We use dynamic import so this test file doesn't pull in DB models
   // at the module level and cause issues with mock.module in other files.

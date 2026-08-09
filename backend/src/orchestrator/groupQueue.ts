@@ -2,18 +2,32 @@ import {logger} from "@terreno/api";
 import type {Types} from "mongoose";
 import {AIRequest} from "../models/aiRequest";
 import {loadAppConfig} from "../models/appConfig";
-import {Group} from "../models/group";
+import {Feature} from "../models/feature";
+import {DEFAULT_AGENT_TIMEOUT_MS, Group, LEGACY_AGENT_TIMEOUT_MS} from "../models/group";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
+import {featureRoutingPromptBlock} from "./featureRoutingPromptBlock";
 import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import {resolveModel} from "./runners/direct";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
 
-/** Regex matching `/implement` or `!implement` as a standalone command. */
-const IMPLEMENT_COMMAND = /(^|\s)[/!]implement\b/i;
+/** Regex matching `/roast` or `/implement` (or `!`-prefixed) as a standalone command. */
+const IMPLEMENT_COMMAND = /(^|\s)[/!](implement|roast)\b/i;
+
+/**
+ * Resolves a group's agent run timeout. The legacy 5-minute default is
+ * persisted on pre-existing group documents, so it's treated as unset —
+ * a deliberate 5-minute cap is indistinguishable from the old default.
+ */
+export const resolveAgentTimeout = (configured?: number): number => {
+  if (!configured || configured === LEGACY_AGENT_TIMEOUT_MS) {
+    return DEFAULT_AGENT_TIMEOUT_MS;
+  }
+  return configured;
+};
 
 import {
   appendToTranscript,
@@ -174,6 +188,12 @@ export class GroupQueue {
       try {
         await Group.findByIdAndUpdate(group._id, {$set: {featurePhase: "implementing"}});
         group.featurePhase = "implementing";
+        // Keep the Feature record (frontend Features screen) in step with the
+        // channel phase.
+        await Feature.findOneAndUpdate(
+          {groupId: group._id, status: "planned"},
+          {$set: {status: "in_progress", startedAt: new Date()}}
+        );
         logger.info(
           `Feature group ${group.name} transitioned planning -> implementing (triggered by /implement in Slack)`
         );
@@ -203,10 +223,12 @@ export class GroupQueue {
     const session = await getOrCreateSession(groupId);
     const appConfig = await loadAppConfig();
     const groupFolder = await ensureGroupDirectory(group.folder);
-    const systemPrompt = await buildSystemPrompt(
+    const baseSystemPrompt = await buildSystemPrompt(
       group.folder,
       `You are ${appConfig.assistantName}, an AI assistant in the "${group.name}" group.`
     );
+    const routingBlock = featureRoutingPromptBlock({isMain: group.isMain});
+    const systemPrompt = routingBlock ? `${baseSystemPrompt}\n\n${routingBlock}` : baseSystemPrompt;
 
     const taskRunLog = await TaskRunLog.create({
       groupId: group._id,
@@ -272,7 +294,10 @@ export class GroupQueue {
           SHADE_GROUP_ID: groupId,
           SHADE_CHANNEL_ID: group.channelId.toString(),
         },
-        timeout: group.executionConfig.timeout || 300000,
+        // Groups created before the default moved to 15 minutes have the old
+        // 5-minute value persisted; treat it as unset so they get the new
+        // default without a migration.
+        timeout: resolveAgentTimeout(group.executionConfig.timeout),
         idleTimeout: group.executionConfig.idleTimeout || 60000,
         messageTs,
         senderExternalId: message.senderExternalId,
@@ -391,7 +416,7 @@ export class GroupQueue {
           channelId,
           group.externalId,
           messageTs,
-          "white_check_mark"
+          result.status === "completed" ? "white_check_mark" : "x"
         );
       }
 
@@ -399,7 +424,7 @@ export class GroupQueue {
         `Agent completed for group ${group.name}: status=${result.status}, duration=${result.durationMs}ms`
       );
 
-      await this.handleAgentSuccess(
+      await this.handleAgentCompletion(
         group,
         groupId,
         session,
@@ -418,7 +443,7 @@ export class GroupQueue {
     }
   }
 
-  private async handleAgentSuccess(
+  private async handleAgentCompletion(
     group: GroupDocument,
     groupId: string,
     session: AgentSessionDocument,
@@ -435,6 +460,18 @@ export class GroupQueue {
         await this.channelManager.sendMessageToGroup(groupId, outbound);
       } catch (err) {
         logger.error(`Failed to send response to group ${group.name}: ${err}`);
+      }
+    }
+
+    if (result.status !== "completed") {
+      const reason = result.error ? ` (${result.error})` : "";
+      try {
+        await this.channelManager.sendMessageToGroup(
+          groupId,
+          `_Something went wrong and this request didn't finish${reason}. Please try again._`
+        );
+      } catch (err) {
+        logger.error(`Failed to send failure notice to group ${group.name}: ${err}`);
       }
     }
 

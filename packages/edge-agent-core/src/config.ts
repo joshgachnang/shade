@@ -17,7 +17,7 @@ const fetchConfig = async (options: ConfigPollerOptions): Promise<void> => {
   try {
     const response = await fetch(`${options.state.shadeUrl}/api/edge/config`, {
       headers: {
-        Authorization: `Bearer ${options.state.token}`,
+        "X-Agent-Token": options.state.token,
       },
     });
 

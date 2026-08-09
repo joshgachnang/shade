@@ -2,6 +2,9 @@
 delete process.env.CLAUDECODE;
 delete process.env.CLAUDE_CODE_ENTRYPOINT;
 
+import {existsSync} from "node:fs";
+import {dirname, join} from "node:path";
+import {fileURLToPath} from "node:url";
 import {query} from "@anthropic-ai/claude-agent-sdk";
 import {logger} from "@terreno/api";
 import {createShadeMcpServer} from "../../agentRunner/mcpServer";
@@ -63,6 +66,49 @@ export const resolveModel = ({
   return groupModel?.trim() || globalModel?.trim() || undefined;
 };
 
+/**
+ * Resolves the Claude Code executable passed to the Agent SDK's query():
+ * - SHADE_CLAUDE_CODE_PATH env override wins (machine-specific bootstrap
+ *   value, like MONGO_URI — not AppConfig because it varies per host)
+ * - when the SDK's own cli.js is resolvable on disk (running from source with
+ *   node_modules), returns undefined so the SDK uses its bundled cli.js
+ * - otherwise (running as a single-file bundle, where import.meta.resolve
+ *   fails) falls back to the host `claude` binary on PATH
+ */
+/**
+ * Classifies an error thrown by the Agent SDK's query() as a timeout abort.
+ * The SDK's AbortError subclasses Error without setting `.name`, so a thrown
+ * abort arrives as name="Error" — the runner's own timer flag is the reliable
+ * signal. The name check remains for genuine DOM-style AbortErrors.
+ */
+export const isTimeoutAbort = ({error, timedOut}: {error: unknown; timedOut: boolean}): boolean => {
+  return timedOut || (error instanceof Error && error.name === "AbortError");
+};
+
+export const resolveClaudeCodeExecutable = (): string | undefined => {
+  if (process.env.SHADE_CLAUDE_CODE_PATH) {
+    return process.env.SHADE_CLAUDE_CODE_PATH;
+  }
+  try {
+    const sdkUrl = import.meta.resolve("@anthropic-ai/claude-agent-sdk");
+    const cliPath = join(dirname(fileURLToPath(sdkUrl)), "cli.js");
+    if (existsSync(cliPath)) {
+      return undefined;
+    }
+  } catch {
+    // Not resolvable — running as a single-file bundle away from node_modules.
+  }
+  const hostClaude = Bun.which("claude");
+  if (hostClaude) {
+    return hostClaude;
+  }
+  logger.warn(
+    "No Claude Code executable found: agent SDK cli.js is not on disk and `claude` is not on PATH. " +
+      "Agent runs will fail — install Claude Code or set SHADE_CLAUDE_CODE_PATH."
+  );
+  return undefined;
+};
+
 export class DirectAgentRunner implements AgentRunner {
   private activeAgents = new Map<string, ActiveAgent>();
 
@@ -73,8 +119,10 @@ export class DirectAgentRunner implements AgentRunner {
 
     this.activeAgents.set(config.sessionId, {abortController, startedAt});
 
+    let timedOut = false;
     const timeoutId = setTimeout(() => {
       logger.warn(`Agent ${config.sessionId} timed out after ${config.timeout}ms`);
+      timedOut = true;
       abortController.abort();
     }, config.timeout);
 
@@ -138,6 +186,8 @@ export class DirectAgentRunner implements AgentRunner {
         globalModel: appConfig.agent.model,
       });
 
+      const claudeCodeExecutable = resolveClaudeCodeExecutable();
+
       const queryOptions: Parameters<typeof query>[0] = {
         prompt: config.prompt,
         options: {
@@ -151,6 +201,7 @@ export class DirectAgentRunner implements AgentRunner {
           maxTurns: appConfig.agent.maxTurns,
           mcpServers,
           ...(model ? {model} : {}),
+          ...(claudeCodeExecutable ? {pathToClaudeCodeExecutable: claudeCodeExecutable} : {}),
           ...(config.resume && config.resumeSessionAt ? {resume: config.resumeSessionAt} : {}),
         },
       };
@@ -234,7 +285,7 @@ export class DirectAgentRunner implements AgentRunner {
         costUsd,
       };
     } catch (error) {
-      const isAbort = error instanceof Error && error.name === "AbortError";
+      const isAbort = isTimeoutAbort({error, timedOut});
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (isAbort) {
