@@ -40,6 +40,12 @@ const setBuiltinTask = async (
 beforeEach(async () => {
   await fs.mkdir(tmpDir, {recursive: true});
   paths.skills = tmpDir;
+  // These tests assert behavior as a function of the main-group count, so the
+  // precondition must be controlled. The suite shares one Mongo DB with every
+  // other test file; an isMain group leaked by another file (bun file order is
+  // not fixed) would otherwise make `Group.findExactlyOne({isMain})` throw
+  // "multiple documents". Clear the slate so each test controls it explicitly.
+  await Group.deleteMany({isMain: true});
 });
 
 afterEach(async () => {
