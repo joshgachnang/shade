@@ -16,6 +16,7 @@ import {DirectAgentRunner} from "./runners/direct";
 import {MockAgentRunner} from "./runners/mock";
 import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
+import {InfraWatcher} from "./services/infraWatcher";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
 import {registerSchedulerForWake, SchedulerService} from "./services/scheduler";
@@ -104,6 +105,7 @@ export interface OrchestratorState {
   ipcWatcher: IpcWatcher;
   radioTranscriber: RadioTranscriber;
   prWatcher: PrWatcher;
+  infraWatcher: InfraWatcher;
   triviaMonitor: TriviaMonitor;
   scheduler: SchedulerService;
   taskWorker: TaskWorkerService;
@@ -290,11 +292,14 @@ export const startOrchestrator = async (
   // starts them.
   const radioTranscriber = new RadioTranscriber(channelManager);
   const prWatcher = new PrWatcher(channelManager, runner);
+  const infraWatcher = new InfraWatcher(channelManager);
   const triviaMonitor = new TriviaMonitor(channelManager);
   messageLoop.setTriviaMonitor(triviaMonitor);
 
   if (isTestMode()) {
-    logger.info("Test mode: radio transcriber, PR watcher, and trivia monitor not started");
+    logger.info(
+      "Test mode: radio transcriber, PR watcher, infra watcher, and trivia monitor not started"
+    );
   } else {
     try {
       await radioTranscriber.start();
@@ -306,6 +311,12 @@ export const startOrchestrator = async (
       await prWatcher.start();
     } catch (err) {
       logError("PR watcher start error (non-fatal)", err);
+    }
+
+    try {
+      await infraWatcher.start();
+    } catch (err) {
+      logError("Infra watcher start error (non-fatal)", err);
     }
 
     try {
@@ -385,6 +396,7 @@ export const startOrchestrator = async (
     ipcWatcher,
     radioTranscriber,
     prWatcher,
+    infraWatcher,
     triviaMonitor,
     scheduler,
     taskWorker,
@@ -408,6 +420,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.messageLoop.stop();
   state.ipcWatcher.stop();
   state.prWatcher.stop();
+  state.infraWatcher.stop();
   state.triviaMonitor.stop();
   registerSchedulerForWake(null);
   state.scheduler.stop();

@@ -14,6 +14,7 @@ export * from "./feature";
 export * from "./frame";
 export * from "./frameAnalysis";
 export * from "./group";
+export * from "./infraChange";
 export * from "./llmFixture";
 export * from "./message";
 export * from "./movie";
