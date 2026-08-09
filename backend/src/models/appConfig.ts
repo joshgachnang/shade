@@ -237,6 +237,41 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       },
     },
 
+    // Infra Bot (GitOps-behind-PR-review). Lets the agent propose changes to
+    // git-backed infrastructure repos (docker compose stacks, Home Assistant
+    // config, etc.) on feature branches and open a pull request — but never
+    // merge or deploy. A human reviews and merges the PR; GitOps takes over
+    // from there. The `repos` allowlist is the blast radius: the bot can only
+    // touch what is listed, and only ever via git in `reposBaseDir` — it never
+    // reaches the running services.
+    infraBot: {
+      enabled: {type: Boolean, default: false},
+      groupId: {type: String, default: ""},
+      reposBaseDir: {type: String, default: "data/infra-repos"},
+      gitUserName: {type: String, default: "Shade Infra Bot"},
+      gitUserEmail: {type: String, default: "infra-bot@shade.local"},
+      // How often the InfraWatcher polls open infra PRs for review/CI/merge
+      // changes to report back to the group.
+      watchPollIntervalMs: {type: Number, default: 300000},
+      // Every feature branch the bot creates lives under this prefix, and it is
+      // only ever allowed to push branches under it — never a deploy branch.
+      branchPrefix: {type: String, default: "infra-bot/"},
+      repos: {
+        type: [
+          {
+            _id: false,
+            name: {type: String, default: ""},
+            gitUrl: {type: String, default: ""},
+            owner: {type: String, default: ""},
+            repo: {type: String, default: ""},
+            deployBranch: {type: String, default: "main"},
+            description: {type: String, default: ""},
+          },
+        ],
+        default: [],
+      },
+    },
+
     imessage: {
       // Handles (phone numbers or iMessage email addresses) Shade is allowed
       // to reply to over iMessage/SMS. Messages from anyone else are still

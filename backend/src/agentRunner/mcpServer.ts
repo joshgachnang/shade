@@ -34,6 +34,7 @@ import {
 } from "../utils/appleContacts";
 import {isHandleAllowed} from "../utils/smsAllowlist";
 import {buildAppleTools} from "./appleTools";
+import {buildInfraTools} from "./infraTools";
 
 export interface McpContext {
   groupId: string;
@@ -1688,6 +1689,7 @@ export const buildTools = (ctx: McpContext) => {
     toggleTranscriptionTool,
     toggleTriviaMonitorTool,
     triviaMonitorStatusTool,
+    ...buildInfraTools(ctx),
   ];
 };
 
