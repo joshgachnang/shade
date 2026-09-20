@@ -3,7 +3,7 @@ name: Build & Release
 # Builds the shade single-file executable (backend, worker, and edge agents in
 # one bun-compiled binary, selected at runtime via SHADE_SERVICE) for each
 # deploy platform and publishes them to the `latest` GitHub release. Deploy
-# workflows (deploy-studio.yml) pull the artifact and restart services.
+# workflows (deploy-mini.yml) pull the artifact and restart services.
 
 on:
   push:

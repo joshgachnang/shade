@@ -28,9 +28,9 @@ defaults to `~/Library/Application Support/Shade` on macOS and
 - `.github/workflows/build-release.yml` — on push to master, cross-compiles
   `shade-darwin-arm64` and `shade-linux-x64` and publishes them to the
   `latest` GitHub release.
-- `.github/workflows/deploy-studio.yml` — chained to Build & Release; runs on
-  the studio Mac's self-hosted runner (`nangstudio`, labels
-  `[self-hosted, macOS, studio]`), downloads the artifact, runs
+- `.github/workflows/deploy-mini.yml` — chained to Build & Release; runs on
+  the mini Mac's self-hosted runner (`mini`, labels
+  `[self-hosted, macOS, mini]`), downloads the artifact, runs
   `./shade update`, and health-checks :4020/:4021.
 - `.github/workflows/deploy-server.yml` — legacy source-based deploy to the
   Linux `shade` host (pinned to `[self-hosted, Linux]`); pulls master and
@@ -41,17 +41,18 @@ defaults to `~/Library/Application Support/Shade` on macOS and
 - `netlify.toml`: base `frontend/`, `bun run build:web`, publish `dist/`, SPA rewrite to `/index.html`, Node 22.
 - Live at `https://s.nang.io`.
 
-## Studio Mac — launchd (primary)
+## Mini Mac — launchd (primary)
 
-- Host: `NangStudio`; services `com.shade.backend`, `com.shade.worker`, and
-  `com.shade.imessage` (installed, opt-in) as user LaunchAgents.
+- Host: `NangMini`; services `com.shade.backend` and `com.shade.worker` as
+  user LaunchAgents (iMessage not deployed here for now).
 - Executable at `~/Library/Application Support/Shade/dist/shade`; data at
   `~/Library/Application Support/Shade/data`; env files in `~/.config/shade/`;
   logs in `~/Library/Logs/Shade/`.
 - MongoDB: hosted Atlas cluster (`shadeproduction.tgdndkz.mongodb.net`, db
   `shade`); the local Homebrew instance is dev-only.
 - GitHub Actions runner installed at `~/actions-runner` (launchd service
-  `actions.runner.joshgachnang-shade.nangstudio`).
+  `actions.runner.joshgachnang-shade.mini`).
+- Public API via Cloudflare Tunnel `shade-mini` → `http://localhost:4020`.
 
 ## Backend — systemd on a Tailscale host (legacy)
 
