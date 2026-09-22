@@ -21,45 +21,47 @@ The `SHADE_SERVICE` env var selects what a process runs: `backend` (default),
 - Agent runs from the executable use the host `claude` binary (override:
   `SHADE_CLAUDE_CODE_PATH`)
 
-## Studio Mac (primary)
+## Mini Mac (primary)
 
-- **Host**: `NangStudio` (this Mac), launchd LaunchAgents `com.shade.backend`,
-  `com.shade.worker`, `com.shade.imessage` (installed, opt-in)
+- **Host**: `NangMini`, launchd LaunchAgents `com.shade.backend`,
+  `com.shade.worker` (iMessage not deployed here for now)
 - **Executable**: `~/Library/Application Support/Shade/dist/shade`
 - **Data**: `~/Library/Application Support/Shade/data` (`SHADE_DATA_DIR`)
-- **Env files**: `~/.config/shade/shade-{backend,worker,imessage}.env`
+- **Env files**: `~/.config/shade/shade-{backend,worker}.env`
 - **Logs**: `~/Library/Logs/Shade/` (`./shade logs backend`)
 - **MongoDB**: hosted Atlas cluster `shadeproduction.tgdndkz.mongodb.net`, db
   `shade` (URI in `~/.config/shade/shade-*.env`); local Homebrew Mongo is for
   dev only
 - **Ports**: backend 4020, worker health 4021
 - **Public API URL**: `https://shade-api.nang.io` → Cloudflare Tunnel
-  `shade-studio` (62769ec0-6874-4f23-bbc8-ba5a1ddfb6f8) running on this Mac
-  as launchd agent `com.cloudflare.cloudflared` (config in
-  `~/.cloudflared/config.yml`, ingress → `http://localhost:4020`). The plist's
-  ProgramArguments must include `tunnel run` — a bare `cloudflared` invocation
-  exits immediately.
-- **iMessage**: `com.shade.imessage` runs the same executable with
-  `SHADE_SERVICE=imessage`; requires Full Disk Access for
-  `~/Library/Application Support/Shade/dist/shade`.
+  `shade-mini` running on this Mac as launchd agent `com.cloudflare.cloudflared`
+  (config in `~/.cloudflared/config.yml`, ingress → `http://localhost:4020`).
+  The plist's ProgramArguments must include `tunnel run` — a bare `cloudflared`
+  invocation exits immediately.
 - **Code signing**: `shade build`/`update`/`install` sign the binary with the
   self-signed "Shade Code Signing" identity (login keychain, identifier
-  `io.nang.shade`) when present. This keeps TCC grants (Full Disk Access)
-  valid across deploys — ad-hoc signatures change per build and silently
-  revoke them. If the identity is ever recreated, re-grant FDA once.
+  `io.nang.shade`) when present. This keeps TCC grants valid across deploys —
+  ad-hoc signatures change per build and silently revoke them. If the identity
+  is ever recreated, re-grant any TCC permissions once.
 - **CI**: push to master → `build-release.yml` publishes `shade.js` to the
-  `latest` GitHub release → `deploy-studio.yml` runs on the self-hosted runner
-  (`nangstudio`, labels `[self-hosted, macOS, studio]`, installed at
+  `latest` GitHub release → `deploy-mini.yml` runs on the self-hosted runner
+  (`mini`, labels `[self-hosted, macOS, mini]`, installed at
   `~/actions-runner`) and runs `./shade update`.
 
 Dev (`bun run dev`) uses the local Homebrew Mongo, so it does not compete with
 the deployed service (which is on Atlas). Don't point dev at the Atlas URI —
 two backends on one DB race for unprocessed messages.
 
+## Studio Mac (decommissioned)
+
+- **Status**: was the previous primary Mac deploy target; migrated to mini.
+  The `shade-studio` Cloudflare tunnel and `nangstudio` GitHub Actions runner
+  should be removed once mini is confirmed stable.
+
 ## Linux server (legacy)
 
 - **Status**: unreachable as of 2026-07-11; `shade-api.nang.io` now routes to
-  the studio Mac (see above). The old `Shade` Cloudflare tunnel
+  the mini Mac (see above). The old `Shade` Cloudflare tunnel
   (73a2a064-4593-42e3-a977-cb2ad75db5eb) is orphaned and can be deleted.
 - **Server**: `shade` host on Tailscale (`100.71.181.113`), bun from
   `/opt/shade/src/backend/` as user `josh`, port 3000, env file

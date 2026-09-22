@@ -1,7 +1,7 @@
-name: Deploy to Studio
+name: Deploy to Mini
 
-# Deploys the shade executable published by `Build & Release` to the studio
-# Mac (NangStudio) via its self-hosted runner: pull the artifact, swap it into
+# Deploys the shade executable published by `Build & Release` to the mini
+# Mac (NangMini) via its self-hosted runner: pull the artifact, swap it into
 # place, kickstart the launchd services. Provisioning (plists, env files) is
 # done once on the machine with `./shade deploy` — this workflow only updates
 # the executable.
@@ -13,8 +13,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-studio:
-    runs-on: [self-hosted, studio]
+  deploy-mini:
+    runs-on: [self-hosted, macOS, mini]
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
           sleep 5
           curl -sf --max-time 5 http://localhost:4020/health
           curl -sf --max-time 5 http://localhost:4021/health
-          echo "Studio deploy healthy"
+          echo "Mini deploy healthy"
 
       - name: Notify Slack on success
         if: success()
@@ -43,7 +43,7 @@ jobs:
           SHORT_SHA="${COMMIT_SHA:0:7}"
           curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"Shade deployed to studio :computer:\\n\`${SHORT_SHA}\`\"}"
+            -d "{\"text\":\"Shade deployed to mini :computer:\\n\`${SHORT_SHA}\`\"}"
 
       - name: Notify Slack on failure
         if: failure()
@@ -51,4 +51,4 @@ jobs:
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -sf -X POST '${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}' \
             -H 'Content-Type: application/json' \
-            -d "{\"text\":\"Shade studio deploy failed :x: — <${RUN_URL}|View logs>\"}"
+            -d "{\"text\":\"Shade mini deploy failed :x: — <${RUN_URL}|View logs>\"}"
