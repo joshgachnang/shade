@@ -1,2 +1,10 @@
 export {DirectAgentRunner} from "./direct";
-export type {AgentRunConfig, AgentRunner, AgentRunResult, McpServerConfig} from "./types";
+export type {
+  AgentAttachInfo,
+  AgentRunConfig,
+  AgentRunner,
+  AgentRunResult,
+  ContainerTarget,
+  McpServerConfig,
+} from "./types";
+export {ZergAgentRunner} from "./zerg";

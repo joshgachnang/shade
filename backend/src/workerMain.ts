@@ -21,6 +21,7 @@ import {logError} from "./orchestrator/errors";
 import {DirectAgentRunner} from "./orchestrator/runners/direct";
 import {MockAgentRunner} from "./orchestrator/runners/mock";
 import type {AgentRunner} from "./orchestrator/runners/types";
+import {ZergAgentRunner} from "./orchestrator/runners/zerg";
 import {getWorkerId} from "./orchestrator/services/taskBoard";
 import {TaskWorkerService} from "./orchestrator/services/taskWorker";
 import {isTestMode} from "./testMode/flag";
@@ -50,6 +51,7 @@ export const startWorker = async (): Promise<void> => {
 
   // Test mode (IP-012): board tasks run through the deterministic mock.
   const runner: AgentRunner = isTestMode() ? new MockAgentRunner() : new DirectAgentRunner();
+  const containerRunner: AgentRunner = isTestMode() ? runner : new ZergAgentRunner();
   // Workers never connect channel connectors (the gateway owns the Slack
   // socket), so result delivery goes through send_message IPC files instead
   // of a live ChannelManager. IpcResultDeliverer implements the single
@@ -58,6 +60,7 @@ export const startWorker = async (): Promise<void> => {
   const deliverer = new IpcResultDeliverer();
   const worker = new TaskWorkerService({
     runner,
+    containerRunner,
     channelManager: deliverer as unknown as ChannelManager,
   });
 

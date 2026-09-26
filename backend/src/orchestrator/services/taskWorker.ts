@@ -3,13 +3,14 @@ import {AgentTask} from "../../models/agentTask";
 import {loadAppConfig} from "../../models/appConfig";
 import {Group} from "../../models/group";
 import {TaskRunLog} from "../../models/taskRunLog";
-import type {AgentTaskDocument} from "../../types";
+import type {AgentTaskDocument, GroupDocument} from "../../types";
 import type {ChannelManager} from "../channels/manager";
 import {logError} from "../errors";
 import {buildSystemPrompt, ensureGroupDirectory} from "../memory";
 import {formatOutboundMessage} from "../router";
 import {resolveModel} from "../runners/direct";
 import type {AgentRunner} from "../runners/types";
+import {resolveContainerTarget} from "../runners/zerg";
 import {
   claimNextTask,
   completeTask,
@@ -28,6 +29,8 @@ const DEFAULT_TASK_TIMEOUT_MS = 900000;
 interface TaskWorkerDeps {
   runner: AgentRunner;
   channelManager: ChannelManager;
+  /** Runner for groups with executionConfig.mode === "container" (zerg). */
+  containerRunner?: AgentRunner;
 }
 
 interface ActiveTaskRun {
@@ -51,13 +54,23 @@ export class TaskWorkerService {
   /** Most recent loop-initiated tick, tracked so drains can await it. */
   private pendingTick: Promise<void> = Promise.resolve();
   private readonly runner: AgentRunner;
+  private readonly containerRunner: AgentRunner | null;
   private readonly channelManager: ChannelManager;
   private readonly workerId = getWorkerId();
   private readonly activeRuns = new Map<string, ActiveTaskRun>();
 
-  constructor({runner, channelManager}: TaskWorkerDeps) {
+  constructor({runner, channelManager, containerRunner}: TaskWorkerDeps) {
     this.runner = runner;
+    this.containerRunner = containerRunner ?? null;
     this.channelManager = channelManager;
+  }
+
+  /** Container-mode groups run through the zerg runner when one is wired. */
+  selectRunner(group: GroupDocument): AgentRunner {
+    if (group.executionConfig?.mode === "container" && this.containerRunner) {
+      return this.containerRunner;
+    }
+    return this.runner;
   }
 
   /** Whether the poll loop is running (started and not disabled/stopped). */
@@ -248,7 +261,7 @@ export class TaskWorkerService {
     });
 
     try {
-      const result = await this.runner.run({
+      const result = await this.selectRunner(group).run({
         groupId,
         groupFolder,
         sessionId,
@@ -263,6 +276,7 @@ export class TaskWorkerService {
         timeout: taskTimeoutMs,
         idleTimeout: group.executionConfig.idleTimeout || 60000,
         isBoardTask: true,
+        container: resolveContainerTarget(group),
       });
 
       if (entry.cancelRequested) {

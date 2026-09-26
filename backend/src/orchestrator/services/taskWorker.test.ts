@@ -94,6 +94,53 @@ afterEach(async () => {
 });
 
 describe("TaskWorkerService", () => {
+  test("container-mode groups run through the container runner with a zerg target", async () => {
+    const group = await makeGroup({
+      name: "Export Data",
+      executionConfig: {mode: "container", zergRepo: "shade"},
+    });
+    const task = await makeTask(group._id);
+    const runner = makeRunner(async () => completedResult());
+    const containerRunner = makeRunner(async () => completedResult("Done in container"));
+    const channelManager = makeChannelManager();
+    const worker = new TaskWorkerService({
+      runner: runner as unknown as AgentRunner,
+      containerRunner: containerRunner as unknown as AgentRunner,
+      channelManager: channelManager as unknown as ChannelManager,
+    });
+
+    await worker.tick();
+    await worker.waitForActiveRuns();
+
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(containerRunner.run).toHaveBeenCalledTimes(1);
+    const runConfig = containerRunner.run.mock.calls[0][0];
+    expect(runConfig.container).toEqual({repo: "shade", feature: "export-data"});
+
+    const reloaded = await AgentTask.findExactlyOne({_id: task._id});
+    expect(reloaded.status).toBe("completed");
+    expect(reloaded.result).toBe("Done in container");
+  });
+
+  test("direct-mode groups pass no container target and use the default runner", async () => {
+    const group = await makeGroup();
+    await makeTask(group._id);
+    const runner = makeRunner(async () => completedResult());
+    const containerRunner = makeRunner(async () => completedResult());
+    const worker = new TaskWorkerService({
+      runner: runner as unknown as AgentRunner,
+      containerRunner: containerRunner as unknown as AgentRunner,
+      channelManager: makeChannelManager() as unknown as ChannelManager,
+    });
+
+    await worker.tick();
+    await worker.waitForActiveRuns();
+
+    expect(containerRunner.run).not.toHaveBeenCalled();
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(runner.run.mock.calls[0][0].container).toBeUndefined();
+  });
+
   test("happy path: tick claims, runs, completes the task, and writes a TaskRunLog", async () => {
     const group = await makeGroup();
     const task = await makeTask(group._id);

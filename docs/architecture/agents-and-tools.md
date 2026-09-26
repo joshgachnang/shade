@@ -12,13 +12,24 @@ The primary runtime. Calls `query()` from `@anthropic-ai/claude-agent-sdk`:
 - Streams results; on timeout, aborts via `AbortController` and records a `resumeSessionAt` checkpoint on the `AgentSession` so the next turn can resume (up to `AppConfig.orchestrator.maxResumes`).
 - Output is secret-redacted before returning to the orchestrator.
 
+### ZergAgentRunner (`zerg.ts`)
+
+Runs a group's turns **inside a zerg-managed container** instead of on the Shade host. Selected by `GroupQueue.selectRunner` / `TaskWorkerService.selectRunner` when `Group.executionConfig.mode === "container"`; the planner still wins for feature channels in `planning`.
+
+- **Target**: `executionConfig.zergRepo` (a repo in zerg's `repos.json`, required) + `executionConfig.zergFeature` (defaults to a slug of the group name). Container name is `<repo>-<feature>`, tmux window `<repo>|<feature>` — the same names hive uses.
+- **Per run**: `zerg run <repo> <feature>` (idempotent: reuses a live container, rebuilds a dead one), then the Agent SDK's `query()` with a custom `spawnClaudeCodeProcess` that `docker exec -i -w /workspace`s `claude` into the container. The SDK's stdio control channel rides the exec, so the in-process Shade MCP server and every tool keep working unchanged; the agent gets the image's toolchain and the repo checkout.
+- **Env**: only host vars matching `AppConfig.zerg.envPrefixes` (`SHADE_`, `CLAUDE_`, `ANTHROPIC_`) cross into the container, plus a per-run `SHADE_ZERG_RUN_ID` stamp. `stop()`/abort kill the local `docker exec` client *and* the stamped process inside the container (docker exec does not forward signals).
+- **Taking over**: every result carries `attach` (`{session, tmux, attachCommand, claudeSessionId, resumeCommand}`); GroupQueue posts it to the channel once per session — `zerg attach <repo> <feature>`, then `claude --resume <id>` inside the window picks up the exact conversation Shade was driving. Resume checkpoints live in the container's home; a checkpoint the CLI no longer knows is retried once without resume.
+- **Config** (`AppConfig.zerg`): `enabled`, `sshHost` (default `zerg`, the Linux host running docker/zerg; every command is wrapped in `ssh -T -o BatchMode=yes <host>`; empty = run locally), `command` (`zerg`, the operator interface; `hive` + `up` still work as a fallback), `upVerb` (`run`), `attachVerb` (`attach`), `workdir`, `claudeCommand`, `upTimeoutMs`, `envPrefixes`. Edit via the AppConfig CRUD/admin API — no deploy needed.
+- **Fail-closed**: a container-mode group with no repo, an unsafe name, `zerg.enabled=false`, or a failed `up` produces a failed run with the reason; `DirectAgentRunner` refuses a container target outright rather than running it on the host.
+
 ### OpenAIAgentRunner (`openai.ts`)
 
 Used only for **feature channels** in their planning phase. Calls OpenAI Chat Completions (configurable model), replaying the transcript for conversation recovery. When the user types `/implement`, the group's `featurePhase` flips from `planning` to `implementing` and subsequent turns run on the Claude Agent SDK.
 
 ## Sessions & memory
 
-- **`AgentSession`**: groupId, SDK session UUID, JSONL transcript path (under `SHADE_DATA_DIR/sessions/`), message count, resume checkpoint. `getOrCreateSession()` resumes the last active session or creates one.
+- **`AgentSession`**: groupId, SDK session UUID, JSONL transcript path (under `SHADE_DATA_DIR/sessions/`), message count, resume checkpoint. `getOrCreateSession()` resumes the last active session or creates one. For container-mode groups the Claude Code transcript itself lives in the container's account home, which is what `claude --resume` reads there.
 - **Memory files** (`orchestrator/memory.ts`): the system prompt is assembled from `SOUL.md` (persona), `USER.md` (agent-curated user profile, single global file), the global `CLAUDE.md`, and the group's `CLAUDE.md`. Agents edit these at runtime via `update_memory` — scope `group` is writable by any group for its own file; scopes `global` and `user` are main-group-only. Writes are capped at `AppConfig.memory.maxFileChars`; oversized writes are rejected with a condense instruction.
 - **Searchable history**: `search_history` runs a MongoDB text-index search over stored `Message` docs for the current group (default 90 days back, results capped at `AppConfig.memory.historySearchLimit`), letting agents recall conversations far beyond the recent context window.
 - **Skills library** (`orchestrator/skills.ts`): agent-authored reusable procedures stored as frontmattered markdown in `SHADE_DATA_DIR/skills/` (global, kebab-case names, capped at `AppConfig.memory.maxSkillChars`). `save_skill` / `list_skills` / `load_skill` manage them; the system prompt includes a name + description index only — bodies are loaded on demand via `load_skill` (progressive disclosure).

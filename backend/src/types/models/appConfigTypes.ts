@@ -59,6 +59,18 @@ export interface AppConfigTaskWorker {
   runInGateway: boolean;
 }
 
+export interface AppConfigZerg {
+  enabled: boolean;
+  sshHost: string;
+  command: string;
+  upVerb: string;
+  attachVerb: string;
+  workdir: string;
+  claudeCommand: string;
+  upTimeoutMs: number;
+  envPrefixes: string[];
+}
+
 export interface AppConfigScheduler {
   useTaskBoard: boolean;
 }
@@ -246,6 +258,7 @@ export interface AppConfigFields {
   agent: AppConfigAgent;
   memory: AppConfigMemory;
   taskWorker: AppConfigTaskWorker;
+  zerg: AppConfigZerg;
   scheduler: AppConfigScheduler;
   builtinTasks: AppConfigBuiltinTasks;
   sessionReview: AppConfigSessionReview;

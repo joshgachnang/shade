@@ -11,7 +11,12 @@ export interface GroupModelConfig {
 }
 
 export interface GroupExecutionConfig {
+  /** "container" runs turns inside a zerg session; "direct" (default) on the host. */
   mode?: "direct" | "container";
+  /** zerg repo name (repos.json); required for container mode. */
+  zergRepo?: string;
+  /** zerg feature slug; defaults to a slug of the group name. */
+  zergFeature?: string;
   timeout?: number;
   idleTimeout?: number;
   maxConcurrent?: number;

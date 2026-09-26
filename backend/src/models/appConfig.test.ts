@@ -44,6 +44,21 @@ describe("AppConfig richResponses + maps additions", () => {
     expect(doc.memory.historySearchLimit).toBe(3);
   });
 
+  test("loadAppConfig returns zerg defaults", async () => {
+    await AppConfig.deleteMany({});
+    const cfg = await reloadAppConfig();
+    expect(cfg.zerg).toBeDefined();
+    expect(cfg.zerg.enabled).toBe(true);
+    expect(cfg.zerg.sshHost).toBe("zerg");
+    expect(cfg.zerg.command).toBe("zerg");
+    expect(cfg.zerg.upVerb).toBe("run");
+    expect(cfg.zerg.attachVerb).toBe("attach");
+    expect(cfg.zerg.workdir).toBe("/workspace");
+    expect(cfg.zerg.claudeCommand).toBe("claude");
+    expect(cfg.zerg.upTimeoutMs).toBe(180000);
+    expect(cfg.zerg.envPrefixes).toEqual(["SHADE_", "CLAUDE_", "ANTHROPIC_"]);
+  });
+
   test("loadAppConfig returns taskWorker defaults", async () => {
     await AppConfig.deleteMany({});
     const cfg = await reloadAppConfig();

@@ -29,7 +29,13 @@ const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
       fallbackBackend: {type: String, enum: ["claude", "ollama", "codex", "gemini", "mock"]},
     },
     executionConfig: {
+      // "container": every turn runs inside the zerg session named by
+      // zergRepo/zergFeature (ZergAgentRunner); "direct": Agent SDK on the host.
       mode: {type: String, enum: ["direct", "container"], default: "direct"},
+      // Repo name in zerg's repos.json. Required when mode is "container".
+      zergRepo: {type: String},
+      // Feature slug for the session; defaults to a slug of the group name.
+      zergFeature: {type: String},
       timeout: {type: Number, default: DEFAULT_AGENT_TIMEOUT_MS},
       idleTimeout: {type: Number, default: 60000},
       maxConcurrent: {type: Number, default: 1},

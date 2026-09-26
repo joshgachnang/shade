@@ -128,6 +128,39 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       runInGateway: {type: Boolean, default: true},
     },
 
+    // Zerg-managed execution containers. Groups with
+    // executionConfig.mode === "container" run every agent turn inside a
+    // `<repo>-<feature>` session that `zerg run <repo> <feature>` brings up
+    // on the zerg host; the turn itself is `docker exec`'d into it so
+    // the agent gets the image's full toolchain and the operator can take
+    // over later with `<command> attach <repo> <feature>`.
+    zerg: {
+      // Master switch. When false, container-mode groups fail fast instead of
+      // silently running on the host.
+      enabled: {type: Boolean, default: true},
+      // SSH destination (`user@host` or an ssh_config alias) for the machine
+      // that runs zerg and docker — Shade itself runs on the mini. Every
+      // zerg/docker command is wrapped in `ssh -T -o BatchMode=yes <host>`, so
+      // key auth must already work for the Shade user. Empty = run locally.
+      sshHost: {type: String, default: "zerg"},
+      // Operator binary on the zerg host's PATH. `zerg` is the management
+      // interface; `hive` (the server-side package) still answers `hive up`.
+      command: {type: String, default: "zerg"},
+      // Subcommand that creates-or-reuses a session: `zerg run`, `hive up`.
+      upVerb: {type: String, default: "run"},
+      // Subcommand that attaches a terminal to a session's tmux window.
+      attachVerb: {type: String, default: "attach"},
+      // Working directory inside the container (the repo checkout mount).
+      workdir: {type: String, default: "/workspace"},
+      // Claude Code executable inside the image.
+      claudeCommand: {type: String, default: "claude"},
+      // How long `up` may take (template mount + agent-run + services).
+      upTimeoutMs: {type: Number, default: 180000},
+      // Only host env vars with these prefixes cross into the container; the
+      // container keeps its own PATH/HOME/credentials.
+      envPrefixes: {type: [String], default: ["SHADE_", "CLAUDE_", "ANTHROPIC_"]},
+    },
+
     scheduler: {
       // When true, due ScheduledTasks are dispatched as AgentTask board work
       // (run by workers, results delivered via deliverResult) instead of a

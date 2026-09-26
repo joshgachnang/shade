@@ -11,11 +11,29 @@ import {createShadeMcpServer} from "../../agentRunner/mcpServer";
 import {paths} from "../../config";
 import {loadAppConfig} from "../../models/appConfig";
 import {buildAgentEnv, redactSecrets} from "../security";
-import type {AgentRunConfig, AgentRunner, AgentRunResult} from "./types";
+import type {AgentAttachInfo, AgentRunConfig, AgentRunner, AgentRunResult} from "./types";
 
 interface ActiveAgent {
   abortController: AbortController;
   startedAt: number;
+}
+
+type QueryOptions = NonNullable<Parameters<typeof query>[0]["options"]>;
+
+/**
+ * What a subclass's `prepare()` contributes to a run: overrides for where and
+ * how the Claude Code process is started, plus the attach info reported back
+ * on every result. All fields optional; the base runner supplies none.
+ */
+export interface RunPreparation {
+  /** Working directory handed to the CLI (defaults to config.groupFolder). */
+  cwd?: string;
+  /** Replaces the SDK's own executable resolution. */
+  pathToClaudeCodeExecutable?: string;
+  /** Custom process spawner (e.g. `docker exec` into a container). */
+  spawnClaudeCodeProcess?: QueryOptions["spawnClaudeCodeProcess"];
+  /** Surfaced on the run result so operators can take the session over. */
+  attach?: Omit<AgentAttachInfo, "claudeSessionId" | "resumeCommand">;
 }
 
 // Every Shade-owned MCP tool must be auto-allowed, otherwise the agent
@@ -112,12 +130,51 @@ export const resolveClaudeCodeExecutable = (): string | undefined => {
 export class DirectAgentRunner implements AgentRunner {
   private activeAgents = new Map<string, ActiveAgent>();
 
+  /**
+   * Hook for subclasses that run the CLI somewhere other than this host. Runs
+   * inside the run's try/catch, so a throw becomes a `failed` result rather
+   * than an unhandled rejection in GroupQueue/TaskWorker.
+   */
+  protected async prepare(_config: AgentRunConfig): Promise<RunPreparation> {
+    return {};
+  }
+
+  /** Whether this runner can honor `AgentRunConfig.container`. */
+  protected supportsContainer(): boolean {
+    return false;
+  }
+
+  /** Attach info for a result, or undefined for host runs. */
+  private buildAttach(prep: RunPreparation, claudeSessionId: string): AgentAttachInfo | undefined {
+    if (!prep.attach) {
+      return undefined;
+    }
+    return {
+      ...prep.attach,
+      claudeSessionId,
+      resumeCommand: `claude --resume ${claudeSessionId}`,
+    };
+  }
+
   async run(config: AgentRunConfig): Promise<AgentRunResult> {
     const appConfig = await loadAppConfig();
     const startedAt = Date.now();
     const abortController = new AbortController();
 
     this.activeAgents.set(config.sessionId, {abortController, startedAt});
+
+    // A group in container mode must never fall through to a host run, and
+    // the base runner cannot honor the target: refuse before spawning.
+    if (config.container && !this.supportsContainer()) {
+      this.activeAgents.delete(config.sessionId);
+      return {
+        output: "",
+        sessionId: config.sessionId,
+        durationMs: Date.now() - startedAt,
+        status: "failed",
+        error: `Group requires container execution (${config.container.repo}/${config.container.feature}) but this runner runs on the host`,
+      };
+    }
 
     let timedOut = false;
     const timeoutId = setTimeout(() => {
@@ -130,8 +187,11 @@ export class DirectAgentRunner implements AgentRunner {
     let sdkSessionId = config.sessionId;
     let lastMessageUuid: string | undefined;
     let partialOutput = "";
+    let prep: RunPreparation = {};
 
     try {
+      prep = await this.prepare(config);
+
       const env = buildAgentEnv({
         SHADE_GROUP_ID: config.groupId,
         // paths.ipc honors SHADE_DATA_DIR — must match what IpcWatcher polls.
@@ -186,12 +246,12 @@ export class DirectAgentRunner implements AgentRunner {
         globalModel: appConfig.agent.model,
       });
 
-      const claudeCodeExecutable = resolveClaudeCodeExecutable();
+      const claudeCodeExecutable = prep.pathToClaudeCodeExecutable ?? resolveClaudeCodeExecutable();
 
       const queryOptions: Parameters<typeof query>[0] = {
         prompt: config.prompt,
         options: {
-          cwd: config.groupFolder,
+          cwd: prep.cwd ?? config.groupFolder,
           env,
           systemPrompt: config.systemPrompt,
           permissionMode: "bypassPermissions",
@@ -202,17 +262,22 @@ export class DirectAgentRunner implements AgentRunner {
           mcpServers,
           ...(model ? {model} : {}),
           ...(claudeCodeExecutable ? {pathToClaudeCodeExecutable: claudeCodeExecutable} : {}),
+          ...(prep.spawnClaudeCodeProcess
+            ? {spawnClaudeCodeProcess: prep.spawnClaudeCodeProcess}
+            : {}),
           ...(config.resume && config.resumeSessionAt ? {resume: config.resumeSessionAt} : {}),
         },
       };
 
-      logger.info(`Starting agent for session ${config.sessionId} in ${config.groupFolder}`);
+      logger.info(
+        `Starting agent for session ${config.sessionId} in ${prep.cwd ?? config.groupFolder}${prep.attach ? ` (container ${prep.attach.session})` : ""}`
+      );
       logger.info(
         `CLAUDECODE env: "${process.env.CLAUDECODE}" entrypoint: "${process.env.CLAUDE_CODE_ENTRYPOINT}"`
       );
 
       logger.info(
-        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${config.groupFolder}, model=${model ?? "sdk-default"}`
+        `Agent SDK query() starting: session=${config.sessionId}, resume=${config.resume ?? false}, cwd=${prep.cwd ?? config.groupFolder}, model=${model ?? "sdk-default"}`
       );
 
       const stream = query(queryOptions);
@@ -272,6 +337,7 @@ export class DirectAgentRunner implements AgentRunner {
               error: errorMsg,
               resumeSessionId: sdkSessionId,
               lastMessageUuid,
+              attach: this.buildAttach(prep, sdkSessionId),
             };
           }
         }
@@ -283,6 +349,7 @@ export class DirectAgentRunner implements AgentRunner {
         durationMs: Date.now() - startedAt,
         status: "completed",
         costUsd,
+        attach: this.buildAttach(prep, sdkSessionId),
       };
     } catch (error) {
       const isAbort = isTimeoutAbort({error, timedOut});
@@ -300,6 +367,7 @@ export class DirectAgentRunner implements AgentRunner {
           error: "Agent execution timed out",
           resumeSessionId: sdkSessionId,
           lastMessageUuid,
+          attach: this.buildAttach(prep, sdkSessionId),
         };
       }
 
@@ -310,6 +378,7 @@ export class DirectAgentRunner implements AgentRunner {
         durationMs: Date.now() - startedAt,
         status: "failed",
         error: redactSecrets(errorMessage),
+        attach: this.buildAttach(prep, sdkSessionId),
       };
     } finally {
       clearTimeout(timeoutId);

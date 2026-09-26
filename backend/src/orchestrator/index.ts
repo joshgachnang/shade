@@ -17,6 +17,7 @@ import {DirectAgentRunner} from "./runners/direct";
 import {MockAgentRunner} from "./runners/mock";
 import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
+import {ZergAgentRunner} from "./runners/zerg";
 import {InfraWatcher} from "./services/infraWatcher";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
@@ -134,6 +135,9 @@ export const startOrchestrator = async (
   // GroupQueue, PrWatcher, and TaskWorkerService below, so one swap covers
   // every consumer; the mock also stands in for the OpenAI planner.
   const runner: AgentRunner = isTestMode() ? new MockAgentRunner() : new DirectAgentRunner();
+  // Container-mode groups (executionConfig.mode === "container") run inside a
+  // zerg session. In test mode the mock stands in for it too.
+  const containerRunner: AgentRunner = isTestMode() ? runner : new ZergAgentRunner();
   // Planner runner is used for feature-channel groups while they are in the
   // `planning` phase. It drives the /ip workflow via the OpenAI Chat
   // Completions API (model from AppConfig.models.planner, default gpt-5.4).
@@ -169,7 +173,7 @@ export const startOrchestrator = async (
     logError("Channel manager initialization error (non-fatal)", err);
   }
 
-  const groupQueue = new GroupQueue(runner, channelManager, plannerRunner);
+  const groupQueue = new GroupQueue(runner, channelManager, plannerRunner, containerRunner);
 
   // Create and start message polling loop
   const messageLoop = new MessageLoop(channelManager, groupQueue);
@@ -357,7 +361,7 @@ export const startOrchestrator = async (
   // With taskWorker.runInGateway=false (IP-010), board work is left to
   // dedicated worker processes (`bun run worker`); the service is still
   // constructed so OrchestratorState/stopOrchestrator stay uniform.
-  const taskWorker = new TaskWorkerService({runner, channelManager});
+  const taskWorker = new TaskWorkerService({runner, channelManager, containerRunner});
   const appConfig = await loadAppConfig();
   if (shouldRunTaskWorkerInGateway(appConfig)) {
     try {

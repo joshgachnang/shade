@@ -83,4 +83,37 @@ describe("GroupQueue", () => {
 
     expect(queue.getActiveAgentCount()).toBe(0);
   });
+
+  test("selectRunner routes container-mode groups to the container runner", async () => {
+    const GroupQueue = await getGroupQueue();
+    const runner = createMockRunner();
+    const planner = createMockRunner();
+    const container = createMockRunner();
+    const channelManager = createMockChannelManager();
+    const queue = new GroupQueue(
+      runner as any,
+      channelManager as any,
+      planner as any,
+      container as any
+    );
+
+    expect(queue.selectRunner({executionConfig: {mode: "container"}} as any)).toBe(
+      container as any
+    );
+    expect(queue.selectRunner({executionConfig: {mode: "direct"}} as any)).toBe(runner as any);
+    expect(queue.selectRunner({} as any)).toBe(runner as any);
+    // Planning still wins for feature channels, whatever the execution mode.
+    expect(
+      queue.selectRunner({featurePhase: "planning", executionConfig: {mode: "container"}} as any)
+    ).toBe(planner as any);
+  });
+
+  test("selectRunner falls back to the default runner when no container runner is wired", async () => {
+    const GroupQueue = await getGroupQueue();
+    const runner = createMockRunner();
+    const channelManager = createMockChannelManager();
+    const queue = new GroupQueue(runner as any, channelManager as any);
+
+    expect(queue.selectRunner({executionConfig: {mode: "container"}} as any)).toBe(runner as any);
+  });
 });

@@ -13,6 +13,7 @@ import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import {resolveModel} from "./runners/direct";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
+import {formatAttachNotice, resolveContainerTarget} from "./runners/zerg";
 
 /** Regex matching `/roast` or `/implement` (or `!`-prefixed) as a standalone command. */
 const IMPLEMENT_COMMAND = /(^|\s)[/!](implement|roast)\b/i;
@@ -51,28 +52,37 @@ export class GroupQueue {
   private activeRuns = new Map<string, boolean>();
   private runner: AgentRunner;
   private plannerRunner: AgentRunner | null;
+  private containerRunner: AgentRunner | null;
   private channelManager: ChannelManager;
   private globalActiveCount = 0;
+  /** Shade session ids whose channel has already been told how to attach. */
+  private announcedAttach = new Set<string>();
 
   constructor(
     runner: AgentRunner,
     channelManager: ChannelManager,
-    plannerRunner: AgentRunner | null = null
+    plannerRunner: AgentRunner | null = null,
+    containerRunner: AgentRunner | null = null
   ) {
     this.runner = runner;
     this.plannerRunner = plannerRunner;
+    this.containerRunner = containerRunner;
     this.channelManager = channelManager;
   }
 
   /**
    * Pick the runner appropriate for this group. Feature channels in the
-   * `planning` phase go to the OpenAI planner; everything else (normal
-   * groups, and feature channels that have transitioned to `implementing` or
-   * `complete`) uses the Claude Agent SDK runner.
+   * `planning` phase go to the OpenAI planner; container-mode groups go to
+   * the zerg runner; everything else (normal groups, and feature channels
+   * that have transitioned to `implementing` or `complete`) uses the Claude
+   * Agent SDK runner on the host.
    */
-  private selectRunner(group: GroupDocument): AgentRunner {
+  selectRunner(group: GroupDocument): AgentRunner {
     if (group.featurePhase === "planning" && this.plannerRunner) {
       return this.plannerRunner;
+    }
+    if (group.executionConfig?.mode === "container" && this.containerRunner) {
+      return this.containerRunner;
     }
     return this.runner;
   }
@@ -207,7 +217,12 @@ export class GroupQueue {
     }
 
     const runner = this.selectRunner(group);
-    const runnerLabel = runner === this.plannerRunner ? "planner (OpenAI)" : "claude-agent-sdk";
+    const runnerLabel =
+      runner === this.plannerRunner
+        ? "planner (OpenAI)"
+        : runner === this.containerRunner
+          ? "zerg-container"
+          : "claude-agent-sdk";
 
     logger.info(
       `Executing agent run for group ${group.name}${isResume ? ` (resume #${item.resumeCount})` : ""}, runner=${runnerLabel}, trigger: "${message.content.substring(0, 80)}"`
@@ -304,6 +319,7 @@ export class GroupQueue {
         resume: shouldResume,
         resumeSessionAt: resumeAt,
         onProgress,
+        container: resolveContainerTarget(group),
       });
 
       // Handle timeout → save checkpoint and auto-resume
@@ -460,6 +476,17 @@ export class GroupQueue {
         await this.channelManager.sendMessageToGroup(groupId, outbound);
       } catch (err) {
         logger.error(`Failed to send response to group ${group.name}: ${err}`);
+      }
+    }
+
+    // Once per session: tell the channel where the container is and how to
+    // take the conversation over by hand.
+    if (result.attach && !this.announcedAttach.has(session.sessionId)) {
+      this.announcedAttach.add(session.sessionId);
+      try {
+        await this.channelManager.sendMessageToGroup(groupId, formatAttachNotice(result.attach));
+      } catch (err) {
+        logger.debug(`Failed to send attach notice to group ${group.name}: ${err}`);
       }
     }
 
