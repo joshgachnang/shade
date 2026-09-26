@@ -102,6 +102,17 @@ afterEach(async () => {
   }
 });
 
+describe("zerg tools registration", () => {
+  test("list_zerg_sessions is part of the Shade tool suite", () => {
+    const names = buildTools(makeContext("group-1", "channel-1")).map((t) => t.name);
+    expect(names).toContain("list_zerg_sessions");
+    // Read-only by design: no zerg write tool is exposed.
+    expect(names.filter((name) => name.startsWith("zerg_") || name.includes("zerg"))).toEqual([
+      "list_zerg_sessions",
+    ]);
+  });
+});
+
 describe("search_history tool", () => {
   beforeEach(async () => {
     await Message.init();

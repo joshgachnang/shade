@@ -57,6 +57,9 @@ describe("AppConfig richResponses + maps additions", () => {
     expect(cfg.zerg.claudeCommand).toBe("claude");
     expect(cfg.zerg.upTimeoutMs).toBe(180000);
     expect(cfg.zerg.envPrefixes).toEqual(["SHADE_", "CLAUDE_", "ANTHROPIC_"]);
+    expect(cfg.zerg.dashVerb).toBe("dash --json");
+    expect(cfg.zerg.inboxVerb).toBe("inbox --json");
+    expect(cfg.zerg.cacheMs).toBe(5000);
   });
 
   test("loadAppConfig returns taskWorker defaults", async () => {

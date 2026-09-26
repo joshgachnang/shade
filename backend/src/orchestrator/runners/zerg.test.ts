@@ -35,6 +35,9 @@ const ZERG_DEFAULTS: AppConfigZerg = {
   claudeCommand: "claude",
   upTimeoutMs: 1000,
   envPrefixes: ["SHADE_", "CLAUDE_", "ANTHROPIC_"],
+  dashVerb: "dash --json",
+  inboxVerb: "inbox --json",
+  cacheMs: 5000,
 };
 
 const baseRunConfig = (overrides: Partial<AgentRunConfig> = {}): AgentRunConfig => ({

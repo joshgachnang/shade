@@ -159,6 +159,13 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       // Only host env vars with these prefixes cross into the container; the
       // container keeps its own PATH/HOME/credentials.
       envPrefixes: {type: [String], default: ["SHADE_", "CLAUDE_", "ANTHROPIC_"]},
+      // Read-only dashboard feed (IP-017): subcommand printing every session
+      // with activity/stage/PR/blocked-on as JSON, and the pending inbox.
+      dashVerb: {type: String, default: "dash --json"},
+      inboxVerb: {type: String, default: "inbox --json"},
+      // `zerg dash` docker-execs into every container (~2 s); dashboard reads
+      // within this window share one result.
+      cacheMs: {type: Number, default: 5000},
     },
 
     scheduler: {

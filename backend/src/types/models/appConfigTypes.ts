@@ -69,6 +69,9 @@ export interface AppConfigZerg {
   claudeCommand: string;
   upTimeoutMs: number;
   envPrefixes: string[];
+  dashVerb: string;
+  inboxVerb: string;
+  cacheMs: number;
 }
 
 export interface AppConfigScheduler {

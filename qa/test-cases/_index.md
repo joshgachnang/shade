@@ -1,6 +1,6 @@
 # QA Test Case Index
 
-Last updated: 2026-07-11
+Last updated: 2026-09-26
 
 | File | Feature | # Cases | P0 | P1 | P2 | Automated |
 |------|---------|---------|----|----|-----|-----------|
@@ -14,5 +14,6 @@ Last updated: 2026-07-11
 | reminders.md | Reminders management | 10 | 5 | 3 | 2 | 5/10 |
 | calendars.md | Calendar management | 9 | 4 | 3 | 2 | 5/9 |
 | console-home.md | Console home & merged sidebar | 7 | 3 | 2 | 2 | 5/7 |
+| sessions.md | Zerg sessions dashboard | 11 | 4 | 5 | 2 | 3/11 |
 
-**Total:** 60 test cases | 20 P0 | 21 P1 | 19 P2 | 32/60 automated
+**Total:** 71 test cases | 24 P0 | 26 P1 | 21 P2 | 35/71 automated

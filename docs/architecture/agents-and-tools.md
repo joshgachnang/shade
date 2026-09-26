@@ -23,6 +23,12 @@ Runs a group's turns **inside a zerg-managed container** instead of on the Shade
 - **Config** (`AppConfig.zerg`): `enabled`, `sshHost` (default `zerg`, the Linux host running docker/zerg; every command is wrapped in `ssh -T -o BatchMode=yes <host>`; empty = run locally), `command` (`zerg`, the operator interface; `hive` + `up` still work as a fallback), `upVerb` (`run`), `attachVerb` (`attach`), `workdir`, `claudeCommand`, `upTimeoutMs`, `envPrefixes`. Edit via the AppConfig CRUD/admin API — no deploy needed.
 - **Fail-closed**: a container-mode group with no repo, an unsafe name, `zerg.enabled=false`, or a failed `up` produces a failed run with the reason; `DirectAgentRunner` refuses a container target outright rather than running it on the host.
 
+### Zerg sessions dashboard (IP-017, `orchestrator/services/zergSessions.ts`)
+
+Shade's read-only orchestrator view over every zerg session, not just the ones it started. `ZergSessionsService` runs `zerg dash --json` (and `zerg inbox --json` when the CLI has it) over the `AppConfig.zerg` ssh hop, normalizes rows (activity working/blocked/idle/dead, drone stage, PR, blocked-on, last line, attach command), sorts needs-you first, and caches for `zerg.cacheMs` (5 s, single-flight) because `dash` docker-execs into every container. zerg being unreachable is data, not an exception: the dashboard carries `error` and the last known rows.
+
+Three surfaces share that one service: the `list_zerg_sessions` MCP tool (with a `zergSystemPromptBlock` telling the agent when to use it), `GET /zerg/sessions` (`?refresh=1`, `?repo=`), and the **Sessions** console screen (`frontend/app/(tabs)/sessions.tsx`, polling every 15 s). No write path exists: answering, approving and killing stay in zerg.
+
 ### OpenAIAgentRunner (`openai.ts`)
 
 Used only for **feature channels** in their planning phase. Calls OpenAI Chat Completions (configurable model), replaying the transcript for conversation recovery. When the user types `/implement`, the group's `featurePhase` flips from `planning` to `implementing` and subsequent turns run on the Claude Agent SDK.

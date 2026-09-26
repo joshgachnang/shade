@@ -7,6 +7,7 @@ import {memorySystemPromptBlock} from "./memoryPromptBlock";
 import {richResponseSystemPromptBlock} from "./responses/promptBlock";
 import {listSkills} from "./skills";
 import {taskBoardSystemPromptBlock} from "./taskBoardPromptBlock";
+import {zergSystemPromptBlock} from "./zergPromptBlock";
 
 const MEMORY_FILENAME = "CLAUDE.md";
 const SOUL_FILENAME = "SOUL.md";
@@ -182,6 +183,12 @@ export const buildSystemPrompt = async (groupFolder: string, fallback: string): 
   });
   if (taskBoardBlock) {
     parts.push(taskBoardBlock);
+  }
+
+  // Orchestrator view over zerg sessions (IP-017).
+  const zergBlock = zergSystemPromptBlock({enabled: appConfig.zerg?.enabled ?? true});
+  if (zergBlock) {
+    parts.push(zergBlock);
   }
 
   return parts.join("\n\n---\n\n");

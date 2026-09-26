@@ -242,6 +242,50 @@ export interface Reminder {
   lastSyncedAt?: string;
 }
 
+// Zerg sessions dashboard (IP-017) — mirrors backend/src/types/zergSessions.ts
+export type ZergActivity = "working" | "blocked" | "idle" | "error" | "exited" | "dead" | "unknown";
+
+export interface ZergSessionRow {
+  session: string;
+  tmux: string;
+  repo: string;
+  feature: string;
+  agent?: string;
+  containerState: string;
+  activity: ZergActivity;
+  activitySince?: string;
+  activityAgeSeconds?: number;
+  claudeSessionId?: string;
+  stage: string;
+  pr?: string;
+  blockedOn?: string;
+  verdict?: string;
+  status?: string;
+  needsYou: boolean;
+  needsYouWhy?: string;
+  lastLine?: string;
+  attachCommand: string;
+}
+
+export interface ZergInboxItem {
+  id?: string;
+  session?: string;
+  kind?: string;
+  question?: string;
+  recommendation?: string;
+  options?: string[];
+  filedAt?: string;
+}
+
+export interface ZergDashboard {
+  rows: ZergSessionRow[];
+  inbox: ZergInboxItem[];
+  summary: {running: number; cap?: number; needsYou: number; inboxPending: number};
+  fetchedAt: string;
+  source: "zerg" | "cache";
+  error?: string;
+}
+
 export interface AppleCalendar {
   _id: string;
   externalId: string;
@@ -543,6 +587,23 @@ export const terrenoApi = openapi
         invalidatesTags: ["Reminders" as any],
         query: (id) => ({method: "POST", url: `/apple/reminders/${id}/remove`}),
       }),
+      // Zerg sessions dashboard (read-only)
+      listZergSessions: builder.query<
+        ZergDashboard,
+        {refresh?: boolean; repo?: string} | undefined
+      >({
+        query: (args) => {
+          const params = new URLSearchParams();
+          if (args?.refresh) {
+            params.set("refresh", "1");
+          }
+          if (args?.repo) {
+            params.set("repo", args.repo);
+          }
+          const qs = params.toString();
+          return {url: `/zerg/sessions${qs ? `?${qs}` : ""}`};
+        },
+      }),
       // Apple Calendar endpoints
       listAppleCalendars: builder.query<ListResponse<AppleCalendar>, void>({
         providesTags: ["CalendarEvents" as any],
@@ -638,6 +699,7 @@ export const {
   useCompleteReminderMutation,
   useRemoveReminderMutation,
   useListAppleCalendarsQuery,
+  useListZergSessionsQuery,
   useListCalendarEventsQuery,
   useCreateCalendarEventMutation,
   useAppleSyncNowMutation,

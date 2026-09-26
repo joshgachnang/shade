@@ -4,6 +4,7 @@ import {logger} from "@terreno/api";
 import {loadAppConfig} from "../../models/appConfig";
 import type {AppConfigZerg} from "../../types/models/appConfigTypes";
 import type {GroupExecutionConfig} from "../../types/models/groupTypes";
+import {defaultExec, type ExecFn, type ExecResult, shellQuote, withSshHost} from "../hostExec";
 import {DirectAgentRunner, type RunPreparation} from "./direct";
 import type {AgentAttachInfo, AgentRunConfig, AgentRunResult, ContainerTarget} from "./types";
 
@@ -29,14 +30,7 @@ import type {AgentAttachInfo, AgentRunConfig, AgentRunResult, ContainerTarget} f
  * AppConfig.zerg.sshHost is set.
  */
 
-export interface ExecResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-/** Runs a one-shot host command to completion. Injected in tests. */
-export type ExecFn = (argv: string[], opts: {timeoutMs: number}) => Promise<ExecResult>;
+export {defaultExec, type ExecFn, type ExecResult, shellQuote, withSshHost};
 
 /** Spawns the long-lived docker exec that carries the SDK session. Injected in tests. */
 export type SpawnFn = typeof nodeSpawn;
@@ -133,21 +127,6 @@ export const filterContainerEnv = (
   return filtered;
 };
 
-/** POSIX single-quote quoting for argv that passes through a remote shell. */
-export const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
-
-/**
- * Prefixes argv with an SSH hop when `sshHost` is set. ssh hands the remote
- * shell a single string, so every argument is quoted to survive the trip.
- */
-export const withSshHost = (argv: string[], sshHost: string): string[] => {
-  const host = sshHost.trim();
-  if (!host) {
-    return argv;
-  }
-  return ["ssh", "-T", "-o", "BatchMode=yes", host, argv.map(shellQuote).join(" ")];
-};
-
 /** `docker exec -i -w <workdir> -e K=V… <session> <command> <args…>` */
 export const buildDockerExecArgs = ({
   session,
@@ -198,30 +177,6 @@ const isMissingConversation = (error?: string): boolean =>
   /no conversation found/i.test(error ?? "");
 
 const STDERR_TAIL_CHARS = 2000;
-
-/** Default one-shot exec through Bun.spawn with a hard timeout. */
-export const defaultExec: ExecFn = async (argv, {timeoutMs}) => {
-  const proc = Bun.spawn(argv, {stdin: "ignore", stdout: "pipe", stderr: "pipe"});
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    proc.kill("SIGKILL");
-  }, timeoutMs);
-  try {
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    return {
-      code,
-      stdout,
-      stderr: timedOut ? `${stderr}\n(timed out after ${timeoutMs}ms)` : stderr,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-};
 
 /**
  * Builds the SDK's `spawnClaudeCodeProcess` for one run: every spawn becomes a

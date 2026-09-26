@@ -13,6 +13,7 @@ const SidebarInner: React.FC = () => {
       topItems={[
         {label: "Home", route: "index", iconName: "comment"},
         {label: "Activity", route: "activity", iconName: "wave-square"},
+        {label: "Sessions", route: "sessions", iconName: "cubes"},
         {
           label: "Approvals",
           route: "approvals",
@@ -37,6 +38,7 @@ const SidebarInner: React.FC = () => {
     >
       <SidebarNavigation.Screen name="index" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="activity" options={{headerShown: false}} />
+      <SidebarNavigation.Screen name="sessions" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="approvals" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="system" options={{headerShown: false}} />
       <SidebarNavigation.Screen name="memory" options={{headerShown: false}} />

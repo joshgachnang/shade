@@ -18,6 +18,7 @@ import {SearchPlugin} from "./api/search";
 import {TestHarnessPlugin} from "./api/testHarness";
 import {RecordingsPlugin} from "./api/transcripts";
 import {TriviaMonitorPlugin} from "./api/triviaMonitor";
+import {ZergSessionsPlugin} from "./api/zergSessions";
 import {boot} from "./boot";
 import {startHealthMonitor} from "./edge/healthMonitor";
 import {User} from "./models/user";
@@ -108,6 +109,7 @@ export const start = async (skipListen = false) => {
     .register(new NotificationsPlugin())
     .register(new OrchestratorPreviewPlugin())
     .register(new EdgePlugin())
+    .register(new ZergSessionsPlugin())
     .register(adminPlugin);
 
   // Test control API (IP-012). Mounted only in test mode and never in

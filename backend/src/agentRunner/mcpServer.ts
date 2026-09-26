@@ -35,6 +35,7 @@ import {
 import {isHandleAllowed} from "../utils/smsAllowlist";
 import {buildAppleTools} from "./appleTools";
 import {buildInfraTools} from "./infraTools";
+import {buildZergTools} from "./zergTools";
 
 export interface McpContext {
   groupId: string;
@@ -1697,6 +1698,7 @@ export const buildTools = (ctx: McpContext) => {
     toggleTriviaMonitorTool,
     triviaMonitorStatusTool,
     ...buildInfraTools(ctx),
+    ...buildZergTools(),
   ];
 };
 
