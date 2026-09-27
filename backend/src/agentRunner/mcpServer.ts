@@ -1021,6 +1021,20 @@ export const buildTools = (ctx: McpContext) => {
           ],
         };
       }
+      // Mirrors IpcWatcher authorization: only the main group may create
+      // feature channels. Refuse here so the agent doesn't report success.
+      const group = await Group.findById(ctx.groupId);
+      if (!group?.isMain) {
+        logger.warn(`MCP create_feature refused: group ${ctx.groupId} is not the main group`);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: feature channels can only be created from the main Shade channel. The feature channel was NOT created — tell the user to ask in the main channel.",
+            },
+          ],
+        };
+      }
       const channelName = `feat-${args.name}`
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, "-")

@@ -14,6 +14,9 @@ export {};
 const service = process.env.SHADE_SERVICE || "backend";
 
 if (service === "backend") {
+  // The compiled executable can't use `bun --preload`, so init Sentry before
+  // the server graph loads (a no-op re-import when the dev script preloads it).
+  await import("./instrument");
   await import("./server");
 } else if (service === "worker") {
   await import("./workerMain");
