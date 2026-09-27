@@ -12,6 +12,7 @@ on:
       - "backend/**"
       - "packages/**"
       - "shade"
+      - "tools/brewery/**"
       - ".github/workflows/build-release.yml"
   workflow_dispatch:
 
