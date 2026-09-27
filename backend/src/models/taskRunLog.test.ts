@@ -40,3 +40,27 @@ describe("TaskRunLog trigger enum", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("TaskRunLog resume bookkeeping", () => {
+  test("records a resumed run with its resume count", async () => {
+    const doc = await TaskRunLog.create({
+      groupId: new mongoose.Types.ObjectId(),
+      trigger: "message",
+      classification: "internal",
+      modelBackend: "claude",
+      status: "running",
+      startedAt: new Date(),
+    });
+    createdLogIds.push(doc._id);
+
+    await TaskRunLog.findByIdAndUpdate(
+      doc._id,
+      {$set: {status: "resumed", resumeCount: 2, completedAt: new Date()}},
+      {runValidators: true}
+    );
+
+    const updated = await TaskRunLog.findExactlyOne({_id: doc._id});
+    expect(updated.status).toBe("resumed");
+    expect(updated.resumeCount).toBe(2);
+  });
+});

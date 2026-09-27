@@ -99,6 +99,25 @@ export const resolveModel = ({
  * abort arrives as name="Error" — the runner's own timer flag is the reliable
  * signal. The name check remains for genuine DOM-style AbortErrors.
  */
+/**
+ * SDK resume options: `resume` takes the SDK session id and `resumeSessionAt`
+ * a message UUID inside it. Passing the UUID as `resume` makes the CLI fail
+ * with "No conversation found", so without a session id nothing is resumed.
+ */
+export const buildResumeOptions = ({
+  resume,
+  resumeSdkSessionId,
+  resumeSessionAt,
+}: Pick<AgentRunConfig, "resume" | "resumeSdkSessionId" | "resumeSessionAt">): {
+  resume?: string;
+  resumeSessionAt?: string;
+} => {
+  if (!resume || !resumeSdkSessionId) {
+    return {};
+  }
+  return {resume: resumeSdkSessionId, ...(resumeSessionAt ? {resumeSessionAt} : {})};
+};
+
 export const isTimeoutAbort = ({error, timedOut}: {error: unknown; timedOut: boolean}): boolean => {
   return timedOut || (error instanceof Error && error.name === "AbortError");
 };
@@ -265,7 +284,7 @@ export class DirectAgentRunner implements AgentRunner {
           ...(prep.spawnClaudeCodeProcess
             ? {spawnClaudeCodeProcess: prep.spawnClaudeCodeProcess}
             : {}),
-          ...(config.resume && config.resumeSessionAt ? {resume: config.resumeSessionAt} : {}),
+          ...buildResumeOptions(config),
         },
       };
 
