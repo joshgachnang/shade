@@ -50,6 +50,13 @@ The `/ip` skill family is retired; planning and delivery run through these proje
 | `/dialin` | Reactive PR loop: watch/fix CI and review comments until mergeable (15 min window). |
 | `/cupping` | Independent verification of a finished implementation against the IP, with evidence. |
 
+### brewery (async distill → barrel pipeline)
+
+An alternative to the coffee pipeline for unattended work, with separate Claude/Codex/local-model
+processes per step: `/distill` (IP with triaged questions, attacked by `/cut`, async sign-off),
+`/barrel` (pick/roast every task → brew), `/finish` (taste until conflict-free and green). The
+`brewery` CLI in `tools/brewery/` (see its README) drives them and enforces the separation.
+
 ### Conventions
 
 - **IP files**: `docs/implementationPlans/{Title-Case-Name}.md` (e.g. `Zoom-Integration-Mvp.md`)
