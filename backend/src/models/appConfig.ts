@@ -168,6 +168,12 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       cacheMs: {type: Number, default: 5000},
     },
 
+    featureChannels: {
+      // Host checkout dir for feature channels that can't run on zerg (zerg
+      // disabled). Missing repos are cloned here with `gh repo clone`.
+      localReposDir: {type: String, default: "~/src"},
+    },
+
     scheduler: {
       // When true, due ScheduledTasks are dispatched as AgentTask board work
       // (run by workers, results delivered via deliverResult) instead of a

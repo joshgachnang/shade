@@ -10,6 +10,12 @@ describe("featureRoutingPromptBlock", () => {
     expect(block).toContain("do NOT plan");
   });
 
+  test("asks for the target repo so the feature can run on zerg", () => {
+    const block = featureRoutingPromptBlock({isMain: true});
+    expect(block).toContain("`repo`");
+    expect(block).toContain("zerg");
+  });
+
   test("returns an empty string for non-main groups", () => {
     expect(featureRoutingPromptBlock({isMain: false})).toBe("");
   });

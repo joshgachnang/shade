@@ -932,10 +932,13 @@ describe("create_feature tool", () => {
     };
 
     await withIpcDir(ctx, async () => {
-      const text = await callTool(ctx, "create_feature", {name: "yes-please"});
+      const text = await callTool(ctx, "create_feature", {name: "yes-please", repo: "lede"});
 
       expect(text).toContain("queued");
-      expect(await fs.readdir(ctx.ipcDir)).toHaveLength(1);
+      const files = await fs.readdir(ctx.ipcDir);
+      expect(files).toHaveLength(1);
+      const ipc = JSON.parse(await fs.readFile(path.join(ctx.ipcDir, files[0]), "utf-8"));
+      expect(ipc).toMatchObject({type: "create_feature", name: "feat-yes-please", repo: "lede"});
     });
   });
 });

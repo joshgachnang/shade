@@ -22,6 +22,8 @@ export const featureRoutingPromptBlock = (opts: {isMain: boolean}): string => {
     "   - `description`: a one-line summary for the channel topic",
     "   - `request`: the user's request verbatim, plus any constraints, context,",
     "     or decisions they gave earlier in the conversation",
+    '   - `repo`: the repo the feature targets (e.g. "lede") — the feature runs in',
+    "     that repo's zerg session. Omit only if it can't be inferred.",
     "2. Reply with one short sentence confirming the channel is being created.",
     "",
     "The dedicated feature channel handles all planning and implementation.",

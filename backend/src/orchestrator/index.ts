@@ -8,6 +8,7 @@ import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
 import {ensureBuiltinScheduledTasks, seedBuiltinSkills} from "./builtinSkills";
 import {ChannelManager} from "./channels/manager";
 import {logError} from "./errors";
+import {planFeatureWorkspace, workspaceInstructions} from "./featureWorkspace";
 import {GroupQueue} from "./groupQueue";
 import type {IpcCreateFeature, IpcRadioStream, IpcTriviaToggle} from "./ipc";
 import {IpcWatcher} from "./ipc";
@@ -25,7 +26,11 @@ import {registerSchedulerForWake, SchedulerService} from "./services/scheduler";
 import {TaskWorkerService} from "./services/taskWorker";
 import {TriviaMonitor} from "./services/triviaMonitor";
 
-const FEATURE_CHANNEL_MEMORY = (featureName: string, description?: string): string => {
+const FEATURE_CHANNEL_MEMORY = (
+  featureName: string,
+  description: string | undefined,
+  workspaceStep: string
+): string => {
   return `# Feature Channel: ${featureName}
 
 You are driving feature development inside a dedicated Slack channel. Every
@@ -38,22 +43,16 @@ ${description ? `\n**Initial description:** ${description}\n` : ""}
 The user's original feature request is seeded as the first message in this
 channel. Take it — plus anything else they add here — and implement it:
 
-1. **Work in a dedicated git worktree, never on a main checkout.** Repos
-   live under the configured repos directory (AppConfig
-   \`prWatch.reposBaseDir\`, laid out \`<base>/<owner>/<repo>\`). Create the
-   worktree off the default branch with a kebab-case branch name, then run
-   \`bun bootstrap\` at its root (fall back to \`bun install\` if missing and
-   say so). If it isn't obvious which repo the feature targets, ask in the
-   channel before starting.
+1. ${workspaceStep}
 2. **Sketch a short plan first.** Write it to
-   \`docs/implementationPlans/${featureName}.md\` inside this group folder
+   \`docs/implementationPlans/${featureName}.md\` on your feature branch
    and post a summary to the channel. Then get to work — don't wait for
    approval unless the request is ambiguous or has unmade product
    decisions; ask blocking questions in the channel when it does.
 3. **Implement via TDD** in small, behavior-scoped commits. Mark plan tasks
    complete in the plan document as you go.
 4. **Post progress updates** to the channel at meaningful checkpoints.
-5. **Open a PR** from the worktree when done, then post a summary of what
+5. **Open a PR** from your feature branch when done, then post a summary of what
    shipped with links to the plan and the PR.
 
 ## Hard rules
@@ -213,6 +212,24 @@ export const startOrchestrator = async (
       throw new Error(`Source group ${data.groupId} not found`);
     }
 
+    // Decide where the feature runs before creating anything, so a failed
+    // clone surfaces as a failed create_feature instead of a dead channel.
+    const appConfig = await loadAppConfig();
+    const localReposDir = appConfig.featureChannels?.localReposDir || "~/src";
+    const {executionConfig, workspace} = await planFeatureWorkspace({
+      channelName: data.name,
+      repo: data.repo,
+      baseExecutionConfig: {
+        mode: sourceGroup.executionConfig?.mode,
+        timeout: sourceGroup.executionConfig?.timeout,
+        idleTimeout: sourceGroup.executionConfig?.idleTimeout,
+        maxConcurrent: sourceGroup.executionConfig?.maxConcurrent,
+      },
+      isZergEnabled: appConfig.zerg.enabled,
+      localReposDir,
+    });
+    logger.info(`Feature ${data.name} workspace: ${JSON.stringify(workspace)}`);
+
     // Create the Slack channel and invite the user
     const {slackChannelId} = await channelManager.createFeatureChannel(
       sourceGroup.channelId.toString(),
@@ -236,7 +253,7 @@ export const startOrchestrator = async (
       requiresTrigger: false,
       isMain: false,
       modelConfig: sourceGroup.modelConfig,
-      executionConfig: sourceGroup.executionConfig,
+      executionConfig,
       featurePhase: "implementing",
     });
 
@@ -266,7 +283,11 @@ export const startOrchestrator = async (
     try {
       await writeMemory(
         getGroupMemoryPath(folder),
-        FEATURE_CHANNEL_MEMORY(data.name, data.description)
+        FEATURE_CHANNEL_MEMORY(
+          data.name,
+          data.description,
+          workspaceInstructions({workspace, localReposDir})
+        )
       );
     } catch (err) {
       logError(`Failed to write feature channel memory for ${data.name}`, err);

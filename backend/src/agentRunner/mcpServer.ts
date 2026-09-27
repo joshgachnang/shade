@@ -1003,6 +1003,12 @@ export const buildTools = (ctx: McpContext) => {
         .describe(
           "The user's original feature request, verbatim, plus any constraints or context from the conversation. Seeds the new channel so implementation starts from it immediately."
         ),
+      repo: z
+        .string()
+        .optional()
+        .describe(
+          "The repo the feature targets, as its GitHub/zerg name (e.g. 'lede', or 'owner/repo'). The feature runs in that repo's zerg session. Omit only if the user didn't say and it can't be inferred."
+        ),
     },
     async (args) => {
       logger.info(
@@ -1047,6 +1053,7 @@ export const buildTools = (ctx: McpContext) => {
           name: channelName,
           description: args.description,
           request: args.request,
+          repo: args.repo,
           senderExternalId: ctx.senderExternalId,
         });
         logger.info(
