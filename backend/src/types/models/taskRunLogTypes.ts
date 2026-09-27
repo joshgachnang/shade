@@ -8,7 +8,8 @@ export interface TaskRunLogFields {
   classification: "public" | "internal" | "sensitive" | "critical";
   modelBackend: "claude" | "ollama" | "codex" | "gemini" | "mock";
   modelName?: string;
-  status: "running" | "completed" | "failed" | "timeout";
+  /** "resumed": timed out, checkpointed, and re-enqueued as a new run. */
+  status: "running" | "completed" | "failed" | "timeout" | "resumed";
   prompt?: string;
   result?: string;
   error?: string;
@@ -21,6 +22,8 @@ export interface TaskRunLogFields {
   cardCount?: number;
   /** Whether truncation kicked in (cards > MAX_CARDS). */
   truncated?: boolean;
+  /** Which automatic resume this run ended on, when it timed out and was re-enqueued. */
+  resumeCount?: number;
 }
 
 export type TaskRunLogDocument = DefaultDoc & TaskRunLogFields;

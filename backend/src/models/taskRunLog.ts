@@ -22,7 +22,11 @@ const taskRunLogSchema = new mongoose.Schema<TaskRunLogDocument, TaskRunLogModel
       enum: ["claude", "ollama", "codex", "gemini", "mock"],
     },
     modelName: {type: String},
-    status: {type: String, required: true, enum: ["running", "completed", "failed", "timeout"]},
+    status: {
+      type: String,
+      required: true,
+      enum: ["running", "completed", "failed", "timeout", "resumed"],
+    },
     prompt: {type: String},
     result: {type: String},
     error: {type: String},
@@ -32,6 +36,8 @@ const taskRunLogSchema = new mongoose.Schema<TaskRunLogDocument, TaskRunLogModel
     richPayloadEmitted: {type: Boolean, default: false},
     cardCount: {type: Number, default: 0},
     truncated: {type: Boolean, default: false},
+    // Set when a timed-out run was checkpointed and re-enqueued.
+    resumeCount: {type: Number},
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );

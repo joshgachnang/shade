@@ -298,9 +298,9 @@ export class GroupQueue {
     try {
       logger.info(`Invoking agent runner for group ${group.name}...`);
 
-      // Use resume checkpoint if this is a resumed run
-      const shouldResume = isResume || session.messageCount > 0;
-      const resumeAt = isResume ? item.resumeSessionAt : session.resumeSessionAt;
+      // Only a timeout auto-resume carries an SDK session + checkpoint to
+      // resume from; other runs start a fresh SDK session.
+      const shouldResume = isResume && Boolean(item.resumeSessionId);
 
       const result = await runner.run({
         groupId,
@@ -324,7 +324,8 @@ export class GroupQueue {
         messageTs,
         senderExternalId: message.senderExternalId,
         resume: shouldResume,
-        resumeSessionAt: resumeAt,
+        resumeSdkSessionId: shouldResume ? item.resumeSessionId : undefined,
+        resumeSessionAt: shouldResume ? item.resumeSessionAt : undefined,
         onProgress,
         container: resolveContainerTarget(group),
       });

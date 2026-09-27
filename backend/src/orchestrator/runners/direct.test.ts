@@ -2,6 +2,7 @@ import {afterEach, describe, expect, test} from "bun:test";
 import {AppConfig, reloadAppConfig} from "../../models/appConfig";
 import {
   buildAllowedTools,
+  buildResumeOptions,
   isTimeoutAbort,
   resolveClaudeCodeExecutable,
   resolveModel,
@@ -189,5 +190,33 @@ describe("AppConfig agent.enableSubagents", () => {
     });
     expect(tools).not.toContain("Task");
     expect(tools).toContain(SHADE_MCP_WILDCARD);
+  });
+});
+
+describe("buildResumeOptions", () => {
+  test("resumes the SDK session at the checkpoint message", () => {
+    expect(
+      buildResumeOptions({
+        resume: true,
+        resumeSdkSessionId: "sdk-session",
+        resumeSessionAt: "msg-uuid",
+      })
+    ).toEqual({resume: "sdk-session", resumeSessionAt: "msg-uuid"});
+  });
+
+  test("resumes the whole SDK session when no checkpoint message is set", () => {
+    expect(buildResumeOptions({resume: true, resumeSdkSessionId: "sdk-session"})).toEqual({
+      resume: "sdk-session",
+    });
+  });
+
+  test("never passes a message uuid as the session to resume", () => {
+    expect(buildResumeOptions({resume: true, resumeSessionAt: "msg-uuid"})).toEqual({});
+  });
+
+  test("does nothing when resume is off", () => {
+    expect(
+      buildResumeOptions({resume: false, resumeSdkSessionId: "sdk-session", resumeSessionAt: "m"})
+    ).toEqual({});
   });
 });

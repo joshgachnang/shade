@@ -10,6 +10,9 @@ export interface AgentRunConfig {
   timeout: number;
   idleTimeout: number;
   resume?: boolean;
+  /** Agent SDK session to resume (the id the SDK reported, not Shade's session id). */
+  resumeSdkSessionId?: string;
+  /** Message UUID within `resumeSdkSessionId` to resume from (timeout checkpoint). */
   resumeSessionAt?: string;
   mcpServers?: McpServerConfig[];
   /** Slack timestamp of the triggering message (for reactions) */
