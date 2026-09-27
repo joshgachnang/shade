@@ -8,7 +8,7 @@ import {Group} from "../../models/group";
 import {Message} from "../../models/message";
 import {isTestMode} from "../../testMode/flag";
 import type {ChannelDocument, GroupDocument} from "../../types";
-import {logError} from "../errors";
+import {logError, reportError} from "../errors";
 import {pickRenderer} from "../responses/renderers";
 import type {RenderContext, SlackRenderResult} from "../responses/renderers/types";
 import {RichResponse} from "../responses/schema";
@@ -16,6 +16,7 @@ import {truncateRichResponse} from "../responses/truncate";
 import {ChatCommandRouter} from "./commandRouter";
 import {createEdgeAgentConnector} from "./edgeAgent";
 import {createEmailConnector} from "./email";
+import {pickCachedGroup} from "./groupCache";
 import {createSlackConnector} from "./slack";
 import {createTestConnector} from "./test";
 import type {ChannelConnector, ChannelHealth, ConnectorFactory, InboundMessage} from "./types";
@@ -62,8 +63,7 @@ export class ChannelManager {
     // Cache all groups for external ID lookups
     const groups = await Group.find({});
     for (const group of groups) {
-      this.groupCache.set(group.externalId, group);
-      this.groupCache.set(group._id.toString(), group);
+      this.cacheGroup(group);
     }
     logger.info(`Cached ${groups.length} group(s)`);
 
@@ -449,9 +449,25 @@ export class ChannelManager {
     }
   }
 
-  registerGroup(group: GroupDocument): void {
-    this.groupCache.set(group.externalId, group);
+  private cacheGroup(group: GroupDocument): void {
     this.groupCache.set(group._id.toString(), group);
+    const existing = this.groupCache.get(group.externalId);
+    const {group: owner, isConflict} = pickCachedGroup({existing, incoming: group});
+    if (isConflict && existing) {
+      const dropped = owner === group ? existing : group;
+      reportError(
+        `Groups "${existing.name}" and "${group.name}" share external ID ${group.externalId}`,
+        new Error(
+          `Duplicate group external ID ${group.externalId}: routing to "${owner.name}", ignoring "${dropped.name}"`
+        ),
+        {externalId: group.externalId, keptGroup: owner.name, droppedGroup: dropped.name}
+      );
+    }
+    this.groupCache.set(group.externalId, owner);
+  }
+
+  registerGroup(group: GroupDocument): void {
+    this.cacheGroup(group);
     logger.info(`Registered group "${group.name}" (${group.externalId}) in cache`);
   }
 

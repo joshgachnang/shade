@@ -5,6 +5,7 @@ import {paths} from "../config";
 import {loadAppConfig} from "../models/appConfig";
 import {Group} from "../models/group";
 import {ScheduledTask} from "../models/scheduledTask";
+import {type ReportErrorFn, reportError} from "./errors";
 import type {RichResponse} from "./responses/schema";
 import {wakeScheduler} from "./services/scheduler";
 
@@ -97,6 +98,13 @@ type CreateFeatureFn = (data: IpcCreateFeature) => Promise<void>;
 type RadioStreamFn = (data: IpcRadioStream) => Promise<void>;
 type TriviaToggleFn = (data: IpcTriviaToggle) => Promise<void>;
 
+const describeIpcFailure = (ipcData: IpcFile, reason: string): string => {
+  if (ipcData.type === "create_feature") {
+    return `:warning: Feature channel #${ipcData.name} was NOT created: ${reason}.`;
+  }
+  return `:warning: Action \`${ipcData.type}\` was dropped: ${reason}.`;
+};
+
 /** Time window in ms during which a rich_response for a given agentRunId
  *  preempts a co-arriving send_message. Plenty for an IPC poll cycle. */
 const DEDUPE_WINDOW_MS = 60_000;
@@ -109,6 +117,7 @@ export class IpcWatcher {
   private createFeature: CreateFeatureFn | null = null;
   private radioStream: RadioStreamFn | null = null;
   private triviaToggle: TriviaToggleFn | null = null;
+  private reportError: ReportErrorFn = reportError;
   /** Map of (groupId|agentRunId) -> expiry ts for rich responses that preempt plain sends. */
   private richEmittedRuns = new Map<string, number>();
 
@@ -134,6 +143,10 @@ export class IpcWatcher {
 
   setTriviaToggle(fn: TriviaToggleFn): void {
     this.triviaToggle = fn;
+  }
+
+  setReportError(fn: ReportErrorFn): void {
+    this.reportError = fn;
   }
 
   async start(): Promise<void> {
@@ -200,8 +213,15 @@ export class IpcWatcher {
 
         const isAuthorized = await this.checkAuthorization(ipcData);
         if (!isAuthorized) {
-          logger.warn(`IPC authorization denied for ${file}`);
           await fs.unlink(processingPath);
+          await this.reportIpcFailure(
+            ipcData,
+            new Error(`IPC authorization denied for ${ipcData.type} from group ${ipcData.groupId}`),
+            {
+              context: `IPC authorization denied for ${file}`,
+              reason: "not permitted from this channel",
+            }
+          );
           continue;
         }
 
@@ -320,7 +340,46 @@ export class IpcWatcher {
       await this.createFeature(data);
       logger.info(`IPC: created feature channel "${data.name}" for group ${data.groupId}`);
     } catch (err) {
-      logger.error(`IPC: failed to create feature channel "${data.name}": ${err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      await this.reportIpcFailure(data, err, {
+        context: `IPC: failed to create feature channel "${data.name}"`,
+        reason: message,
+      });
+    }
+  }
+
+  /**
+   * Surface a dropped or failed IPC action: send it to Sentry and tell the
+   * originating channel, since the agent has already told the user it worked.
+   */
+  private async reportIpcFailure(
+    ipcData: IpcFile,
+    err: unknown,
+    opts: {context: string; reason: string}
+  ): Promise<void> {
+    this.reportError(opts.context, err, {
+      ipcType: ipcData.type,
+      groupId: ipcData.groupId,
+      ...("name" in ipcData ? {name: ipcData.name} : {}),
+    });
+
+    if (!this.sendMessage) {
+      return;
+    }
+
+    const sourceGroup = await Group.findById(ipcData.groupId);
+    if (!sourceGroup) {
+      return;
+    }
+
+    try {
+      await this.sendMessage(
+        sourceGroup.channelId.toString(),
+        sourceGroup.externalId,
+        describeIpcFailure(ipcData, opts.reason)
+      );
+    } catch (notifyErr) {
+      logger.error(`IPC: could not announce failure in group ${sourceGroup.name}: ${notifyErr}`);
     }
   }
 

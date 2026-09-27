@@ -117,3 +117,48 @@ describe("GroupQueue", () => {
     expect(queue.selectRunner({executionConfig: {mode: "container"}} as any)).toBe(runner as any);
   });
 });
+
+describe("GroupQueue failed-run reporting", () => {
+  const runCompletion = async (result: Record<string, unknown>) => {
+    const mongoose = (await import("mongoose")).default;
+    const {GroupQueue} = await import("./groupQueue");
+    const channelManager = createMockChannelManager();
+    const queue = new GroupQueue(createMockRunner() as any, channelManager as any);
+    const reported: {context: string; error: unknown; extra?: Record<string, unknown>}[] = [];
+    queue.setReportError((context, error, extra) => {
+      reported.push({context, error, extra});
+    });
+
+    const groupId = new mongoose.Types.ObjectId();
+    await (queue as any).handleAgentCompletion(
+      {_id: groupId, name: "general", modelConfig: {}},
+      groupId.toString(),
+      {sessionId: "session-1"},
+      new mongoose.Types.ObjectId(),
+      {output: "", sessionId: "session-1", durationMs: 5, ...result},
+      {content: "build a thing"},
+      []
+    );
+    return {reported, channelManager};
+  };
+
+  test("reports a failed run to the error reporter and tells the channel", async () => {
+    const {reported, channelManager} = await runCompletion({
+      status: "failed",
+      error: "There's an issue with the selected model",
+    });
+
+    expect(reported).toHaveLength(1);
+    expect(reported[0].context).toContain("general");
+    expect(String(reported[0].error)).toContain("issue with the selected model");
+    expect(reported[0].extra).toMatchObject({group: "general", status: "failed"});
+    const notices = channelManager.sendMessageToGroup.mock.calls.map((c: unknown[]) => c[1]);
+    expect(notices.some((n) => String(n).includes("didn't finish"))).toBe(true);
+  });
+
+  test("does not report a completed run", async () => {
+    const {reported} = await runCompletion({status: "completed", output: "done"});
+
+    expect(reported).toHaveLength(0);
+  });
+});

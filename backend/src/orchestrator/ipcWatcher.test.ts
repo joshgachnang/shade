@@ -17,6 +17,12 @@ import type {RichResponse} from "./responses/schema";
  * registered handlers fire (or are correctly denied by authorization).
  */
 
+interface ReportedError {
+  context: string;
+  error: unknown;
+  extra?: Record<string, unknown>;
+}
+
 interface SentMessage {
   channelId: string;
   groupExternalId: string;
@@ -31,6 +37,9 @@ describe("IpcWatcher", () => {
   let richSent: {groupId: string; payload: RichResponse}[];
   let reactions: {emoji: string; groupExternalId: string}[];
   let featureCalls: string[];
+  let reported: ReportedError[];
+  let failNextFeature: boolean;
+  let channelDocId: string;
   let mainGroupId: string;
   let sideGroupId: string;
   const createdIds: mongoose.Types.ObjectId[] = [];
@@ -59,6 +68,7 @@ describe("IpcWatcher", () => {
       externalId: "ipc-side-ext",
       isMain: false,
     });
+    channelDocId = channel._id.toString();
     mainGroupId = mainGroup._id.toString();
     sideGroupId = sideGroup._id.toString();
     createdIds.push(channel._id, mainGroup._id, sideGroup._id);
@@ -74,7 +84,14 @@ describe("IpcWatcher", () => {
       reactions.push({emoji, groupExternalId});
     });
     watcher.setCreateFeature(async (data) => {
+      if (failNextFeature) {
+        failNextFeature = false;
+        throw new Error("slack said no");
+      }
       featureCalls.push(data.name);
+    });
+    watcher.setReportError((context, error, extra) => {
+      reported.push({context, error, extra});
     });
   });
 
@@ -83,6 +100,8 @@ describe("IpcWatcher", () => {
     richSent = [];
     reactions = [];
     featureCalls = [];
+    reported = [];
+    failNextFeature = false;
   });
 
   afterEach(async () => {
@@ -133,7 +152,8 @@ describe("IpcWatcher", () => {
 
     await watcher.tickNow();
 
-    expect(sent).toEqual([
+    const delivered = sent.filter((m) => m.content === "from main" || m.content === "from side");
+    expect(delivered).toEqual([
       {channelId: "chan-1", groupExternalId: "ipc-side-ext", content: "from main"},
     ]);
   });
@@ -250,6 +270,51 @@ describe("IpcWatcher", () => {
     expect(featureCalls).toEqual(["allowed-feature"]);
   });
 
+  test("denied create_feature is reported and announced in the source channel", async () => {
+    await writeIpcFile(paths.ipc, {
+      type: "create_feature",
+      groupId: sideGroupId,
+      channelId: "chan-1",
+      name: "feat-denied",
+      senderExternalId: "U1",
+    });
+    await watcher.tickNow();
+
+    expect(featureCalls).toEqual([]);
+    expect(reported).toHaveLength(1);
+    expect(reported[0].context).toContain("IPC authorization denied");
+    expect(reported[0].extra).toMatchObject({
+      ipcType: "create_feature",
+      groupId: sideGroupId,
+      name: "feat-denied",
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].channelId).toBe(channelDocId);
+    expect(sent[0].groupExternalId).toBe("ipc-side-ext");
+    expect(sent[0].content).toContain("feat-denied");
+    expect(sent[0].content).toContain("was NOT created");
+  });
+
+  test("create_feature handler failure is reported and announced in the source channel", async () => {
+    failNextFeature = true;
+    await writeIpcFile(paths.ipc, {
+      type: "create_feature",
+      groupId: mainGroupId,
+      channelId: "chan-1",
+      name: "feat-broken",
+      senderExternalId: "U1",
+    });
+    await watcher.tickNow();
+
+    expect(reported).toHaveLength(1);
+    expect(String(reported[0].error)).toContain("slack said no");
+    expect(reported[0].extra).toMatchObject({ipcType: "create_feature", name: "feat-broken"});
+    expect(sent).toHaveLength(1);
+    expect(sent[0].groupExternalId).toBe("ipc-main-ext");
+    expect(sent[0].content).toContain("feat-broken");
+    expect(sent[0].content).toContain("slack said no");
+  });
+
   test("unknown source group is denied entirely", async () => {
     await writeIpcFile(paths.ipc, {
       type: "send_message",
@@ -260,6 +325,8 @@ describe("IpcWatcher", () => {
     await watcher.tickNow();
 
     expect(sent).toHaveLength(0);
+    expect(reported).toHaveLength(1);
+    expect(reported[0].context).toContain("IPC authorization denied");
     expect((await fs.readdir(ipcDir)).filter((f) => f.endsWith(".json"))).toHaveLength(0);
   });
 });

@@ -7,7 +7,7 @@ import {DEFAULT_AGENT_TIMEOUT_MS, Group, LEGACY_AGENT_TIMEOUT_MS} from "../model
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
-import {logError} from "./errors";
+import {logError, type ReportErrorFn, reportError} from "./errors";
 import {featureRoutingPromptBlock} from "./featureRoutingPromptBlock";
 import {buildSystemPrompt, ensureGroupDirectory} from "./memory";
 import {buildPromptForGroup, formatOutboundMessage} from "./router";
@@ -54,6 +54,7 @@ export class GroupQueue {
   private plannerRunner: AgentRunner | null;
   private containerRunner: AgentRunner | null;
   private channelManager: ChannelManager;
+  private reportError: ReportErrorFn = reportError;
   private globalActiveCount = 0;
   /** Shade session ids whose channel has already been told how to attach. */
   private announcedAttach = new Set<string>();
@@ -68,6 +69,10 @@ export class GroupQueue {
     this.plannerRunner = plannerRunner;
     this.containerRunner = containerRunner;
     this.channelManager = channelManager;
+  }
+
+  setReportError(fn: ReportErrorFn): void {
+    this.reportError = fn;
   }
 
   /**
@@ -161,7 +166,9 @@ export class GroupQueue {
     try {
       await this.executeAgentRun(item);
     } catch (err) {
-      logError(`Agent run error for group ${item.group.name}`, err);
+      this.reportError(`Agent run error for group ${item.group.name}`, err, {
+        group: item.group.name,
+      });
       try {
         await this.handleFailure(item, String(err));
       } catch (failErr) {
@@ -491,6 +498,11 @@ export class GroupQueue {
     }
 
     if (result.status !== "completed") {
+      this.reportError(
+        `Agent run ${result.status} for group ${group.name}`,
+        new Error(result.error ?? `Agent run ${result.status}`),
+        {group: group.name, status: result.status, sessionId: result.sessionId}
+      );
       const reason = result.error ? ` (${result.error})` : "";
       try {
         await this.channelManager.sendMessageToGroup(

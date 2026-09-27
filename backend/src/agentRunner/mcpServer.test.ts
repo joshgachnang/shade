@@ -897,3 +897,45 @@ describe("cancel_agent_task tool", () => {
     expect(text).toContain("not found");
   });
 });
+
+describe("create_feature tool", () => {
+  const withIpcDir = async (ctx: McpContext, fn: () => Promise<void>): Promise<void> => {
+    await fs.mkdir(ctx.ipcDir, {recursive: true});
+    try {
+      await fn();
+    } finally {
+      await fs.rm(ctx.ipcDir, {recursive: true, force: true});
+    }
+  };
+
+  test("refuses outside the main group without queueing IPC", async () => {
+    const {group, channel} = await makeGroup({isMain: false});
+    const ctx = {
+      ...makeContext(group._id.toString(), channel._id.toString()),
+      senderExternalId: "U1",
+    };
+
+    await withIpcDir(ctx, async () => {
+      const text = await callTool(ctx, "create_feature", {name: "nope"});
+
+      expect(text).toContain("NOT created");
+      expect(text).toContain("main");
+      expect(await fs.readdir(ctx.ipcDir)).toHaveLength(0);
+    });
+  });
+
+  test("queues IPC from the main group", async () => {
+    const {group, channel} = await makeGroup({isMain: true});
+    const ctx = {
+      ...makeContext(group._id.toString(), channel._id.toString()),
+      senderExternalId: "U1",
+    };
+
+    await withIpcDir(ctx, async () => {
+      const text = await callTool(ctx, "create_feature", {name: "yes-please"});
+
+      expect(text).toContain("queued");
+      expect(await fs.readdir(ctx.ipcDir)).toHaveLength(1);
+    });
+  });
+});
