@@ -21,7 +21,7 @@ set -euo pipefail
 # =============================================================================
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUN_PATH="$(command -v bun)"
+BUN_PATH="$(command -v bun || true)"  # only the bun-script commands need it
 
 # --- Service Registry ---
 # Every service runs the SAME compiled executable (dist/shade, a bun
