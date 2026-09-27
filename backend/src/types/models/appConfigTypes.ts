@@ -74,6 +74,11 @@ export interface AppConfigZerg {
   cacheMs: number;
 }
 
+export interface AppConfigFeatureChannels {
+  /** Host checkout dir for feature channels not on zerg; `~` expands to $HOME. */
+  localReposDir: string;
+}
+
 export interface AppConfigScheduler {
   useTaskBoard: boolean;
 }
@@ -262,6 +267,7 @@ export interface AppConfigFields {
   memory: AppConfigMemory;
   taskWorker: AppConfigTaskWorker;
   zerg: AppConfigZerg;
+  featureChannels: AppConfigFeatureChannels;
   scheduler: AppConfigScheduler;
   builtinTasks: AppConfigBuiltinTasks;
   sessionReview: AppConfigSessionReview;

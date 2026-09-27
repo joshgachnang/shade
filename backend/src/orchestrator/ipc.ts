@@ -51,6 +51,8 @@ export interface IpcCreateFeature {
   description?: string;
   /** The user's original feature request, verbatim — seeds the new channel so planning starts immediately. */
   request?: string;
+  /** Repo the feature targets (`repo` or `owner/repo`); decides zerg vs. local checkout. */
+  repo?: string;
   senderExternalId: string;
 }
 
