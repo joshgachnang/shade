@@ -17,6 +17,8 @@ Tab-based sidebar navigation (`app/(tabs)/_layout.tsx`, `SidebarNavigation` from
 | Console | `app/console.tsx` | Full-screen **Shade Console** — Claude-agent interaction UI (chat, typing indicators, plan visualization, multiple shell layouts). Components in `frontend/components/console/` |
 | Login | `app/login.tsx` | Auth entry; unauthenticated users are redirected here after rehydration |
 
+The Admin App Config form is schema-driven. Its `brewery` object exposes the command, event and narration timing, message-line limit, optional agent override, and silence alert threshold; see [Brewery configuration](./backend.md#brewery-configuration) for defaults.
+
 ## State & SDK generation
 
 - Store (`frontend/store/`): Redux Toolkit + `@terreno/rtk` auth slice, redux-persist (persists auth + app state, not the RTK Query cache), global RTK error middleware.

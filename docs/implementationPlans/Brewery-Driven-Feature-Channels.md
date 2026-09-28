@@ -147,7 +147,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 
 - [x] **T5** — Add featureDriver to Group and brewery state to Feature
   `Group.featureDriver`, `Feature.brewery` subdocument, `awaiting_approval` status, types.
-- [ ] **T6** — Add AppConfig.brewery with admin UI fields
+- [x] **T6** — Add AppConfig.brewery with admin UI fields
 
 ### Phase 3: Shade driver
 

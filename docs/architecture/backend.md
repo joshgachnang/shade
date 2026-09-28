@@ -44,6 +44,21 @@ For example, a newly started local run can store:
 {"slug":"example-feature","repo":"shade","workspace":{"kind":"local","repoPath":"/workspace/example-feature"},"eventsOffset":0,"stepMessages":[]}
 ```
 
+### Brewery configuration
+
+Edit the `brewery` section of the App Config record in Admin to tune feature-channel runs. The fields are stored in `AppConfig` and are available through `loadAppConfig()`; an empty `agents` value lets brewery use its own agent configuration.
+
+| Field | Default | Purpose |
+|---|---:|---|
+| `command` | `brewery` | Executable used to launch brewery |
+| `pollIntervalMs` | `5000` | Delay between event reads |
+| `narrationFlushMs` | `4000` | Minimum delay between narration edits |
+| `maxNarrationLines` | `8` | Lines retained in each step message |
+| `agents` | empty | Optional `--agents` override |
+| `stepSilenceAlertMin` | `30` | Silence threshold before a dead-run alert |
+
+For example, setting `{"agents":"codex","maxNarrationLines":5}` selects an agent override and shortens step messages. Admin edits are limited to administrators by the App Config CRUD permissions.
+
 ## API surface
 
 - **Auto-generated CRUD** (`backend/src/api/crudRoutes.ts`): one `modelRouter` per model (`/users`, `/groups`, `/messages`, `/scheduledTasks`, …). Typical permissions: admin writes, authenticated reads; owner-scoped for `CalendarConfig`.
