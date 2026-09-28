@@ -66,6 +66,7 @@ export const fakeCi = (snapshots: PrSnapshot[], pr = 7): Ci & { waits: number } 
   const ci = {
     waits: 0,
     prForBranch: async (): Promise<number> => pr,
+    prUrl: async (_cwd: string, number: number): Promise<string> => `https://example.test/pr/${number}`,
     snapshot: async (): Promise<PrSnapshot> => snapshots[Math.min(i++, snapshots.length - 1)],
     waitForChecks: async (): Promise<void> => {
       ci.waits += 1;

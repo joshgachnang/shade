@@ -79,6 +79,7 @@ export interface PrSnapshot {
 
 export interface Ci {
   prForBranch: (cwd: string) => Promise<number | null>;
+  prUrl: (cwd: string, pr: number) => Promise<string>;
   snapshot: (cwd: string, pr: number) => Promise<PrSnapshot>;
   waitForChecks: (cwd: string, pr: number, timeoutMin: number) => Promise<void>;
 }
@@ -89,6 +90,11 @@ export const githubCi: Ci = {
   prForBranch: async (cwd) => {
     const res = await sh(cwd, ["gh", "pr", "view", "--json", "number", "-q", ".number"]);
     return res.code === 0 && res.out ? Number(res.out) : null;
+  },
+  prUrl: async (cwd, pr) => {
+    const res = await sh(cwd, ["gh", "pr", "view", String(pr), "--json", "url", "-q", ".url"]);
+    if (res.code !== 0 || !res.out) throw new Error(`gh pr view ${pr}: ${res.err || "missing URL"}`);
+    return res.out;
   },
   snapshot: async (cwd, pr) => {
     let view: { headRefOid: string; mergeable: PrSnapshot["mergeable"]; mergeStateStatus: string } | null = null;

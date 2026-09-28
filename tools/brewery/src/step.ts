@@ -3,6 +3,7 @@
 import { join } from "node:path";
 import { availability, runAgent, type StepResult } from "./agents.ts";
 import { FAN_OUT, type Config, type Stage } from "./config.ts";
+import { appendEvent } from "./events.ts";
 import { header } from "./prompts.ts";
 import { runDir, saveState, type RunState } from "./state.ts";
 
@@ -53,6 +54,7 @@ export const runStage = async (ctx: Ctx, stage: Stage, body: string, opts: Stage
     const resultFile = `${base}.result.json`;
     const label = `${stage}${opts.task ? ` ${opts.task}` : ""} (${agent})`;
     ctx.log(`▸ ${label}`);
+    appendEvent(state, { kind: "step.start", seq, stage, ...(opts.task ? { task: opts.task } : {}), agent });
     const outcome = await runAgent({
       name: label,
       profile: config.agents[agent],
@@ -64,6 +66,7 @@ export const runStage = async (ctx: Ctx, stage: Stage, body: string, opts: Stage
       timeoutMin: config.agents[agent].timeoutMin ?? config.limits.stepTimeoutMin,
     });
     ctx.log(`  ${label}: ${outcome.result.status} in ${outcome.seconds}s — ${outcome.result.action}`);
+    appendEvent(state, { kind: "step.end", seq, status: outcome.result.status, action: outcome.result.action, seconds: outcome.seconds });
     state.history.push({
       seq,
       stage,

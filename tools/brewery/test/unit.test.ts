@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { agentArgv } from "../src/agents.ts";
 import { DEFAULT_CONFIG, loadConfig, parseAgentsFlag } from "../src/config.ts";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildMessage, formatAsks, parseReply, smsVersion } from "../src/human.ts";
+import { appendEvent } from "../src/events.ts";
 import { isApproved, markTask, orientation, parseTasks, readStatus, setStatus, title } from "../src/ip.ts";
-import { slugify } from "../src/state.ts";
+import { newState, runDir, slugify } from "../src/state.ts";
 import { mergeVerdicts } from "../src/step.ts";
 import { isGreen } from "../src/commands/finish.ts";
 import { IP } from "./helpers.ts";
@@ -119,4 +120,14 @@ describe("verdicts", () => {
     expect(isGreen({ ...snap, mergeable: "CONFLICTING" })).toBe(false);
     expect(isGreen({ ...snap, checks: [{ name: "t", bucket: "fail" }] })).toBe(false);
   });
+});
+
+test("run errors append one parseable event line", () => {
+  const repo = mkdtempSync(join(tmpdir(), "brewery-events-"));
+  const state = newState({ slug: "failed", repo, ip: "", base: "master", phase: "distill" });
+  appendEvent(state, { kind: "error", message: "agent unavailable" });
+  const lines = readFileSync(join(runDir(repo, "failed"), "events.jsonl"), "utf8").split("\n");
+  expect(lines).toHaveLength(2);
+  expect(lines[1]).toBe("");
+  expect(JSON.parse(lines[0])).toMatchObject({ kind: "error", message: "agent unavailable" });
 });

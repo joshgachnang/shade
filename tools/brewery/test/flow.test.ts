@@ -7,12 +7,16 @@ import { barrel } from "../src/commands/barrel.ts";
 import { distill } from "../src/commands/distill.ts";
 import { finish } from "../src/commands/finish.ts";
 import { readIp, readStatus, parseTasks } from "../src/ip.ts";
-import { newState, readContext, runDir } from "../src/state.ts";
+import { newState, readContext, runDir, saveState } from "../src/state.ts";
 import type { PrSnapshot } from "../src/vcs.ts";
 import { fakeCi, fakeSetup, IP, quietCtx, run, tempRepo } from "./helpers.ts";
 
 const green = (sha: string): PrSnapshot => ({ sha, mergeable: "MERGEABLE", mergeState: "CLEAN", checks: [{ name: "test", bucket: "pass" }] });
 const red = (sha: string): PrSnapshot => ({ sha, mergeable: "MERGEABLE", mergeState: "UNSTABLE", checks: [{ name: "test", bucket: "fail" }] });
+const pending = (sha: string): PrSnapshot => ({ sha, mergeable: "MERGEABLE", mergeState: "BLOCKED", checks: [{ name: "test", bucket: "pending" }] });
+
+const events = (repo: string, slug: string): Record<string, unknown>[] =>
+  readFileSync(join(runDir(repo, slug), "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
 
 const stepPrompts = (repo: string, slug: string, pattern: RegExp): string[] => {
   const dir = join(runDir(repo, slug), "steps");
@@ -42,6 +46,18 @@ describe("distill → sign-off → answer", () => {
     expect(state.waiting?.kind).toBe("signoff");
     expect(readStatus(readIp(state.ip))).toStartWith("awaiting sign-off");
     expect(state.waiting?.message).toContain("1. Plain text or markdown? a) Plain text (recommended) b) Markdown");
+    const beforeAnswer = events(repo, "greet");
+    expect(beforeAnswer.filter((event) => event.kind === "step.start")).toHaveLength(4);
+    expect(beforeAnswer.filter((event) => event.kind === "step.end")).toHaveLength(4);
+    for (const start of beforeAnswer.filter((event) => event.kind === "step.start")) {
+      const end = beforeAnswer.find((event) => event.kind === "step.end" && event.seq === start.seq);
+      expect(end).toBeDefined();
+      expect(beforeAnswer.indexOf(start)).toBeLessThan(beforeAnswer.indexOf(end as Record<string, unknown>));
+    }
+    expect(beforeAnswer[0]).toMatchObject({ kind: "step.start", seq: 1, stage: "distill", agent: "alpha" });
+    expect(beforeAnswer[1]).toMatchObject({ kind: "step.end", seq: 1, status: "PASS", action: "sign off" });
+    expect(beforeAnswer.at(-1)).toMatchObject({ kind: "waiting", waitingKind: "signoff", ip: state.ip, message: state.waiting?.message });
+    expect(beforeAnswer.every((event) => typeof event.t === "string" && !Number.isNaN(Date.parse(String(event.t))))).toBe(true);
 
     const calls = readFileSync(`${planPath}.calls.log`, "utf8").trim().split("\n").map((l) => l.split("\t"));
     const cutCalls = calls.filter((c) => c[1].startsWith("cut"));
@@ -56,6 +72,7 @@ describe("distill → sign-off → answer", () => {
     expect(outcome).toBe("approved");
     expect(readStatus(readIp(state.ip))).toStartWith("approved");
     expect(state.waiting).toBeUndefined();
+    expect(events(repo, "greet").slice(-4).map((event) => event.kind)).toEqual(["resumed", "note", "step.start", "step.end"]);
     const context = readContext(state);
     expect(context).toContain("Add a greeting file.");
     expect(context).toContain("ok, 1b");
@@ -109,6 +126,11 @@ describe("barrel", () => {
     expect(parseTasks(readIp(ctx.state.ip)).every((t) => t.done)).toBe(true);
     expect(ctx.state.phase).toBe("done");
     expect(ctx.state.pr).toBe(7);
+    const stream = events(repo, "greet");
+    expect(stream.filter((event) => event.kind === "step.start" && event.task === "T1").map((event) => event.stage)).toEqual(["pick", "roast", "pick", "roast"]);
+    expect(stream.filter((event) => event.kind === "pr")).toEqual([expect.objectContaining({ kind: "pr", number: 7, url: "https://example.test/pr/7" })]);
+    expect(stream.filter((event) => event.kind === "ci").map((event) => event.state)).toEqual(["pass"]);
+    expect(stream.at(-1)).toMatchObject({ kind: "done" });
 
     const pickT1 = stepPrompts(repo, "greet", /-pick-T1-/);
     expect(pickT1).toHaveLength(2);
@@ -119,9 +141,13 @@ describe("barrel", () => {
   });
 
   test("refuses an IP that is not approved", async () => {
-    const { ctx } = setupApproved([]);
+    const { repo, ctx } = setupApproved([]);
     writeFileSync(ctx.state.ip, IP("awaiting sign-off"));
     await expect(barrel(ctx, fakeCi([green("a")]))).rejects.toThrow("not approved");
+    saveState(ctx.state);
+    const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "barrel", "greet", "--repo", repo], { cwd: repo, env: process.env });
+    expect(command.exitCode).toBe(1);
+    expect(events(repo, "greet").at(-1)).toMatchObject({ kind: "error", message: expect.stringContaining("not approved") });
   });
 
   test("gates a task after the attempt limit, and 'skip' moves past it", async () => {
@@ -135,6 +161,7 @@ describe("barrel", () => {
     ctx.config.limits.pickAttempts = 2;
     expect(await barrel(ctx, fakeCi([green("a")]))).toBe("waiting");
     expect(ctx.state.waiting?.task).toBe("T1");
+    expect(events(ctx.state.repo, "greet").at(-1)).toMatchObject({ kind: "waiting", waitingKind: "gate" });
     expect(await answer(ctx, "skip")).toBe("continue");
     expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
     expect(ctx.state.tasks.T1.status).toBe("skipped");
@@ -142,6 +169,15 @@ describe("barrel", () => {
 });
 
 describe("finish", () => {
+  test("records a pending CI snapshot before the green result", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, []);
+    const ctx = quietCtx(newState({ slug: "pr-7", repo, ip: "", base: "master", phase: "finish" }), config);
+    expect(await finish(ctx, fakeCi([pending("a"), green("a")]), 7)).toBe("done");
+    expect(events(repo, "pr-7").map((event) => event.kind)).toEqual(["pr", "ci", "ci", "done"]);
+    expect(events(repo, "pr-7").filter((event) => event.kind === "ci").map((event) => event.state)).toEqual(["pending", "pass"]);
+  });
+
   test("reacts to a red head, counts the push, and stops when green", async () => {
     const repo = tempRepo();
     const { config } = fakeSetup(repo, [{ match: "taste", result: { status: "PASS", action: "fixed and pushed", sha: "b" } }]);
@@ -158,6 +194,7 @@ describe("finish", () => {
     const ctx = quietCtx(newState({ slug: "pr-7", repo, ip: "", base: "master", phase: "finish" }), config);
     expect(await finish(ctx, fakeCi([red("a")]), 7)).toBe("waiting");
     expect(ctx.state.waiting?.kind).toBe("gate");
+    expect(events(repo, "pr-7").filter((event) => event.kind === "ci").map((event) => event.state)).toEqual(["fail", "fail", "fail"]);
     expect(ctx.state.history.filter((h) => h.stage === "taste")).toHaveLength(2);
   });
 });

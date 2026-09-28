@@ -80,6 +80,29 @@ reply right there instead. Reply from anywhere with `brewery answer <slug> "<rep
 `brewery status` lists runs and what is waiting on you. Each step's prompt, log, and result
 are in `.terreno/brewery/<slug>/steps/`.
 
+## Progress events
+
+Each run appends one JSON object per line to `.terreno/brewery/<slug>/events.jsonl`.
+Consumers can keep a byte offset and read only new lines. Every event has an ISO 8601
+`t` timestamp and a `kind` field. The file stays outside git with the rest of the run
+state.
+
+| Kind | Fields | When emitted |
+| --- | --- | --- |
+| `step.start` | `seq`, `stage`, optional `task`, `agent` | Before an agent process starts |
+| `step.end` | `seq`, `status`, `action`, `seconds` | After its result is read, including failed results |
+| `waiting` | `waitingKind` (`signoff` or `gate`), `message`, optional `ip` | When brewery stops for a human answer |
+| `resumed` | — | When brewery accepts an answer to a waiting run |
+| `note` | `text` | When a human answer is recorded |
+| `pr` | `number`, `url` | When brewery finds the run's PR |
+| `ci` | `state` (`pending`, `fail`, or `pass`) | After each CI snapshot |
+| `done` | — | When the PR is green and the run finishes |
+| `error` | `message` | When a run command exits with an error |
+
+For example, `{"t":"2026-09-28T12:00:00.000Z","kind":"step.start","seq":1,"stage":"distill","agent":"claude"}`
+starts a step. Match its `seq` to the later `step.end`. Fan-out steps have a separate
+sequence number per agent.
+
 ## Development
 
 ```bash

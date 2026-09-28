@@ -1,6 +1,7 @@
 // Approved IP → green PR. Each Pick, each Roast, the branch review, and Brew are
 // separate agent processes; brewery commits between them so Roast judges a fixed tree.
 import type { Finding } from "../agents.ts";
+import { appendEvent } from "../events.ts";
 import { isApproved, markTask, parseTasks, readIp, writeIp } from "../ip.ts";
 import { brewBody, pickBody, reviewBody, reviewFixBody, roastBody, roastReviewFixBody } from "../prompts.ts";
 import { saveState, type TaskState } from "../state.ts";
@@ -130,6 +131,7 @@ const submit = async (ctx: Ctx, ci: Ci): Promise<StepOutcome> => {
     if ((result.status === "PASS" || result.status === "PENDING") && pr) {
       state.pr = pr;
       saveState(state);
+      appendEvent(state, { kind: "pr", number: pr, url: await ci.prUrl(state.repo, pr) });
       return "next";
     }
     ctx.log(`  brew attempt ${attempt}: ${result.action}`);

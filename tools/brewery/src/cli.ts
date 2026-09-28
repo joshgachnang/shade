@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { availability } from "./agents.ts";
+import { appendEvent } from "./events.ts";
 import { answer } from "./commands/answer.ts";
 import { barrel } from "./commands/barrel.ts";
 import { findingsTable, runCut } from "./commands/cut.ts";
@@ -66,7 +67,11 @@ const str = (value: string | true | undefined): string | undefined => (typeof va
 
 const log = (line: string): void => console.log(line);
 
-const makeCtx = (state: RunState, agentsFlag?: string): Ctx => ({ state, config: loadConfig(state.repo, agentsFlag), log });
+let activeState: RunState | undefined;
+const makeCtx = (state: RunState, agentsFlag?: string): Ctx => {
+  activeState = state;
+  return { state, config: loadConfig(state.repo, agentsFlag), log };
+};
 
 const afterApproval = async (ctx: Ctx, go: boolean): Promise<number> => {
   if (!go) return 0;
@@ -245,6 +250,7 @@ const main = async (): Promise<number> => {
 main()
   .then((code) => process.exit(code))
   .catch((error: Error) => {
+    if (activeState) appendEvent(activeState, { kind: "error", message: error.message });
     console.error(error.message);
     process.exit(1);
   });

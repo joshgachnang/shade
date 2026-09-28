@@ -132,7 +132,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 
 ### Phase 1: brewery (`tools/brewery`)
 
-- [ ] **T1** — Emit a per-run events.jsonl from brewery
+- [x] **T1** — Emit a per-run events.jsonl from brewery
   Step start/end, waiting, resumed, note, pr, ci, done, error (see "brewery changes" 1). Unit +
   flow tests with the scripted fake agent.
 - [ ] **T2** — Stream claude and codex output into narration events
