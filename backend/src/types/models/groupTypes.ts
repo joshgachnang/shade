@@ -47,6 +47,8 @@ export interface GroupFields {
   modelConfig: GroupModelConfig;
   executionConfig: GroupExecutionConfig;
   featurePhase?: FeaturePhase;
+  /** Present only on feature channels driven by brewery. Legacy groups leave this unset. */
+  featureDriver?: "brewery";
 }
 
 export type GroupDocument = DefaultDoc & GroupFields;
