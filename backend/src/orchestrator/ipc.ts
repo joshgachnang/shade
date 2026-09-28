@@ -56,6 +56,12 @@ export interface IpcCreateFeature {
   senderExternalId: string;
 }
 
+export interface IpcCompleteFeature {
+  type: "complete_feature";
+  groupId: string;
+  reason: string;
+}
+
 export interface IpcRadioStream {
   type: "start_radio_stream" | "stop_radio_stream";
   groupId: string;
@@ -74,6 +80,7 @@ type IpcFile =
   | IpcTaskAction
   | IpcReaction
   | IpcCreateFeature
+  | IpcCompleteFeature
   | IpcRadioStream
   | IpcTriviaToggle;
 
@@ -97,6 +104,7 @@ type AddReactionFn = (
 ) => Promise<void>;
 
 type CreateFeatureFn = (data: IpcCreateFeature) => Promise<void>;
+type CompleteFeatureFn = (data: IpcCompleteFeature) => Promise<void>;
 type RadioStreamFn = (data: IpcRadioStream) => Promise<void>;
 type TriviaToggleFn = (data: IpcTriviaToggle) => Promise<void>;
 
@@ -117,6 +125,7 @@ export class IpcWatcher {
   private sendRichMessage: SendRichMessageFn | null = null;
   private addReaction: AddReactionFn | null = null;
   private createFeature: CreateFeatureFn | null = null;
+  private completeFeature: CompleteFeatureFn | null = null;
   private radioStream: RadioStreamFn | null = null;
   private triviaToggle: TriviaToggleFn | null = null;
   private reportError: ReportErrorFn = reportError;
@@ -137,6 +146,10 @@ export class IpcWatcher {
 
   setCreateFeature(fn: CreateFeatureFn): void {
     this.createFeature = fn;
+  }
+
+  setCompleteFeature(fn: CompleteFeatureFn): void {
+    this.completeFeature = fn;
   }
 
   setRadioStream(fn: RadioStreamFn): void {
@@ -305,6 +318,9 @@ export class IpcWatcher {
       case "create_feature":
         await this.handleCreateFeature(ipcData);
         break;
+      case "complete_feature":
+        await this.handleCompleteFeature(ipcData);
+        break;
       case "start_radio_stream":
       case "stop_radio_stream":
         await this.handleRadioStream(ipcData);
@@ -382,6 +398,23 @@ export class IpcWatcher {
       );
     } catch (notifyErr) {
       logger.error(`IPC: could not announce failure in group ${sourceGroup.name}: ${notifyErr}`);
+    }
+  }
+
+  private async handleCompleteFeature(data: IpcCompleteFeature): Promise<void> {
+    if (!this.completeFeature) {
+      logger.warn("No completeFeature handler registered for IPC");
+      return;
+    }
+
+    try {
+      await this.completeFeature(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.reportIpcFailure(data, err, {
+        context: `IPC: failed to complete feature for group ${data.groupId}`,
+        reason: message,
+      });
     }
   }
 

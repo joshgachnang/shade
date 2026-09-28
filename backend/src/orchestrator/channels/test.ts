@@ -83,6 +83,10 @@ class TestChannelConnector implements ChannelConnector {
 
   async inviteToChannel(_channelId: string, _userId: string): Promise<void> {}
 
+  async archiveChannel(channelId: string): Promise<void> {
+    logger.debug(`Test channel archiveChannel ${channelId} (no-op)`);
+  }
+
   onMessage(_handler: (message: InboundMessage) => Promise<void>): void {
     // Inbound arrives via POST /command, which writes Message docs directly.
   }

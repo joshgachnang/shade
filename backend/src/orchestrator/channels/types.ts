@@ -62,6 +62,8 @@ export interface ChannelConnector {
 
   createChannel(name: string): Promise<{id: string}>;
   inviteToChannel(channelId: string, userId: string): Promise<void>;
+  /** Archive a provider channel (e.g. a finished feature channel). Optional per transport. */
+  archiveChannel?(channelId: string): Promise<void>;
 
   onMessage(handler: (message: InboundMessage) => Promise<void>): void;
 }
