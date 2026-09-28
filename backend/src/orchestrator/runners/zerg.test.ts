@@ -14,6 +14,7 @@ import {
   filterContainerEnv,
   formatAttachNotice,
   parseUpOutput,
+  redactExecArgs,
   resolveContainerTarget,
   shellQuote,
   slugifyFeature,
@@ -440,5 +441,30 @@ describe("DirectAgentRunner container refusal", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toMatch(/container execution/);
     expect(runner.isRunning("session-1")).toBe(false);
+  });
+});
+
+describe("redactExecArgs", () => {
+  test("hides every -e value but keeps the variable names", () => {
+    const args = buildDockerExecArgs({
+      session: "lede-x",
+      workdir: "/workspace",
+      env: {ANTHROPIC_API_KEY: "sk-ant-secret", SHADE_GROUP_ID: "abc123"},
+      command: "claude",
+      args: ["--print"],
+    });
+
+    const redacted = redactExecArgs(args).join(" ");
+
+    expect(redacted).not.toContain("sk-ant-secret");
+    expect(redacted).not.toContain("abc123");
+    expect(redacted).toContain("ANTHROPIC_API_KEY=<redacted>");
+    expect(redacted).toContain("SHADE_GROUP_ID=<redacted>");
+    expect(redacted).toContain("docker exec -i -w /workspace");
+    expect(redacted).toContain("lede-x claude --print");
+  });
+
+  test("leaves args without env flags unchanged", () => {
+    expect(redactExecArgs(["zerg", "run", "lede", "x"])).toEqual(["zerg", "run", "lede", "x"]);
   });
 });
