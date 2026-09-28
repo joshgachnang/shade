@@ -7,7 +7,8 @@ import { barrel } from "../src/commands/barrel.ts";
 import { distill } from "../src/commands/distill.ts";
 import { finish } from "../src/commands/finish.ts";
 import { readIp, readStatus, parseTasks } from "../src/ip.ts";
-import { newState, readContext, runDir, saveState } from "../src/state.ts";
+import { runStage } from "../src/step.ts";
+import { loadState, newState, readContext, runDir, saveState } from "../src/state.ts";
 import type { PrSnapshot } from "../src/vcs.ts";
 import { fakeCi, fakeSetup, IP, quietCtx, run, tempRepo } from "./helpers.ts";
 
@@ -25,6 +26,59 @@ const stepPrompts = (repo: string, slug: string, pattern: RegExp): string[] => {
     .sort()
     .map((f) => readFileSync(join(dir, f), "utf8"));
 };
+
+test("brewery note records verbatim mid-run text for later steps without changing phase", async () => {
+  const repo = tempRepo();
+  const { config } = fakeSetup(repo, [{ match: "check notes", result: { status: "PASS", action: "read" } }]);
+  const state = newState({ slug: "greet", repo, ip: "", base: "master", phase: "build" });
+  saveState(state);
+  const note = "  Keep the existing title.\nUse the short label.  ";
+  const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "note", "greet", note, "--repo", repo], { cwd: repo, env: process.env });
+  expect(command.exitCode).toBe(0);
+  const saved = JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8"));
+  expect(saved.notes).toEqual([note]);
+  expect(saved.phase).toBe("build");
+  expect(readContext(state)).toContain(note);
+  expect(events(repo, "greet").at(-1)).toMatchObject({ kind: "note", text: note });
+
+  const ctx = quietCtx(saved, config);
+  await runStage(ctx, "pick", "check notes", { task: "T3" });
+  expect(stepPrompts(repo, "greet", /pick-T3/)[0]).toContain(note);
+  expect(stepPrompts(repo, "greet", /pick-T3/)[0]).toContain("the human added, mid-run");
+
+  // An already-running process may still hold the state from before the note.
+  state.seq = ctx.state.seq;
+  saveState(state);
+  expect(loadState("greet", repo).notes).toEqual([note]);
+  const staleCtx = quietCtx(state, config);
+  await runStage(staleCtx, "pick", "check notes", { task: "T4" });
+  expect(stepPrompts(repo, "greet", /pick-T4/)[0]).toContain(note);
+});
+
+test("brewery note rejects missing and blank text without changing the run", () => {
+  const repo = tempRepo();
+  fakeSetup(repo, []);
+  const state = newState({ slug: "greet", repo, ip: "", base: "master", phase: "build" });
+  saveState(state);
+  for (const args of [["note", "greet"], ["note", "greet", "  "]]) {
+    const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), ...args, "--repo", repo], { cwd: repo, env: process.env });
+    expect(command.exitCode).toBe(1);
+  }
+  expect(readContext(state)).toBe("");
+  expect(JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8")).notes).toEqual([]);
+});
+
+test("brewery note preserves simultaneous notes and text starting with dashes", async () => {
+  const repo = tempRepo();
+  fakeSetup(repo, []);
+  const state = newState({ slug: "greet", repo, ip: "", base: "master", phase: "build" });
+  saveState(state);
+  const notes = ["-- keep the title", "Use the shorter label"];
+  const commands = notes.map((note) => Bun.spawn(["bun", join(import.meta.dir, "../src/cli.ts"), "note", "greet", note, "--repo", repo], { cwd: repo, env: process.env }));
+  expect(await Promise.all(commands.map((command) => command.exited))).toEqual([0, 0]);
+  expect(loadState("greet", repo).notes?.sort()).toEqual([...notes].sort());
+  for (const note of notes) expect(readContext(state)).toContain(note);
+});
 
 describe("distill → sign-off → answer", () => {
   test("writes the IP, cuts it in a clean tree with only the human's words, and waits for sign-off", async () => {

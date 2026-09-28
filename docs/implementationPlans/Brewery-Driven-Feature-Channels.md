@@ -138,7 +138,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 - [x] **T2** — Stream claude and codex output into narration events
   claude `--output-format stream-json --verbose`, codex `exec --json`; raw log still written;
   text blocks and one-line tool summaries become `narration` events (≤300 chars).
-- [ ] **T3** — Add brewery note for mid-run human notes
+- [x] **T3** — Add brewery note for mid-run human notes
   Appends verbatim to context.md and `state.notes`; `header()` shows notes to later steps.
 - [ ] **T4** — Add brewery resume with a run lock and pid file
   Resume from `state.phase`; `run.pid` + lock; flow test that kills a roast step and resumes.

@@ -80,6 +80,11 @@ reply right there instead. Reply from anywhere with `brewery answer <slug> "<rep
 `brewery status` lists runs and what is waiting on you. Each step's prompt, log, and result
 are in `.terreno/brewery/<slug>/steps/`.
 
+To add guidance while a run is active, use `brewery note <slug> "<text>"`. Brewery keeps
+the text in `state.notes`, appends it verbatim to `context.md` for cut, emits a `note`
+event, and includes it in later step prompts. The note does not resume or interrupt the
+current step; later steps apply it at the next sign-off or gate.
+
 ## Progress events
 
 Each run appends one JSON object per line to `.terreno/brewery/<slug>/events.jsonl`.

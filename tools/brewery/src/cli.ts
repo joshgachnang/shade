@@ -12,7 +12,7 @@ import { finish } from "./commands/finish.ts";
 import { FAN_OUT, loadConfig, STAGES, userConfigPath } from "./config.ts";
 import { readReplyFromTty } from "./human.ts";
 import { isApproved, parseTasks, readIp, readStatus } from "./ip.ts";
-import { appendContext, loadState, newState, readIndex, saveState, slugify, type RunState } from "./state.ts";
+import { appendContext, appendNote, loadState, newState, readIndex, saveState, slugify, type RunState } from "./state.ts";
 import type { Ctx } from "./step.ts";
 import { defaultBase, ensureExcluded, githubCi, repoRoot } from "./vcs.ts";
 
@@ -24,6 +24,8 @@ Usage:
   brewery answer <slug> "<reply>" [--go]
       Apply a sign-off reply ("ok", "ok, 2b", "no: <why>") or a gate answer
       ("1a", "retry: <hint>", "skip", "ship", "stop"), then continue a waiting run.
+  brewery note <slug> "<text>"
+      Record a mid-run human note for later steps and cut.
   brewery barrel <slug> | --ip <path>
       Approved IP → pick/roast every task → branch review → brew → finish.
   brewery finish [pr] [--slug s]
@@ -123,6 +125,17 @@ const cmdAnswer = async (positional: string[], flags: Record<string, string | tr
   return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
 };
 
+const cmdNote = (positional: string[], flags: Record<string, string | true>): number => {
+  const [slug, ...rest] = positional;
+  const note = rest.join(" ");
+  if (!slug || !note.trim()) throw new Error('usage: brewery note <slug> "<text>"');
+  const state = loadState(slug, str(flags.repo));
+  appendNote(state, note);
+  appendEvent(state, { kind: "note", text: note });
+  log(`Noted for later steps in ${slug}.`);
+  return 0;
+};
+
 const cmdBarrel = async (positional: string[], flags: Record<string, string | true>): Promise<number> => {
   let state: RunState;
   const ipFlag = str(flags.ip);
@@ -219,6 +232,11 @@ const cmdAgents = async (flags: Record<string, string | true>): Promise<number> 
 
 const main = async (): Promise<number> => {
   const [command, ...rest] = process.argv.slice(2);
+  if (command === "note") {
+    const parsed = parseArgs(rest.slice(2));
+    if (parsed.positional.length) throw new Error('usage: brewery note <slug> "<text>"');
+    return cmdNote(rest.slice(0, 2), parsed.flags);
+  }
   const { positional, flags } = parseArgs(rest);
   switch (command) {
     case "distill":

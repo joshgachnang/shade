@@ -1,6 +1,6 @@
 // Per-run state lives in the target repo under .terreno/brewery/<slug>/ (git-ignored).
 // A small global index maps slugs to repos so `brewery answer <slug>` works anywhere.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Ask, Status } from "./agents.ts";
@@ -44,6 +44,7 @@ export interface RunState {
   pr?: number;
   waiting?: { kind: "signoff" | "gate"; asks: Ask[]; message: string; since: string; task?: string };
   answers: Answer[];
+  notes?: string[];
   cutRounds: number;
   reviewRounds: number;
   finish?: { startedAt: string; pushes: number; reactions: number; stuck: number; lastKey?: string };
@@ -52,6 +53,7 @@ export interface RunState {
 
 export const runDir = (repo: string, slug: string): string => join(repo, ".terreno", "brewery", slug);
 const statePath = (repo: string, slug: string): string => join(runDir(repo, slug), "state.json");
+const stateLockPath = (repo: string, slug: string): string => join(runDir(repo, slug), "state.lock");
 export const contextPath = (repo: string, slug: string): string => join(runDir(repo, slug), "context.md");
 
 const indexPath = (): string =>
@@ -62,10 +64,46 @@ export const readIndex = (): Record<string, string> => {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, string>) : {};
 };
 
-export const saveState = (state: RunState): void => {
+export const refreshNotes = (state: RunState): void => {
+  const path = statePath(state.repo, state.slug);
+  if (!existsSync(path)) return;
+  const stored = JSON.parse(readFileSync(path, "utf8")) as RunState;
+  if ((stored.notes?.length ?? 0) > (state.notes?.length ?? 0)) state.notes = stored.notes;
+};
+
+const withStateLock = <T>(state: RunState, work: () => T): T => {
+  const dir = runDir(state.repo, state.slug);
+  mkdirSync(dir, { recursive: true });
+  const lock = stateLockPath(state.repo, state.slug);
+  const deadline = Date.now() + 5000;
+  while (true) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() > deadline) throw new Error(`brewery: timed out waiting for state lock in ${dir}`);
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 30000) rmdirSync(lock);
+        else Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      } catch (race) {
+        if ((race as NodeJS.ErrnoException).code !== "ENOENT") throw race;
+      }
+    }
+  }
+  try {
+    return work();
+  } finally {
+    rmdirSync(lock);
+  }
+};
+
+const writeState = (state: RunState): void => {
   const dir = runDir(state.repo, state.slug);
   mkdirSync(join(dir, "steps"), { recursive: true });
-  writeFileSync(statePath(state.repo, state.slug), `${JSON.stringify(state, null, 2)}\n`);
+  const temporary = join(dir, `state.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`);
+  writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`);
+  renameSync(temporary, statePath(state.repo, state.slug));
   const index = readIndex();
   if (index[state.slug] !== state.repo) {
     index[state.slug] = state.repo;
@@ -73,6 +111,11 @@ export const saveState = (state: RunState): void => {
     writeFileSync(indexPath(), `${JSON.stringify(index, null, 2)}\n`);
   }
 };
+
+export const saveState = (state: RunState): void => withStateLock(state, () => {
+  refreshNotes(state);
+  writeState(state);
+});
 
 export const loadState = (slug: string, repo?: string): RunState => {
   const root = repo ?? readIndex()[slug];
@@ -88,6 +131,7 @@ export const newState = (fields: { slug: string; repo: string; ip: string; base:
   seq: 0,
   tasks: {},
   answers: [],
+  notes: [],
   cutRounds: 0,
   reviewRounds: 0,
   history: [],
@@ -98,6 +142,17 @@ export const appendContext = (state: RunState, heading: string, body: string): v
   const path = contextPath(state.repo, state.slug);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `## ${heading}\n\n${body.trim()}\n\n`);
+};
+
+export const appendNote = (state: RunState, text: string): void => {
+  withStateLock(state, () => {
+    const latest = loadState(state.slug, state.repo);
+    const path = contextPath(state.repo, state.slug);
+    appendFileSync(path, `## Human note\n\n${text}\n\n`);
+    (latest.notes ??= []).push(text);
+    writeState(latest);
+    state.notes = latest.notes;
+  });
 };
 
 export const readContext = (state: RunState): string => {
