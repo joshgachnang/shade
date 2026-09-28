@@ -82,7 +82,8 @@ export const approve = (state: RunState): void => {
 
 export const distill = async (ctx: Ctx, request: string): Promise<void> => {
   const { state } = ctx;
-  appendContext(state, "Original request", request);
+  if (!state.request) appendContext(state, "Original request", request);
+  state.request = request;
   saveState(state);
   let asks = await writeDraft(ctx, request);
   if (isApproved(readIp(state.ip))) {

@@ -80,6 +80,17 @@ reply right there instead. Reply from anywhere with `brewery answer <slug> "<rep
 `brewery status` lists runs and what is waiting on you. Each step's prompt, log, and result
 are in `.terreno/brewery/<slug>/steps/`.
 
+If a process stops during a step, run `brewery resume <slug> --go`. Brewery reads the
+saved phase: it reruns distill with the saved request and notes, continues approved,
+build, review, and brew runs through barrel, and continues finish through Taste. Passed
+tasks stay passed. A run waiting for sign-off or a gate still needs `brewery answer`.
+
+Each active command writes `.terreno/brewery/<slug>/run.pid` with its process ID and
+holds `run.lock` for the command's lifetime. A second run command for that slug exits
+with an "already running" error. A killed process leaves stale markers; the next run
+removes them when that PID is no longer alive. `brewery note` remains available during
+a run because it uses the separate short-lived state lock.
+
 To add guidance while a run is active, use `brewery note <slug> "<text>"`. Brewery keeps
 the text in `state.notes`, appends it verbatim to `context.md` for cut, emits a `note`
 event, and includes it in later step prompts. The note does not resume or interrupt the

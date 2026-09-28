@@ -1,6 +1,6 @@
 // End-to-end runs against a temp git repo with scripted fake agents.
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { answer } from "../src/commands/answer.ts";
 import { barrel } from "../src/commands/barrel.ts";
@@ -78,6 +78,42 @@ test("brewery note preserves simultaneous notes and text starting with dashes", 
   expect(await Promise.all(commands.map((command) => command.exited))).toEqual([0, 0]);
   expect(loadState("greet", repo).notes?.sort()).toEqual([...notes].sort());
   for (const note of notes) expect(readContext(state)).toContain(note);
+});
+
+test("resume recovers a killed roast and rejects concurrent run commands", async () => {
+  const repo = tempRepo();
+  mkdirSync(join(repo, "docs/plans"), { recursive: true });
+  const ip = join(repo, "docs/plans/greet.md");
+  writeFileSync(ip, IP("approved 2026-09-28"));
+  fakeSetup(repo, [
+    { match: "pick T1", write: { "greeting.txt": "hello\n" }, result: { status: "PASS", action: "built" } },
+    { match: "roast T1", times: 1, sleepMs: 30000, result: { status: "PASS", action: "proven" } },
+    { match: "roast T1", result: { status: "PASS", action: "proven" } },
+    { match: "pick T2", result: { status: "BLOCKED", action: "needs decision", ask: [{ q: "Proceed?", rec: "retry", opts: ["retry", "stop"] }] } },
+  ]);
+  const state = newState({ slug: "greet", repo, ip, base: "master", phase: "approved" });
+  saveState(state);
+  const cli = join(import.meta.dir, "../src/cli.ts");
+  const first = Bun.spawn(["bun", cli, "barrel", "greet", "--repo", repo, "--no-wait"], { cwd: repo, env: process.env, stdout: "pipe", stderr: "pipe" });
+  const pidFile = join(runDir(repo, "greet"), "run.pid");
+  try {
+    for (let i = 0; i < 200 && (!existsSync(join(runDir(repo, "greet"), "events.jsonl")) || !events(repo, "greet").some((e) => e.kind === "step.start" && e.stage === "roast")); i++) await Bun.sleep(25);
+    expect(existsSync(pidFile)).toBe(true);
+    expect(Number(readFileSync(pidFile, "utf8"))).toBe(first.pid);
+    const second = Bun.spawnSync(["bun", cli, "resume", "greet", "--repo", repo, "--go", "--no-wait"], { cwd: repo, env: process.env });
+    expect(second.exitCode).toBe(1);
+    expect(second.stderr.toString()).toContain("already running");
+    first.kill("SIGKILL");
+    await first.exited;
+    const resumed = Bun.spawnSync(["bun", cli, "resume", "greet", "--repo", repo, "--go", "--no-wait"], { cwd: repo, env: process.env });
+    expect(resumed.exitCode).toBe(3);
+    expect(loadState("greet", repo).waiting?.kind).toBe("gate");
+    expect(loadState("greet", repo).tasks.T1.status).toBe("passed");
+    expect(events(repo, "greet").filter((e) => e.kind === "step.start" && e.stage === "roast")).toHaveLength(2);
+    expect(existsSync(pidFile)).toBe(false);
+  } finally {
+    first.kill("SIGKILL");
+  }
 });
 
 describe("distill → sign-off → answer", () => {

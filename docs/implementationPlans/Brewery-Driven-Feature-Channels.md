@@ -140,7 +140,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
   text blocks and one-line tool summaries become `narration` events (≤300 chars).
 - [x] **T3** — Add brewery note for mid-run human notes
   Appends verbatim to context.md and `state.notes`; `header()` shows notes to later steps.
-- [ ] **T4** — Add brewery resume with a run lock and pid file
+- [x] **T4** — Add brewery resume with a run lock and pid file
   Resume from `state.phase`; `run.pid` + lock; flow test that kills a roast step and resumes.
 
 ### Phase 2: Shade models + config

@@ -1,6 +1,6 @@
 // Per-run state lives in the target repo under .terreno/brewery/<slug>/ (git-ignored).
 // A small global index maps slugs to repos so `brewery answer <slug>` works anywhere.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Ask, Status } from "./agents.ts";
@@ -39,6 +39,7 @@ export interface RunState {
   base: string;
   branch?: string;
   phase: Phase;
+  request?: string;
   seq: number;
   tasks: Record<string, TaskState>;
   pr?: number;
@@ -55,6 +56,43 @@ export const runDir = (repo: string, slug: string): string => join(repo, ".terre
 const statePath = (repo: string, slug: string): string => join(runDir(repo, slug), "state.json");
 const stateLockPath = (repo: string, slug: string): string => join(runDir(repo, slug), "state.lock");
 export const contextPath = (repo: string, slug: string): string => join(runDir(repo, slug), "context.md");
+
+// A command owns the run until it exits. state.lock remains a separate short-lived
+// mutex so `note` can write while an agent step is running.
+export const withRunLock = async <T>(state: RunState, work: () => Promise<T>): Promise<T> => {
+  const dir = runDir(state.repo, state.slug);
+  mkdirSync(dir, { recursive: true });
+  const lock = join(dir, "run.lock");
+  const pidFile = join(dir, "run.pid");
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // A crash leaves both markers behind. A freshly-created lock without a pid
+      // belongs to a process still entering its critical section.
+      const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8").trim()) : 0;
+      let alive = false;
+      if (Number.isSafeInteger(pid) && pid > 0) {
+        try { process.kill(pid, 0); alive = true; }
+        catch (signalError) { alive = (signalError as NodeJS.ErrnoException).code === "EPERM"; }
+      }
+      if (alive || (!pid && Date.now() - statSync(lock).mtimeMs < 2000)) {
+        throw new Error(`brewery: ${state.slug} is already running${pid ? ` (pid ${pid})` : ""}`);
+      }
+      rmSync(lock, { recursive: true, force: true });
+      rmSync(pidFile, { force: true });
+    }
+  }
+  writeFileSync(pidFile, `${process.pid}\n`);
+  try {
+    return await work();
+  } finally {
+    rmSync(pidFile, { force: true });
+    rmSync(lock, { recursive: true, force: true });
+  }
+};
 
 const indexPath = (): string =>
   process.env.BREWERY_INDEX ?? join(homedir(), ".local", "state", "brewery", "runs.json");
