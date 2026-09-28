@@ -64,6 +64,7 @@ export const runStage = async (ctx: Ctx, stage: Stage, body: string, opts: Stage
       resultFile,
       logFile: `${base}.log`,
       timeoutMin: config.agents[agent].timeoutMin ?? config.limits.stepTimeoutMin,
+      onNarration: (text) => appendEvent(state, { kind: "narration", seq, text }),
     });
     ctx.log(`  ${label}: ${outcome.result.status} in ${outcome.seconds}s — ${outcome.result.action}`);
     appendEvent(state, { kind: "step.end", seq, status: outcome.result.status, action: outcome.result.action, seconds: outcome.seconds });

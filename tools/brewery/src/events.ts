@@ -6,6 +6,7 @@ import { runDir, type RunState } from "./state.ts";
 export type BreweryEvent =
   | { kind: "step.start"; seq: number; stage: string; task?: string; agent: string }
   | { kind: "step.end"; seq: number; status: string; action: string; seconds: number }
+  | { kind: "narration"; seq: number; text: string }
   | { kind: "waiting"; waitingKind: "signoff" | "gate"; message: string; ip?: string }
   | { kind: "resumed" }
   | { kind: "note"; text: string }

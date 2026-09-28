@@ -135,7 +135,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 - [x] **T1** — Emit a per-run events.jsonl from brewery
   Step start/end, waiting, resumed, note, pr, ci, done, error (see "brewery changes" 1). Unit +
   flow tests with the scripted fake agent.
-- [ ] **T2** — Stream claude and codex output into narration events
+- [x] **T2** — Stream claude and codex output into narration events
   claude `--output-format stream-json --verbose`, codex `exec --json`; raw log still written;
   text blocks and one-line tool summaries become `narration` events (≤300 chars).
 - [ ] **T3** — Add brewery note for mid-run human notes

@@ -91,6 +91,7 @@ state.
 | --- | --- | --- |
 | `step.start` | `seq`, `stage`, optional `task`, `agent` | Before an agent process starts |
 | `step.end` | `seq`, `status`, `action`, `seconds` | After its result is read, including failed results |
+| `narration` | `seq`, `text` | As Claude or Codex emits assistant text or starts a tool; one line, at most 300 characters |
 | `waiting` | `waitingKind` (`signoff` or `gate`), `message`, optional `ip` | When brewery stops for a human answer |
 | `resumed` | — | When brewery accepts an answer to a waiting run |
 | `note` | `text` | When a human answer is recorded |
@@ -102,6 +103,12 @@ state.
 For example, `{"t":"2026-09-28T12:00:00.000Z","kind":"step.start","seq":1,"stage":"distill","agent":"claude"}`
 starts a step. Match its `seq` to the later `step.end`. Fan-out steps have a separate
 sequence number per agent.
+
+Claude runs with `--output-format stream-json --verbose`; Codex runs with `exec --json`.
+The raw JSONL output remains in each step's `.log` file. Brewery reads complete stdout
+lines as they arrive and appends `narration` events for assistant text and brief tool
+summaries, such as `Read groupQueue.ts` or `Bash: bun test`. It ignores malformed lines,
+tool output, and final result records. `command` profiles emit only step start and end.
 
 ## Development
 
