@@ -77,6 +77,10 @@ export interface AppConfigZerg {
 export interface AppConfigFeatureChannels {
   /** Host checkout dir for feature channels not on zerg; `~` expands to $HOME. */
   localReposDir: string;
+  /** Complete and archive a feature channel once its PR is merged. */
+  archiveOnMerge: boolean;
+  /** Poll interval for checking feature channels' PRs. */
+  completionPollMs: number;
 }
 
 export interface AppConfigScheduler {

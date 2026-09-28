@@ -7,7 +7,8 @@ import {isTestMode} from "../testMode/flag";
 import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
 import {ensureBuiltinScheduledTasks, seedBuiltinSkills} from "./builtinSkills";
 import {ChannelManager} from "./channels/manager";
-import {logError} from "./errors";
+import {logError, reportError} from "./errors";
+import {completeFeature, FeatureCompletionWatcher} from "./featureCompletion";
 import {planFeatureWorkspace, workspaceInstructions} from "./featureWorkspace";
 import {GroupQueue} from "./groupQueue";
 import type {IpcCreateFeature, IpcRadioStream, IpcTriviaToggle} from "./ipc";
@@ -54,6 +55,9 @@ channel. Take it — plus anything else they add here — and implement it:
 4. **Post progress updates** to the channel at meaningful checkpoints.
 5. **Open a PR** from your feature branch when done, then post a summary of what
    shipped with links to the plan and the PR.
+6. **Wrap up.** When the PR merges, Shade marks this feature complete and
+   archives the channel automatically. If the user says the feature is done
+   or abandoned without a merge, call \`complete_feature\`.
 
 ## Hard rules
 
@@ -87,6 +91,7 @@ export interface OrchestratorState {
   radioTranscriber: RadioTranscriber;
   prWatcher: PrWatcher;
   infraWatcher: InfraWatcher;
+  featureCompletionWatcher: FeatureCompletionWatcher;
   triviaMonitor: TriviaMonitor;
   scheduler: SchedulerService;
   taskWorker: TaskWorkerService;
@@ -333,6 +338,20 @@ export const startOrchestrator = async (
   const radioTranscriber = new RadioTranscriber(channelManager);
   const prWatcher = new PrWatcher(channelManager, runner);
   const infraWatcher = new InfraWatcher(channelManager);
+  const featureCompletionDeps = {
+    archiveGroupChannel: (groupId: string) => channelManager.archiveGroupChannel(groupId),
+    sendMessageToGroup: (groupId: string, content: string) =>
+      channelManager.sendMessageToGroup(groupId, content),
+    reportError,
+  };
+  const featureCompletionWatcher = new FeatureCompletionWatcher({deps: featureCompletionDeps});
+  ipcWatcher.setCompleteFeature(async (data) => {
+    const group = await Group.findById(data.groupId);
+    if (!group) {
+      throw new Error(`Group ${data.groupId} not found`);
+    }
+    await completeFeature({group, reason: data.reason, deps: featureCompletionDeps});
+  });
   const triviaMonitor = new TriviaMonitor(channelManager);
   messageLoop.setTriviaMonitor(triviaMonitor);
 
@@ -357,6 +376,12 @@ export const startOrchestrator = async (
       await infraWatcher.start();
     } catch (err) {
       logError("Infra watcher start error (non-fatal)", err);
+    }
+
+    try {
+      await featureCompletionWatcher.start();
+    } catch (err) {
+      logError("Feature completion watcher start error (non-fatal)", err);
     }
 
     try {
@@ -437,6 +462,7 @@ export const startOrchestrator = async (
     radioTranscriber,
     prWatcher,
     infraWatcher,
+    featureCompletionWatcher,
     triviaMonitor,
     scheduler,
     taskWorker,
@@ -461,6 +487,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   state.ipcWatcher.stop();
   state.prWatcher.stop();
   state.infraWatcher.stop();
+  state.featureCompletionWatcher.stop();
   state.triviaMonitor.stop();
   registerSchedulerForWake(null);
   state.scheduler.stop();

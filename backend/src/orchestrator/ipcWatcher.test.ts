@@ -37,6 +37,7 @@ describe("IpcWatcher", () => {
   let richSent: {groupId: string; payload: RichResponse}[];
   let reactions: {emoji: string; groupExternalId: string}[];
   let featureCalls: string[];
+  let completeCalls: {groupId: string; reason: string}[];
   let reported: ReportedError[];
   let failNextFeature: boolean;
   let channelDocId: string;
@@ -90,6 +91,9 @@ describe("IpcWatcher", () => {
       }
       featureCalls.push(data.name);
     });
+    watcher.setCompleteFeature(async (data) => {
+      completeCalls.push({groupId: data.groupId, reason: data.reason});
+    });
     watcher.setReportError((context, error, extra) => {
       reported.push({context, error, extra});
     });
@@ -100,6 +104,7 @@ describe("IpcWatcher", () => {
     richSent = [];
     reactions = [];
     featureCalls = [];
+    completeCalls = [];
     reported = [];
     failNextFeature = false;
   });
@@ -313,6 +318,18 @@ describe("IpcWatcher", () => {
     expect(sent[0].groupExternalId).toBe("ipc-main-ext");
     expect(sent[0].content).toContain("feat-broken");
     expect(sent[0].content).toContain("slack said no");
+  });
+
+  test("complete_feature is handed to the completion handler for the source group", async () => {
+    await writeIpcFile(paths.ipc, {
+      type: "complete_feature",
+      groupId: sideGroupId,
+      reason: "shipped",
+    });
+    await watcher.tickNow();
+
+    expect(completeCalls).toEqual([{groupId: sideGroupId, reason: "shipped"}]);
+    expect(reported).toHaveLength(0);
   });
 
   test("unknown source group is denied entirely", async () => {

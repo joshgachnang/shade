@@ -499,6 +499,22 @@ export class SlackChannelConnector extends BaseChannelConnector {
     });
   }
 
+  async archiveChannel(channelId: string): Promise<void> {
+    if (!this.app) {
+      throw new Error("Slack channel not connected");
+    }
+    const config = this.channelDoc.config as {botToken?: string};
+    try {
+      await this.app.client.conversations.archive({token: config.botToken, channel: channelId});
+    } catch (err) {
+      // Archiving twice (or a channel a human already archived) is a no-op.
+      if ((err as {data?: {error?: string}}).data?.error === "already_archived") {
+        return;
+      }
+      throw err;
+    }
+  }
+
   async addReaction(groupExternalId: string, messageTs: string, emoji: string): Promise<void> {
     if (!this.app) {
       return;
