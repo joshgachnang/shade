@@ -1,4 +1,5 @@
-import {describe, expect, mock, test} from "bun:test";
+import {afterEach, describe, expect, mock, test} from "bun:test";
+import {AIRequest} from "../models/aiRequest";
 
 // Test the GroupQueue's public queue management API without triggering
 // async agent execution (which requires DB, filesystem, and SDK mocks).
@@ -119,6 +120,13 @@ describe("GroupQueue", () => {
 });
 
 describe("GroupQueue failed-run reporting", () => {
+  const groupIds: string[] = [];
+
+  afterEach(async () => {
+    await AIRequest.deleteMany({groupId: {$in: groupIds}});
+    groupIds.length = 0;
+  });
+
   const runCompletion = async (result: Record<string, unknown>) => {
     const mongoose = (await import("mongoose")).default;
     const {GroupQueue} = await import("./groupQueue");
@@ -130,6 +138,7 @@ describe("GroupQueue failed-run reporting", () => {
     });
 
     const groupId = new mongoose.Types.ObjectId();
+    groupIds.push(groupId.toString());
     await (queue as any).handleAgentCompletion(
       {_id: groupId, name: "general", modelConfig: {}},
       groupId.toString(),

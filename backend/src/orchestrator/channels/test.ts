@@ -1,16 +1,15 @@
 import {logger} from "@terreno/api";
+import {nanoid} from "nanoid";
+import {Group} from "../../models/group";
+import {Message} from "../../models/message";
 import type {ChannelDocument} from "../../types";
 import type {ChannelConnector, ChannelHealth, ConnectorFactory, InboundMessage} from "./types";
 
 /**
- * No-op transport for the AI testability harness (IP-012).
- *
- * Registered as the `"test"` channel type so a running server can host
- * observable conversations without any external service. Outbound sends
- * terminate here; the observation source of truth is the `Message` doc with
- * `isFromBot: true` that ChannelManager persists after this connector returns
- * (that is what `GET /test/outbox` reads). Inbound messages never come through
- * this connector — they are injected via `POST /command`.
+ * Offline transport for the AI testability harness (IP-012).
+ * Direct sends persist bot Message records for GET /test/outbox. ChannelManager's
+ * group-send paths persist their enriched records themselves without this send.
+ * Inbound messages are injected via POST /command.
  */
 class TestChannelConnector implements ChannelConnector {
   readonly channelDoc: ChannelDocument;
@@ -51,9 +50,19 @@ class TestChannelConnector implements ChannelConnector {
   }
 
   async sendMessage(groupExternalId: string, content: string): Promise<void> {
-    logger.debug(
-      `Test channel delivery to ${groupExternalId} (${content.length} chars): ${content.substring(0, 120)}`
-    );
+    const group = await Group.findExactlyOne({
+      channelId: this.channelDoc._id,
+      externalId: groupExternalId,
+    });
+    await Message.create({
+      groupId: group._id,
+      channelId: this.channelDoc._id,
+      sender: "Shade",
+      content,
+      isFromBot: true,
+      processedAt: new Date(),
+      correlationId: nanoid(12),
+    });
   }
 
   async sendMessageWithTs(groupExternalId: string, content: string): Promise<string> {

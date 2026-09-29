@@ -156,8 +156,11 @@ export class GroupQueue {
       // Reserve synchronously so rapid replies stay ordered, independently of agent capacity.
       this.activeRuns.set(groupId, true);
       try {
-        await this.breweryDriver.handleMessage(item.group, item.message);
-        await Message.updateOne({_id: item.message._id}, {$set: {processedAt: new Date()}});
+        const result = await this.breweryDriver.handleMessage(item.group, item.message);
+        // MessageLoop will pick up lease contention on a later poll.
+        if (result !== "deferred") {
+          await Message.updateOne({_id: item.message._id}, {$set: {processedAt: new Date()}});
+        }
       } catch (err) {
         this.reportError("Brewery message handling failed", err, {groupId});
       } finally {

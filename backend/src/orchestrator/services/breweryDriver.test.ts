@@ -174,6 +174,39 @@ test("local start uses an isolated default-branch worktree and detached CLI with
 }, 20000);
 
 test.each([
+  "released",
+  "expired",
+])("approval deferred by a %s poller lease launches once it clears", async (mode) => {
+  const f = await replyFixture();
+  const lease = new Date(Date.now() + 60000);
+  await Feature.updateOne(
+    {_id: f.feature._id},
+    {
+      $set: {
+        status: "awaiting_approval",
+        "brewery.waiting": {kind: "signoff", since: new Date()},
+        "brewery.pollLeaseUntil": lease,
+      },
+    }
+  );
+  expect(await f.driver.handleMessage(f.group, {content: "ok"})).toBe("deferred");
+  expect(await Bun.file(path.join(f.dir, "calls.jsonl")).exists()).toBe(false);
+  expect((await Feature.findById(f.feature._id))?.brewery?.pollLeaseUntil).toEqual(lease);
+  await Feature.updateOne(
+    {_id: f.feature._id},
+    mode === "released"
+      ? {$unset: {"brewery.pollLeaseUntil": 1}}
+      : {$set: {"brewery.pollLeaseUntil": new Date(0)}}
+  );
+  await f.driver.handleMessage(f.group, {content: "ok"});
+  expect(await f.calls(1)).toEqual([
+    ["answer", "reply-test", "ok", "--go", "--no-wait", "--repo", f.dir],
+  ]);
+  expect((await Feature.findById(f.feature._id))?.status).toBe("in_progress");
+  expect(f.messages.at(-1)).toBe("Reply sent to brewery.");
+});
+
+test.each([
   "",
   "remote-host",
 ])("zerg start uses configured session/workdir and detached docker over host %s", async (host) => {

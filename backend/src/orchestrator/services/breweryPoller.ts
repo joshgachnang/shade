@@ -6,6 +6,7 @@ import {loadAppConfig} from "../../models/appConfig";
 import {Channel} from "../../models/channel";
 import {Feature} from "../../models/feature";
 import {Group} from "../../models/group";
+import {breweryHarnessTransport} from "../../testMode/breweryTransport";
 import {isTestMode} from "../../testMode/flag";
 import type {FeatureDocument} from "../../types/models/featureTypes";
 import type {GroupDocument} from "../../types/models/groupTypes";
@@ -161,7 +162,8 @@ export class BreweryPoller {
     const state = feature.brewery!;
     const group = await Group.findOneOrNone({_id: feature.groupId, featureDriver: "brewery"});
     if (!group) return;
-    const transport = this.options.transport ?? slackTransport;
+    const transport =
+      this.options.transport ?? (isTestMode() ? breweryHarnessTransport : slackTransport);
     const runDir = path.posix.join(".terreno/brewery", state.slug);
     const workspace = state.workspace;
     const exec = async (script: string) => {

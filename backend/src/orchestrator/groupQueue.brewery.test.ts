@@ -158,3 +158,53 @@ test("handled brewery messages are marked processed so polling cannot replay rep
     await reply.deleteOne();
   }
 });
+
+test("a reply deferred by the poller lease stays pending and is handled on the next message poll", async () => {
+  const {MessageLoop} = await import("./messageLoop");
+  const {queue, group, message, run, sendMessage} = fixture();
+  group.requiresTrigger = false;
+  const reply = message("ok");
+  reply.sender = "test-sender";
+  await reply.save();
+  const feature = await Feature.create({
+    name: "Lease race",
+    groupId: group._id,
+    status: "awaiting_approval",
+    brewery: {
+      slug: "lease-race",
+      repo: "shade",
+      workspace: {kind: "local", repoPath: "/unused"},
+      waiting: {kind: "signoff", since: new Date()},
+      pollLeaseUntil: new Date(Date.now() + 60000),
+    },
+  });
+  const loop = new MessageLoop({getAllGroups: () => [group]} as unknown as ChannelManager, queue);
+  try {
+    await loop.tickNow();
+    await drain(queue, String(group._id));
+    expect((await Message.findById(reply._id))?.processedAt).toBeUndefined();
+    expect((await Feature.findById(feature._id))?.status).toBe("awaiting_approval");
+    expect(sendMessage.mock.calls[0]?.[2]).toContain("Brewery is processing an update");
+    // The poller's final snapshot becomes visible before it releases the lease.
+    // A completed run gives a safe observable response without launching a CLI.
+    await Feature.updateOne(
+      {_id: feature._id},
+      {
+        $set: {status: "complete"},
+        $unset: {"brewery.pollLeaseUntil": 1},
+      }
+    );
+    await loop.tickNow();
+    await drain(queue, String(group._id));
+    expect((await Message.findById(reply._id))?.processedAt).toBeInstanceOf(Date);
+    expect(sendMessage.mock.calls.at(-1)?.[2]).toBe(
+      "This brewery run is complete. Start a new feature for more work."
+    );
+    await loop.tickNow();
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(run).not.toHaveBeenCalled();
+  } finally {
+    await reply.deleteOne();
+    await feature.deleteOne();
+  }
+});

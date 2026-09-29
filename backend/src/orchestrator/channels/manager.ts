@@ -325,7 +325,10 @@ export class ChannelManager {
     );
 
     try {
-      await this.sendMessage(channelId, group.externalId, content);
+      // The offline connector records direct sends; this path stores an enriched record below.
+      if (connector?.channelDoc.type !== "test") {
+        await this.sendMessage(channelId, group.externalId, content);
+      }
     } catch (err) {
       logger.error(`Failed to send outbound message to group ${group.name}: ${err}`);
       // Don't throw — still try to store the message
@@ -423,7 +426,9 @@ export class ChannelManager {
     } else {
       // Fallback: send only fallbackText via the plain path.
       try {
-        await connector.sendMessage(group.externalId, truncated.fallbackText);
+        if (connector.channelDoc.type !== "test") {
+          await connector.sendMessage(group.externalId, truncated.fallbackText);
+        }
       } catch (err) {
         logger.error(
           `Failed to send fallbackText for rich response to group ${group.name}: ${err}`

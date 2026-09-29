@@ -63,7 +63,10 @@ export class BreweryDriver {
     }
   ) {}
 
-  async handleMessage(group: GroupDocument, message: {content: string}): Promise<void> {
+  async handleMessage(
+    group: GroupDocument,
+    message: {content: string}
+  ): Promise<undefined | "deferred"> {
     const post = async (text: string) =>
       this.options.sendMessage(String(group.channelId), group.externalId, text);
     const text = message.content;
@@ -97,8 +100,10 @@ export class BreweryDriver {
       {new: true}
     );
     if (!claimed) {
-      await post("Brewery is processing an update. Please retry your reply shortly.");
-      return;
+      await post(
+        "Brewery is processing an update. Your reply is queued and will retry automatically."
+      );
+      return "deferred";
     }
     const workspace = state.workspace;
     const cwd = workspace.kind === "local" ? workspace.repoPath : config.zerg.workdir;

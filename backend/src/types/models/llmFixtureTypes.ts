@@ -6,7 +6,8 @@ export type LlmFixtureActionTool =
   | "send_message"
   | "schedule_task"
   | "create_task"
-  | "add_reaction";
+  | "add_reaction"
+  | "create_feature";
 
 export interface LlmFixtureAction {
   tool: LlmFixtureActionTool;

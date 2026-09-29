@@ -24,7 +24,7 @@ const actionSchema = new mongoose.Schema(
     tool: {
       type: String,
       required: true,
-      enum: ["send_message", "schedule_task", "create_task", "add_reaction"],
+      enum: ["send_message", "schedule_task", "create_task", "add_reaction", "create_feature"],
     },
     args: {type: mongoose.Schema.Types.Mixed, default: {}},
   },
