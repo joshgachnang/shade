@@ -158,7 +158,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
   with plan summary and tasks; PR/done/error; dead-run alert.
 - [x] **T9** — Route feature channel replies to brewery
   Answer when waiting, `now:` interrupt (kill, note, resume), otherwise queue a note, `stop`.
-- [ ] **T10** — Keep agent runners out of brewery feature channels
+- [x] **T10** — Keep agent runners out of brewery feature channels
   GroupQueue routes `featureDriver: "brewery"` to the driver; test that no runner is invoked,
   including for the seeded request.
 - [ ] **T11** — Create brewery-driven groups from create_feature

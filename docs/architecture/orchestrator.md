@@ -71,7 +71,7 @@ Supervision is external — systemd for both units, plus `deploy/shade-watchdog.
 
 ## Brewery feature startup
 
-`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. Channel creation and reply routing are wired by subsequent IP-018 tasks; event delivery is handled by the poller below.
+`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. Channel creation is wired by IP-018 T11; event delivery is handled by the poller below.
 
 | Mode | Workspace and launch |
 |---|---|
@@ -110,11 +110,11 @@ The poller uses the same local or zerg/SSH workspace execution path as startup, 
 
 After `stepSilenceAlertMin` without an event, an active, non-waiting run whose `run.pid` is absent or dead receives one “Brewery died” notice with `resume` and the launch-log path, and becomes `error`. A live PID or failed workspace read does not trigger a death notice. Approval/gate waits and terminal features are excluded.
 
-Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. Reply handling is described below; T10–T11 own queue routing and channel creation.
+Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. GroupQueue reply routing is described below; T11 owns channel creation.
 
 ## Brewery feature replies
 
-`BreweryDriver.handleMessage(group, {content})` resolves the channel's Feature and sends commands to its **saved workspace**, even if the startup mode has since changed. GroupQueue integration is T10; channel creation is T11.
+`BreweryDriver.handleMessage(group, {content})` resolves the channel's Feature and sends commands to its **saved workspace**, even if the startup mode has since changed. GroupQueue routes every `featureDriver: "brewery"` message to this driver before runner selection, including bot-authored seed requests and `/implement`. Replies serialize per group without consuming agent concurrency slots. Successfully handled messages are marked processed so MessageLoop cannot replay them; thrown delivery errors leave them unprocessed for a later poll. `selectRunner` rejects brewery groups, and driver errors release the queue without agent retries or fallback. Legacy groups without `featureDriver` retain planner/container/default runner routing. Channel creation is T11.
 
 | Reply | Driver action |
 |---|---|
@@ -131,3 +131,5 @@ Commands use `AppConfig.brewery.command` and optional `agents`, with an explicit
 The driver shares the poller's per-feature Mongo lease so a stale poll cannot undo a stop. A busy lease asks the sender to retry; it does not silently consume a control command. Synchronous command failures post a sanitized fix and launch-log path, set `error`, and release the lease. Detached launch acceptance is acknowledged separately from execution success; the poller reports later CLI events. No agent fallback or second notification is involved.
 
 Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts src/orchestrator/services/breweryPoller.test.ts` covers real Mongo, local filesystem/CLI launch and cancellation, plus injected zerg/SSH failures. `cd tools/brewery && bun test` covers CLI argument preservation. This backend service introduces no Shade browser interaction, so frontend QA/Playwright remain with T13 and full channel harness coverage with T12.
+
+Queue routing verification: `cd backend && bun test src/orchestrator/groupQueue.brewery.test.ts src/orchestrator/groupQueue.test.ts`. These exercise the real driver through `enqueue`, including ordered CLI notes, seeded messages, empty and missing-run replies, delivery failure, and legacy runner selection.
