@@ -68,3 +68,24 @@ Both entrypoints share `backend/src/boot.ts`: Mongo connect → `loadAppConfig()
 **Rollout flags** (each step independently reversible): 1) ship code — nothing changes (`runInGateway=true`, `useTaskBoard=false`); 2) deploy `shade-worker.service` — gateway and worker both claim (safe, claims are atomic); 3) `taskWorker.runInGateway=false` — board work is worker-only; 4) `scheduler.useTaskBoard=true` — scheduled runs go through the board, i.e. run on workers.
 
 Supervision is external — systemd for both units, plus `deploy/shade-watchdog.sh`, which polls the gateway's `/health` and `/health/slack` and restarts **only** `shade-backend.service`; the worker is intentionally not watchdog-managed, so a gateway restart never kills in-flight board tasks (see [Deployment](./deployment.md)). Worker liveness is visible in the `systemStatus` admin script's Workers section (active `workerId`s with heartbeat ages, board status counts).
+
+## Brewery feature startup
+
+`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. T7 provides this service only: channel creation, reply routing and event polling are wired by subsequent IP-018 tasks.
+
+| Mode | Workspace and launch |
+|---|---|
+| `AppConfig.zerg.enabled=true` | Run the configured zerg up command locally or through `zerg.sshHost`; use its reported session, `zerg.workdir`, and detached `docker exec -d`. |
+| `false` | Ensure `<featureChannels.localReposDir>/<repo>` exists with `gh repo clone`, then create a dedicated Git worktree under the sibling `.shade-worktrees` directory from `refs/remotes/origin/HEAD`. Spawn brewery detached with its log redirected. |
+
+Run slugs combine a shortened channel slug and Feature ID to isolate similarly named features. The service writes the request verbatim to `.terreno/brewery/<slug>/request.md` with restrictive permissions, persists `Feature.brewery` (distill phase, zero event offset, empty step messages), and launches:
+
+```sh
+brewery distill --file .terreno/brewery/<slug>/request.md --slug <slug> --no-wait
+```
+
+`AppConfig.brewery.command` selects the executable and `agents` supplies an optional `--agents` argument to both preflight and launch. Before detaching, `brewery agents` must report an available configured agent for every stage. Missing executable/agents, invalid input, or workspace/launch failure sets the Feature to `error` and sends an actionable error to the supplied channel transport. External command output and request text are excluded from error notices. No agent runner is invoked by this service.
+
+A successful return means the launch was accepted; completion and asynchronous failures belong to the event poller. Output is retained at `.terreno/brewery/<slug>/launch.log`. Starting a Feature with existing brewery metadata is rejected without changing its status; use the resume workflow for existing runs. Failed preparations retain their workspace for diagnosis; resolve worktree/branch conflicts before attempting a fresh start. Local repositories must have `origin/HEAD` set to their default branch.
+
+Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts` exercises real Git worktrees, MongoDB persistence, a detached fake CLI, and injected zerg/SSH transport failures. This service introduces no frontend flow; UI QA and browser tests belong to the channel wiring and Features-screen tasks.

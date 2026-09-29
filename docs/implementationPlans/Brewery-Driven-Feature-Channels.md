@@ -151,7 +151,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 
 ### Phase 3: Shade driver
 
-- [ ] **T7** — Start brewery distill for new feature channels
+- [x] **T7** — Start brewery distill for new feature channels
   `BreweryDriver.start`: zerg session or local worktree, request file, detached `brewery distill`.
 - [ ] **T8** — Post brewery events to the feature channel
   Poller from `eventsOffset`; one Slack message per step edited with narration; sign-off post
