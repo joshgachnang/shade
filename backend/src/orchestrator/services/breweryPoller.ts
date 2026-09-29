@@ -128,6 +128,7 @@ export class BreweryPoller {
         const feature = await Feature.findOneAndUpdate(
           {
             _id: candidate._id,
+            status: {$in: ["in_progress", "awaiting_approval"]},
             $or: [
               {"brewery.pollLeaseUntil": {$exists: false}},
               {"brewery.pollLeaseUntil": {$lte: new Date(now())}},

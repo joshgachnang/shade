@@ -110,4 +110,24 @@ The poller uses the same local or zerg/SSH workspace execution path as startup, 
 
 After `stepSilenceAlertMin` without an event, an active, non-waiting run whose `run.pid` is absent or dead receives one “Brewery died” notice with `resume` and the launch-log path, and becomes `error`. A live PID or failed workspace read does not trigger a death notice. Approval/gate waits and terminal features are excluded.
 
-Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. T9–T11 still own replies, queue routing and channel creation.
+Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. Reply handling is described below; T10–T11 own queue routing and channel creation.
+
+## Brewery feature replies
+
+`BreweryDriver.handleMessage(group, {content})` resolves the channel's Feature and sends commands to its **saved workspace**, even if the startup mode has since changed. GroupQueue integration is T10; channel creation is T11.
+
+| Reply | Driver action |
+|---|---|
+| Any text while waiting for sign-off or a gate | Detach `brewery answer <slug> "<reply>" --go --no-wait`. Preserve waiting metadata until brewery emits `resumed`. |
+| `now: <text>` | Terminate the run's process group, wait for its owner to exit, persist the note with `brewery note`, then detach `brewery resume --go --no-wait`. Acknowledge the interrupted step. Existing approval gates remain brewery-owned. |
+| `stop` | Terminate the process group and set the Feature to `paused`, excluding it from polling. A missing/dead PID is already stopped. |
+| `resume` | Detach `brewery resume --go --no-wait`, restore polling, and clear the previous error. |
+| Other text | Run `brewery note` and acknowledge `Queued for the next check-in (current: T3 roast)`. |
+
+For example, `now: keep the existing title` stops the active step before recording the new direction and restarting. Notes and answers preserve whitespace and shell-sensitive characters; CLI answer text beginning with `--` is also treated as text. Empty messages and empty `now:` notes do not execute commands. Completed runs require a new feature. Missing runs receive an actionable notice.
+
+Commands use `AppConfig.brewery.command` and optional `agents`, with an explicit workspace `--repo`. Local runs use detached process groups; zerg launches use `setsid` inside `docker exec -d` and therefore require `setsid` alongside Bun in the image. Cancellation reads `run.pid` in that same PID namespace, rejects malformed/unsafe PIDs, sends TERM then KILL when necessary, and waits within the configured zerg command timeout before allowing a restart. It leaves brewery's lock files for the CLI's stale-owner recovery.
+
+The driver shares the poller's per-feature Mongo lease so a stale poll cannot undo a stop. A busy lease asks the sender to retry; it does not silently consume a control command. Synchronous command failures post a sanitized fix and launch-log path, set `error`, and release the lease. Detached launch acceptance is acknowledged separately from execution success; the poller reports later CLI events. No agent fallback or second notification is involved.
+
+Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts src/orchestrator/services/breweryPoller.test.ts` covers real Mongo, local filesystem/CLI launch and cancellation, plus injected zerg/SSH failures. `cd tools/brewery && bun test` covers CLI argument preservation. This backend service introduces no Shade browser interaction, so frontend QA/Playwright remain with T13 and full channel harness coverage with T12.

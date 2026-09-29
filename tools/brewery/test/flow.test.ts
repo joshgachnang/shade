@@ -288,3 +288,17 @@ describe("finish", () => {
     expect(ctx.state.history.filter((h) => h.stage === "taste")).toHaveLength(2);
   });
 });
+
+test("CLI answer preserves a quoted reply beginning with flags", () => {
+  const repo = tempRepo();
+  fakeSetup(repo, [{ match: "", result: { status: "PASS", action: "Applied", ask: [] } }]);
+  const ip = join(repo, "plan.md");
+  writeFileSync(ip, IP("awaiting sign-off"));
+  const state = newState({slug: "reply", repo, ip, base: "master", phase: "signoff"});
+  state.waiting = {kind: "signoff", asks: [], message: "Approve?", since: new Date().toISOString()};
+  saveState(state);
+  const reply = "--go\nKeep 'quoted' text verbatim";
+  const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "answer", "reply", reply, "--repo", repo, "--no-wait"], {cwd: repo, env: process.env});
+  expect(command.exitCode).toBe(3);
+  expect(loadState("reply", repo).answers[0]?.a).toBe(reply);
+});

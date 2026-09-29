@@ -267,10 +267,10 @@ const cmdAgents = async (flags: Record<string, string | true>): Promise<number> 
 
 const main = async (): Promise<number> => {
   const [command, ...rest] = process.argv.slice(2);
-  if (command === "note") {
+  if (command === "note" || command === "answer") {
     const parsed = parseArgs(rest.slice(2));
-    if (parsed.positional.length) throw new Error('usage: brewery note <slug> "<text>"');
-    return cmdNote(rest.slice(0, 2), parsed.flags);
+    if (parsed.positional.length) throw new Error(`usage: brewery ${command} <slug> "<text>"`);
+    return command === "note" ? cmdNote(rest.slice(0, 2), parsed.flags) : cmdAnswer(rest.slice(0, 2), parsed.flags);
   }
   const { positional, flags } = parseArgs(rest);
   switch (command) {

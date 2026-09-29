@@ -301,3 +301,367 @@ test.each([
   expect(executed).toBe(false);
   expect(f.feature.status).toBe("error");
 });
+
+test("waiting replies launch brewery answer with the verbatim reply", async () => {
+  const f = await fixture(false);
+  f.feature.groupId = f.group._id;
+  f.feature.brewery = {
+    slug: "reply-test",
+    repo: "shade",
+    workspace: {kind: "local", repoPath: f.dir},
+    eventsOffset: 0,
+    stepMessages: [],
+    waiting: {kind: "signoff", since: new Date()},
+  };
+  await f.feature.save();
+  const launches: string[][] = [];
+  const driver = new BreweryDriver({
+    ...f.options,
+    launch: async (argv) => {
+      launches.push(argv);
+    },
+  });
+  await driver.handleMessage(f.group, {content: "ok, 2b"});
+  expect(launches).toEqual([
+    ["brewery", "answer", "reply-test", "ok, 2b", "--go", "--no-wait", "--repo", f.dir],
+  ]);
+});
+
+const replyFixture = async (zerg = false) => {
+  const f = await fixture(zerg);
+  f.group.featureDriver = "brewery";
+  f.feature.groupId = f.group._id;
+  f.feature.status = "in_progress";
+  f.feature.brewery = {
+    slug: "reply-test",
+    repo: "shade",
+    workspace: zerg ? {kind: "zerg", session: "shade-session"} : {kind: "local", repoPath: f.dir},
+    phase: "build",
+    eventsOffset: 0,
+    stepMessages: [{seq: 3, ts: "3", label: "T3 roast (codex)"}],
+  };
+  await f.feature.save();
+  await fs.mkdir(path.join(f.dir, ".terreno/brewery/reply-test"), {recursive: true});
+  const executableDir = await fs.mkdtemp(path.join(process.cwd(), ".brewery-reply-"));
+  dirs.push(executableDir);
+  f.config.brewery.command = path.join(executableDir, "fake brewery.cjs");
+  await fs.writeFile(
+    f.config.brewery.command,
+    `#!${process.execPath}\nrequire("node:fs").appendFileSync("calls.jsonl", JSON.stringify(process.argv.slice(2))+"\\n");`,
+    {mode: 0o700}
+  );
+  const calls = async (count: number) => {
+    let lines: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      lines = (await fs.readFile(path.join(f.dir, "calls.jsonl"), "utf8").catch(() => ""))
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+      if (lines.length >= count) break;
+      await Bun.sleep(20);
+    }
+    return lines.map((line): string[] => JSON.parse(line));
+  };
+  return {...f, calls, driver: new BreweryDriver(f.options)};
+};
+
+test("running notes preserve whitespace, Unicode and shell-sensitive text", async () => {
+  const f = await replyFixture();
+  const note = "  --go café\n'quoted' $(touch forbidden) `uname`  ";
+  await f.driver.handleMessage(f.group, {content: note});
+  expect(await f.calls(1)).toEqual([["note", "reply-test", note, "--repo", f.dir]]);
+  expect(f.messages).toEqual(["Queued for the next check-in (current: T3 roast)"]);
+  expect(await fs.stat(path.join(f.dir, "forbidden")).catch(() => null)).toBeNull();
+  expect((await Feature.findById(f.feature._id))?.status).toBe("in_progress");
+});
+
+test.each([
+  "signoff",
+  "gate",
+] as const)("%s answers launch detached and retain waiting until CLI acceptance", async (kind) => {
+  const f = await replyFixture();
+  f.feature.brewery!.waiting = {kind, since: new Date()};
+  f.feature.status = "awaiting_approval";
+  await f.feature.save();
+  f.config.brewery.agents = "pick=fake";
+  const reply = "no: café\n'quoted' $(touch forbidden)";
+  await f.driver.handleMessage(f.group, {content: reply});
+  expect(await f.calls(1)).toEqual([
+    ["answer", "reply-test", reply, "--go", "--no-wait", "--repo", f.dir, "--agents", "pick=fake"],
+  ]);
+  expect((await Feature.findById(f.feature._id))?.brewery?.waiting?.kind).toBe(kind);
+  expect(f.messages).toEqual(["Reply sent to brewery."]);
+});
+
+test.each([
+  "stop",
+  "now: change direction",
+])("%s terminates a real process group before acknowledgement or restart", async (content) => {
+  const f = await replyFixture();
+  const {spawn} = await import("node:child_process");
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
+  await fs.writeFile(path.join(f.dir, ".terreno/brewery/reply-test/run.pid"), String(child.pid));
+  try {
+    await f.driver.handleMessage(f.group, {content});
+    expect(() => process.kill(child.pid!, 0)).toThrow();
+    await exited;
+    if (content === "stop") {
+      expect((await Feature.findById(f.feature._id))?.status).toBe("paused");
+      expect(f.messages).toEqual(["Brewery stopped. Reply `resume` to continue."]);
+      expect(await fs.stat(path.join(f.dir, "calls.jsonl")).catch(() => null)).toBeNull();
+    } else {
+      expect(await f.calls(2)).toEqual([
+        ["note", "reply-test", " change direction", "--repo", f.dir],
+        ["resume", "reply-test", "--go", "--no-wait", "--repo", f.dir],
+      ]);
+      expect(f.messages).toEqual(["Interrupted T3 roast; restarting with your note"]);
+    }
+  } finally {
+    try {
+      process.kill(-child.pid!, "SIGKILL");
+    } catch {}
+  }
+});
+
+test("stop without a PID is idempotent; resume restores polling and clears old errors", async () => {
+  const f = await replyFixture();
+  await f.driver.handleMessage(f.group, {content: " stop "});
+  await f.driver.handleMessage(f.group, {content: "stop"});
+  expect((await Feature.findById(f.feature._id))?.status).toBe("paused");
+  await Feature.updateOne({_id: f.feature._id}, {$set: {errorMessage: "old failure"}});
+  await f.driver.handleMessage(f.group, {content: "resume"});
+  expect(await f.calls(1)).toEqual([
+    ["resume", "reply-test", "--go", "--no-wait", "--repo", f.dir],
+  ]);
+  const saved = await Feature.findById(f.feature._id);
+  expect(saved?.status).toBe("in_progress");
+  expect(saved?.errorMessage).toBeUndefined();
+  expect(saved?.brewery?.lastEventAt).toBeInstanceOf(Date);
+});
+
+test.each([
+  "",
+  "   ",
+  "now:",
+  "now:  ",
+])("empty input %j does not execute commands", async (content) => {
+  const f = await replyFixture();
+  await f.driver.handleMessage(f.group, {content});
+  expect(await fs.stat(path.join(f.dir, "calls.jsonl")).catch(() => null)).toBeNull();
+  expect((await Feature.findById(f.feature._id))?.status).toBe("in_progress");
+  expect(f.messages).toHaveLength(1);
+});
+
+test("missing and complete runs do not launch commands", async () => {
+  const f = await replyFixture();
+  await f.driver.handleMessage(new Group({name: "missing", externalId: "missing"}), {
+    content: "ok",
+  });
+  expect(f.messages[0]).toContain("No brewery run");
+  await Feature.updateOne({_id: f.feature._id}, {$set: {status: "complete"}});
+  await f.driver.handleMessage(f.group, {content: "now: work"});
+  expect(f.messages[1]).toContain("complete");
+  expect(await fs.stat(path.join(f.dir, "calls.jsonl")).catch(() => null)).toBeNull();
+});
+
+test.each([
+  "bad",
+  "0",
+  "1",
+  "-42",
+])("invalid PID %s fails safely without restart or success acknowledgement", async (pid) => {
+  const f = await replyFixture();
+  await fs.writeFile(path.join(f.dir, ".terreno/brewery/reply-test/run.pid"), pid);
+  await f.driver.handleMessage(f.group, {content: "now: work"});
+  expect((await Feature.findById(f.feature._id))?.status).toBe("error");
+  expect(f.messages).toHaveLength(1);
+  expect(f.messages[0]).toContain("could not process");
+  expect(await fs.stat(path.join(f.dir, "calls.jsonl")).catch(() => null)).toBeNull();
+});
+
+test.each([
+  "note",
+  "launch",
+])("%s failure is sanitized, releases lease, and has no success ack", async (failure) => {
+  const f = await replyFixture();
+  const driver = new BreweryDriver({
+    ...f.options,
+    exec: async () => ({code: 1, stdout: "sensitive output", stderr: "sensitive output"}),
+    launch: async () => {
+      throw new Error("sensitive output");
+    },
+  });
+  await driver.handleMessage(f.group, {content: failure === "note" ? "a note" : "resume"});
+  const saved = await Feature.findById(f.feature._id);
+  expect(saved?.status).toBe("error");
+  expect(saved?.brewery?.pollLeaseUntil).toBeUndefined();
+  expect(f.messages).toHaveLength(1);
+  expect(f.messages[0]).toContain("launch.log");
+  expect(f.messages[0]).not.toContain("sensitive output");
+});
+
+test("busy poll lease prevents a conflicting reply without changing run status", async () => {
+  const f = await replyFixture();
+  await Feature.updateOne(
+    {_id: f.feature._id},
+    {$set: {"brewery.pollLeaseUntil": new Date(Date.now() + 60000)}}
+  );
+  await f.driver.handleMessage(f.group, {content: "stop"});
+  expect(f.messages[0]).toContain("retry");
+  expect((await Feature.findById(f.feature._id))?.status).toBe("in_progress");
+});
+
+test.each([
+  "",
+  "remote-host",
+])("zerg replies use the saved workspace and configured SSH host %s", async (host) => {
+  const f = await replyFixture(true);
+  f.config.zerg.enabled = false; // Existing workspace identity wins over today's startup mode.
+  f.config.zerg.sshHost = host;
+  const commands: string[][] = [];
+  const driver = new BreweryDriver({
+    ...f.options,
+    exec: async (argv) => {
+      commands.push(argv);
+      return {code: 0, stdout: "", stderr: ""};
+    },
+  });
+  await driver.handleMessage(f.group, {content: "now: 'quoted' $(false)"});
+  expect(commands).toHaveLength(3);
+  if (host) {
+    expect(commands.every((argv) => argv[0] === "ssh" && argv[4] === host)).toBe(true);
+    expect(commands[2]![5]).toContain("setsid");
+    expect(commands[2]![5]).toContain("shade-session");
+  } else {
+    expect(commands[0]!.slice(0, 7)).toEqual([
+      "docker",
+      "exec",
+      "-w",
+      f.config.zerg.workdir,
+      "shade-session",
+      "bun",
+      "-e",
+    ]);
+    expect(commands[1]).toContain(" 'quoted' $(false)");
+    expect(commands[2]!.slice(0, 8)).toEqual([
+      "docker",
+      "exec",
+      "-d",
+      "-w",
+      f.config.zerg.workdir,
+      "shade-session",
+      "sh",
+      "-c",
+    ]);
+    expect(commands[2]![8]).toContain("exec setsid");
+    expect(commands[2]![8]).toContain("'resume' 'reply-test' '--go' '--no-wait'");
+  }
+  expect(f.messages).toEqual(["Interrupted T3 roast; restarting with your note"]);
+});
+
+test("interrupt kills a TERM-resistant process group before recording the note or acknowledging", async () => {
+  const f = await replyFixture();
+  f.config.zerg.upTimeoutMs = 2000;
+  const {spawn} = await import("node:child_process");
+  const ready = path.join(f.dir, "ready.json");
+  const descendantScript = `process.on("SIGTERM", () => {}); require("node:fs").writeFileSync(${JSON.stringify(ready)}, String(process.pid)); setInterval(() => {}, 1000);`;
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `process.on("SIGTERM", () => {}); require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendantScript)}], {stdio: "ignore"}); setInterval(() => {}, 1000);`,
+    ],
+    {detached: true, stdio: "ignore"}
+  );
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", resolve);
+    child.once("error", reject);
+  });
+  let descendant = "";
+  try {
+    for (let i = 0; i < 100; i++) {
+      descendant = await fs.readFile(ready, "utf8").catch(() => "");
+      if (descendant) break;
+      await Bun.sleep(20);
+    }
+    expect(Number(descendant)).toBeGreaterThan(1);
+    await fs.writeFile(path.join(f.dir, ".terreno/brewery/reply-test/run.pid"), String(child.pid));
+    await fs.writeFile(
+      f.config.brewery.command,
+      `#!${process.execPath}\nconst fs = require("node:fs"); if (process.argv[2] === "note") { let alive = false; try {process.kill(${child.pid}, 0); alive = true;} catch {} fs.writeFileSync("alive-at-note", String(alive)); } fs.appendFileSync("calls.jsonl", JSON.stringify(process.argv.slice(2))+"\\n");`,
+      {mode: 0o700}
+    );
+    let aliveAtAck = true;
+    const driver = new BreweryDriver({
+      ...f.options,
+      sendMessage: async (_channel, _target, text) => {
+        try {
+          process.kill(child.pid!, 0);
+        } catch {
+          aliveAtAck = false;
+        }
+        f.messages.push(text);
+      },
+    });
+    await driver.handleMessage(f.group, {content: "now: new direction"});
+    await exited;
+    expect(await fs.readFile(path.join(f.dir, "alive-at-note"), "utf8")).toBe("false");
+    expect(aliveAtAck).toBe(false);
+    const status = await defaultExec(["ps", "-o", "stat=", "-p", descendant], {timeoutMs: 2000});
+    // An orphan may briefly remain a zombie until PID 1 reaps it; it is no longer running.
+    expect(status.stdout.trim() === "" || status.stdout.trim().startsWith("Z")).toBe(true);
+    expect(await f.calls(2)).toHaveLength(2);
+    expect(f.messages).toEqual(["Interrupted T3 roast; restarting with your note"]);
+  } finally {
+    try {
+      process.kill(-child.pid!, "SIGKILL");
+    } catch {}
+  }
+});
+
+test.each([
+  "answer",
+  "interrupt",
+])("a detached %s acknowledges while the CLI remains running", async (mode) => {
+  const f = await replyFixture();
+  if (mode === "answer") f.feature.brewery!.waiting = {kind: "gate", since: new Date()};
+  await f.feature.save();
+  await fs.writeFile(
+    f.config.brewery.command,
+    `#!${process.execPath}\nif (process.argv[2] === "note") process.exit(0); require("node:fs").writeFileSync("answer.pid", String(process.pid)); setInterval(() => {}, 1000);`,
+    {mode: 0o700}
+  );
+  let pid = 0;
+  try {
+    await f.driver.handleMessage(f.group, {
+      content: mode === "answer" ? "continue" : "now: adjust",
+    });
+    for (let i = 0; i < 100; i++) {
+      pid = Number(await fs.readFile(path.join(f.dir, "answer.pid"), "utf8").catch(() => "0"));
+      if (pid) break;
+      await Bun.sleep(20);
+    }
+    expect(pid).toBeGreaterThan(1);
+    expect(() => process.kill(pid, 0)).not.toThrow();
+    expect(f.messages).toEqual([
+      mode === "answer"
+        ? "Reply sent to brewery."
+        : "Interrupted T3 roast; restarting with your note",
+    ]);
+  } finally {
+    if (pid) {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {}
+    }
+  }
+});

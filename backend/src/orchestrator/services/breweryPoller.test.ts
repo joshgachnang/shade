@@ -380,3 +380,63 @@ test("loop repeats at the configured interval and drains an in-flight delivery o
     await poller.stop();
   }
 });
+
+test("stopped features retain their cursor and status even with unread step events", async () => {
+  const f = await fixture();
+  await f.append({kind: "step.start", seq: 1, stage: "pick", task: "T9", agent: "codex"});
+  const {BreweryDriver} = await import("./breweryDriver");
+  await new BreweryDriver({
+    loadConfig: f.options.loadConfig,
+    sendMessage: async () => {},
+  }).handleMessage(f.group, {content: "stop"});
+  await new BreweryPoller(f.options).tick();
+  expect((await f.fresh()).status).toBe("paused");
+  expect((await f.fresh()).brewery?.eventsOffset).toBe(0);
+  expect(f.messages).toEqual([]);
+});
+
+test("a stop between candidate discovery and lease acquisition cannot be undone by polling", async () => {
+  const first = await fixture();
+  const second = await fixture();
+  // Both candidates are discovered together; hold delivery for the first at the Slack boundary.
+  await first.append({kind: "step.start", seq: 1, stage: "pick", agent: "codex"});
+  await second.append({kind: "step.start", seq: 1, stage: "pick", agent: "codex"});
+  let entered!: () => void;
+  let release!: () => void;
+  const posting = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const postedGroups: string[] = [];
+  const poller = new BreweryPoller({
+    ...first.options,
+    transport: {
+      ...first.options.transport,
+      post: async (group) => {
+        postedGroups.push(String(group._id));
+        if (String(group._id) === String(first.group._id)) {
+          entered();
+          await blocked;
+        }
+        return "1";
+      },
+    },
+  });
+  const tick = poller.tick();
+  try {
+    await posting;
+    const {BreweryDriver} = await import("./breweryDriver");
+    await new BreweryDriver({
+      loadConfig: second.options.loadConfig,
+      sendMessage: async () => {},
+    }).handleMessage(second.group, {content: "stop"});
+  } finally {
+    release();
+  }
+  await tick;
+  expect((await second.fresh()).status).toBe("paused");
+  expect((await second.fresh()).brewery?.eventsOffset).toBe(0);
+  expect(postedGroups).toEqual([String(first.group._id)]);
+});

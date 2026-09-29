@@ -156,7 +156,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 - [x] **T8** — Post brewery events to the feature channel
   Poller from `eventsOffset`; one Slack message per step edited with narration; sign-off post
   with plan summary and tasks; PR/done/error; dead-run alert.
-- [ ] **T9** — Route feature channel replies to brewery
+- [x] **T9** — Route feature channel replies to brewery
   Answer when waiting, `now:` interrupt (kill, note, resume), otherwise queue a note, `stop`.
 - [ ] **T10** — Keep agent runners out of brewery feature channels
   GroupQueue routes `featureDriver: "brewery"` to the driver; test that no runner is invoked,
