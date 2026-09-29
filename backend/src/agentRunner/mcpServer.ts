@@ -986,7 +986,7 @@ export const buildTools = (ctx: McpContext) => {
 
   const createFeatureTool = tool(
     "create_feature",
-    "Create a new Slack channel for a focused feature build. Creates the channel, invites the requesting user, and sets up a new Shade group that takes the seeded request straight into the roast implementation workflow (worktree, TDD, PR), posting progress and output in the new channel. ALWAYS pass the user's request plus any context they gave as `request` — the user should not have to repeat themselves. Use this whenever someone asks to build a new feature.",
+    "Create a new Slack channel for a focused feature build. Creates the channel, invites the requesting user, and sets up a brewery-driven Shade group. brewery writes a plan for approval before implementation, then posts progress and the PR in the new channel. ALWAYS pass the user's request plus any context they gave as `request` — the user should not have to repeat themselves. Use this whenever someone asks to build a new feature.",
     {
       name: z
         .string()
@@ -1001,13 +1001,13 @@ export const buildTools = (ctx: McpContext) => {
         .string()
         .optional()
         .describe(
-          "The user's original feature request, verbatim, plus any constraints or context from the conversation. Seeds the new channel so implementation starts from it immediately."
+          "The user's original feature request, verbatim, plus any constraints or context from the conversation. Passed directly to brewery to write the plan for approval. Required to start the run."
         ),
       repo: z
         .string()
         .optional()
         .describe(
-          "The repo the feature targets, as its GitHub/zerg name (e.g. 'lede', or 'owner/repo'). The feature runs in that repo's zerg session. Omit only if the user didn't say and it can't be inferred."
+          "The repo the feature targets, as its GitHub/zerg name (e.g. 'lede', or 'owner/repo'). Required to start brewery. Uses a zerg session when enabled, otherwise a local worktree. Confirm the repository before calling if it cannot be inferred."
         ),
     },
     async (args) => {

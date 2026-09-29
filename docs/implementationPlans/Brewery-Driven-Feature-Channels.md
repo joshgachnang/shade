@@ -161,7 +161,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 - [x] **T10** — Keep agent runners out of brewery feature channels
   GroupQueue routes `featureDriver: "brewery"` to the driver; test that no runner is invoked,
   including for the seeded request.
-- [ ] **T11** — Create brewery-driven groups from create_feature
+- [x] **T11** — Create brewery-driven groups from create_feature
   Remove the roast `FEATURE_CHANNEL_MEMORY`, greeting, and seed-message path.
 
 ### Phase 4: Verify

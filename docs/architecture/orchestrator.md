@@ -71,7 +71,7 @@ Supervision is external — systemd for both units, plus `deploy/shade-watchdog.
 
 ## Brewery feature startup
 
-`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. Channel creation is wired by IP-018 T11; event delivery is handled by the poller below.
+`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. The `create_feature` IPC handler calls this service directly; event delivery is handled by the poller below.
 
 | Mode | Workspace and launch |
 |---|---|
@@ -88,7 +88,7 @@ brewery distill --file .terreno/brewery/<slug>/request.md --slug <slug> --no-wai
 
 A successful return means the launch was accepted; completion and asynchronous failures belong to the event poller. Output is retained at `.terreno/brewery/<slug>/launch.log`. Starting a Feature with existing brewery metadata is rejected without changing its status; use the resume workflow for existing runs. Failed preparations retain their workspace for diagnosis; resolve worktree/branch conflicts before attempting a fresh start. Local repositories must have `origin/HEAD` set to their default branch.
 
-Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts` exercises real Git worktrees, MongoDB persistence, a detached fake CLI, and injected zerg/SSH transport failures. This service introduces no frontend flow; UI QA and browser tests belong to the channel wiring and Features-screen tasks.
+Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts` exercises real Git worktrees, MongoDB persistence, a detached fake CLI, and injected zerg/SSH transport failures. This service introduces no Shade frontend flow; browser QA belongs to the Features-screen task.
 
 ## Brewery event delivery
 
@@ -110,11 +110,11 @@ The poller uses the same local or zerg/SSH workspace execution path as startup, 
 
 After `stepSilenceAlertMin` without an event, an active, non-waiting run whose `run.pid` is absent or dead receives one “Brewery died” notice with `resume` and the launch-log path, and becomes `error`. A live PID or failed workspace read does not trigger a death notice. Approval/gate waits and terminal features are excluded.
 
-Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. GroupQueue reply routing is described below; T11 owns channel creation.
+Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. GroupQueue reply routing is described below; Channel creation is described below.
 
 ## Brewery feature replies
 
-`BreweryDriver.handleMessage(group, {content})` resolves the channel's Feature and sends commands to its **saved workspace**, even if the startup mode has since changed. GroupQueue routes every `featureDriver: "brewery"` message to this driver before runner selection, including bot-authored seed requests and `/implement`. Replies serialize per group without consuming agent concurrency slots. Successfully handled messages are marked processed so MessageLoop cannot replay them; thrown delivery errors leave them unprocessed for a later poll. `selectRunner` rejects brewery groups, and driver errors release the queue without agent retries or fallback. Legacy groups without `featureDriver` retain planner/container/default runner routing. Channel creation is T11.
+`BreweryDriver.handleMessage(group, {content})` resolves the channel's Feature and sends commands to its **saved workspace**, even if the startup mode has since changed. GroupQueue routes every `featureDriver: "brewery"` message to this driver before runner selection, including bot-authored seed requests and `/implement`. Replies serialize per group without consuming agent concurrency slots. Successfully handled messages are marked processed so MessageLoop cannot replay them; thrown delivery errors leave them unprocessed for a later poll. `selectRunner` rejects brewery groups, and driver errors release the queue without agent retries or fallback. Legacy groups without `featureDriver` retain planner/container/default runner routing. New channels are created as described below.
 
 | Reply | Driver action |
 |---|---|
@@ -133,3 +133,11 @@ The driver shares the poller's per-feature Mongo lease so a stale poll cannot un
 Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts src/orchestrator/services/breweryPoller.test.ts` covers real Mongo, local filesystem/CLI launch and cancellation, plus injected zerg/SSH failures. `cd tools/brewery && bun test` covers CLI argument preservation. This backend service introduces no Shade browser interaction, so frontend QA/Playwright remain with T13 and full channel harness coverage with T12.
 
 Queue routing verification: `cd backend && bun test src/orchestrator/groupQueue.brewery.test.ts src/orchestrator/groupQueue.test.ts`. These exercise the real driver through `enqueue`, including ordered CLI notes, seeded messages, empty and missing-run replies, delivery failure, and legacy runner selection.
+
+## Creating brewery feature channels
+
+The main group's `create_feature` IPC command is wired to `createFeatureHandler` in `index.ts`. It creates the Slack channel and invites the requester, persists a Group with `featureDriver: "brewery"` and `requiresTrigger: false`, creates the linked Feature, registers the channel, and calls `BreweryDriver.start` with the original request and repository. The brewery marker is persisted before live registration, so messages cannot select an agent runner even when startup fails. Existing groups without that marker are unchanged.
+
+There is no roast workflow memory, implementation greeting, or synthetic inbound request. Brewery owns workspace preparation and posts its plan for approval through the event poller before implementing. The caller must supply a non-empty `request` and a valid `repo` (for example, `owner/shade`); the optional `description` is display metadata, not a replacement request. Missing input, unavailable brewery agents, and workspace/launch failures leave the Feature in `error` and post an actionable notice in the feature channel. The exception also reaches the IPC watcher's source-channel failure notice. Failures never fall back to an agent. Feature persistence failures propagate rather than starting an untracked run.
+
+Verification: `cd backend && bun test src/orchestrator/createFeature.test.ts src/orchestrator/ipcWatcher.test.ts` covers authorized IPC dispatch, persisted brewery routing, zerg startup, real local Git worktrees and request preservation, no seed/memory/greeting, missing inputs, and Slack/preflight errors. Transport and operating-system execution are the injected external boundaries; MongoDB and the brewery driver remain real. T12 owns the full request-to-PR harness. This backend-only change introduces no Shade browser/native screen, so QA Markdown and Playwright do not apply under the frontend-flow testing scope.
