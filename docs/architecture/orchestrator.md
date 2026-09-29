@@ -71,7 +71,7 @@ Supervision is external — systemd for both units, plus `deploy/shade-watchdog.
 
 ## Brewery feature startup
 
-`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. T7 provides this service only: channel creation, reply routing and event polling are wired by subsequent IP-018 tasks.
+`BreweryDriver.start({feature, group, request, repo})` prepares and launches a brewery run. Pass the repository from `create_feature` explicitly (especially for local execution); `group.executionConfig.zergRepo` is the fallback. Channel creation and reply routing are wired by subsequent IP-018 tasks; event delivery is handled by the poller below.
 
 | Mode | Workspace and launch |
 |---|---|
@@ -89,3 +89,25 @@ brewery distill --file .terreno/brewery/<slug>/request.md --slug <slug> --no-wai
 A successful return means the launch was accepted; completion and asynchronous failures belong to the event poller. Output is retained at `.terreno/brewery/<slug>/launch.log`. Starting a Feature with existing brewery metadata is rejected without changing its status; use the resume workflow for existing runs. Failed preparations retain their workspace for diagnosis; resolve worktree/branch conflicts before attempting a fresh start. Local repositories must have `origin/HEAD` set to their default branch.
 
 Verification: `cd backend && bun test src/orchestrator/services/breweryDriver.test.ts` exercises real Git worktrees, MongoDB persistence, a detached fake CLI, and injected zerg/SSH transport failures. This service introduces no frontend flow; UI QA and browser tests belong to the channel wiring and Features-screen tasks.
+
+## Brewery event delivery
+
+`BreweryPoller` reads each active brewery Feature's `events.jsonl` from its persisted **byte** offset. It runs beside the task worker: in the gateway while `taskWorker.runInGateway=true`, otherwise in dedicated workers. A per-feature Mongo lease prevents overlapping polls during worker rollout; expired leases recover after a crash. The loop starts immediately, reloads `AppConfig.brewery.pollIntervalMs` between passes, and drains on shutdown. Workers use Slack's HTTP API with the existing Channel bot token, without opening another Socket Mode connection. Real Slack delivery is disabled in test mode; tests inject the transport.
+
+| Event | Feature-channel behavior |
+|---|---|
+| `step.start` | Post `▸ T2 roast (claude)`; persist its Slack timestamp. |
+| `narration` | Keep the last `maxNarrationLines` (each at most 300 characters); edit the same message no more often than `narrationFlushMs`. Pending lines and flush times survive process restarts. |
+| `step.end` | Immediately finalize the same message, e.g. `✓ T2 roast PASS in 312s: Continue`, retaining recent narration. |
+| `waiting` | Post the brewery message (including gate options). Sign-off also reads the IP's summary and checkbox task list, adds the reply grammar, and sets `awaiting_approval`. Both relative and workspace-contained absolute IP paths are supported. |
+| `resumed` | Clear waiting and restore `in_progress`. |
+| `pr`, `ci` | Post the PR link or CI state; persist the PR number. |
+| `done`, `error` | Post completion or the failure with workspace-relative log paths; set the terminal Feature status. |
+
+For example, the sign-off post ends with `Reply \`ok\`, \`ok, 2b\`, or \`no: <why>\``. The summary is capped at 4,000 characters and task list at 24,000; the brewery message contains the source plan path. No second ntfy notification is sent. CLI `note` events advance the cursor without another acknowledgement; reply handling owns that acknowledgement (T9).
+
+The poller uses the same local or zerg/SSH workspace execution path as startup, and mirrors `state.json`'s phase when present. It advances the cursor only after a complete newline-terminated record has been handled and persisted. Empty/missing streams and partial records wait for another pass; invalid records, unavailable IP files, workspace failures, and failed Slack operations retain the cursor for retry. Failure in one feature does not stop the others. Slack and Mongo cannot be committed atomically: a process crash after Slack accepts a post but before Mongo persists its timestamp can duplicate that post on recovery. Persisted step timestamps prevent duplicates during normal restart/replay.
+
+After `stepSilenceAlertMin` without an event, an active, non-waiting run whose `run.pid` is absent or dead receives one “Brewery died” notice with `resume` and the launch-log path, and becomes `error`. A live PID or failed workspace read does not trigger a death notice. Approval/gate waits and terminal features are excluded.
+
+Verification: `cd backend && bun test src/orchestrator/services/breweryPoller.test.ts src/orchestrator/services/breweryDriver.test.ts`. These exercise real filesystem streams and Mongo, with injected Slack and zerg boundaries. No Shade frontend flow changes in T8; browser QA belongs to T13 and the full request/reply harness to T12. T9–T11 still own replies, queue routing and channel creation.

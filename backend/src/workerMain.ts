@@ -22,10 +22,11 @@ import {DirectAgentRunner} from "./orchestrator/runners/direct";
 import {MockAgentRunner} from "./orchestrator/runners/mock";
 import type {AgentRunner} from "./orchestrator/runners/types";
 import {ZergAgentRunner} from "./orchestrator/runners/zerg";
+import {BreweryPoller} from "./orchestrator/services/breweryPoller";
 import {getWorkerId} from "./orchestrator/services/taskBoard";
 import {TaskWorkerService} from "./orchestrator/services/taskWorker";
 import {isTestMode} from "./testMode/flag";
-import {drainAndStop, IpcResultDeliverer} from "./workerRuntime";
+import {drainAndStop, IpcResultDeliverer, shouldRunTaskWorkerInGateway} from "./workerRuntime";
 
 const DEFAULT_WORKER_PORT = 4021;
 const DEFAULT_POLL_MS = 5000;
@@ -82,6 +83,9 @@ export const startWorker = async (): Promise<void> => {
     logger.info(`Worker claim loop started (worker ${workerId}, interval: ${pollMs}ms)`);
   }
 
+  const breweryPoller = new BreweryPoller();
+  if (!shouldRunTaskWorkerInGateway(appConfig)) await breweryPoller.start();
+
   const port = Number(process.env.WORKER_PORT) || DEFAULT_WORKER_PORT;
   const healthServer = Bun.serve({
     port,
@@ -117,6 +121,7 @@ export const startWorker = async (): Promise<void> => {
     }
     // Let an in-flight tick finish so its claims are registered before draining.
     await lastTick;
+    await breweryPoller.stop();
 
     try {
       // Re-load config so a runtime-edited drain bound takes effect.

@@ -51,6 +51,11 @@ const breweryStepMessageSchema = new mongoose.Schema(
   {
     seq: {type: Number, required: true},
     ts: {type: String, required: true},
+    label: {type: String},
+    lines: {type: [String], default: []},
+    dirty: {type: Boolean, default: false},
+    flushedAt: {type: Date},
+    final: {type: String},
   },
   {_id: false, strict: "throw"}
 );
@@ -66,6 +71,7 @@ const brewerySchema = new mongoose.Schema(
     stepMessages: {type: [breweryStepMessageSchema], default: []},
     pr: {type: Number},
     lastEventAt: {type: Date},
+    pollLeaseUntil: {type: Date},
   },
   {_id: false, strict: "throw"}
 );

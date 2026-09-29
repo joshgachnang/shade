@@ -19,6 +19,7 @@ import {MockAgentRunner} from "./runners/mock";
 import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {ZergAgentRunner} from "./runners/zerg";
+import {BreweryPoller} from "./services/breweryPoller";
 import {InfraWatcher} from "./services/infraWatcher";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
@@ -90,6 +91,7 @@ export interface OrchestratorState {
   triviaMonitor: TriviaMonitor;
   scheduler: SchedulerService;
   taskWorker: TaskWorkerService;
+  breweryPoller: BreweryPoller;
   isRunning: boolean;
 }
 
@@ -382,11 +384,13 @@ export const startOrchestrator = async (
   // With taskWorker.runInGateway=false (IP-010), board work is left to
   // dedicated worker processes (`bun run worker`); the service is still
   // constructed so OrchestratorState/stopOrchestrator stay uniform.
+  const breweryPoller = new BreweryPoller();
   const taskWorker = new TaskWorkerService({runner, channelManager, containerRunner});
   const appConfig = await loadAppConfig();
   if (shouldRunTaskWorkerInGateway(appConfig)) {
     try {
       await taskWorker.start();
+      await breweryPoller.start();
     } catch (err) {
       logError("Task worker start error (non-fatal)", err);
     }
@@ -440,6 +444,7 @@ export const startOrchestrator = async (
     triviaMonitor,
     scheduler,
     taskWorker,
+    breweryPoller,
     isRunning: true,
   };
 
@@ -465,6 +470,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   registerSchedulerForWake(null);
   state.scheduler.stop();
   state.taskWorker.stop();
+  await state.breweryPoller.stop();
 
   try {
     await state.radioTranscriber.stop();

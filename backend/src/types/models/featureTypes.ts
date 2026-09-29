@@ -22,7 +22,16 @@ export interface BreweryState {
   waiting?: {kind: "signoff" | "gate"; since: Date};
   /** Number of bytes already consumed from events.jsonl. */
   eventsOffset: number;
-  stepMessages: {seq: number; ts: string}[];
+  stepMessages: {
+    seq: number;
+    ts: string;
+    label?: string;
+    lines?: string[];
+    dirty?: boolean;
+    flushedAt?: Date;
+    final?: string;
+  }[];
+  pollLeaseUntil?: Date;
   pr?: number;
   lastEventAt?: Date;
 }
