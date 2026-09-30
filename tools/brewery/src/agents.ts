@@ -1,6 +1,6 @@
 // Launch one agent as its own process. Nothing is shared between calls except the
 // repository and the files brewery hands over, so every step is a fresh context.
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AgentProfile } from "./config.ts";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED" | "PENDING";
@@ -210,6 +210,7 @@ export const availability = async (profile: AgentProfile): Promise<string | null
 };
 
 export const runAgent = async (req: RunRequest): Promise<RunOutcome> => {
+  rmSync(req.resultFile, { force: true });
   writeFileSync(req.promptFile, req.prompt);
   writeFileSync(req.logFile, `# ${req.name} in ${req.cwd}\n# prompt: ${req.promptFile}\n\n`);
   const started = Date.now();

@@ -50,6 +50,8 @@ export const runStage = async (ctx: Ctx, stage: Stage, body: string, opts: Stage
   const runOne = async (agent: string): Promise<AgentResult> => {
     state.seq += 1;
     const seq = state.seq;
+    // Reserve the ID durably before any externally visible event or agent output.
+    saveState(state);
     const base = join(runDir(state.repo, state.slug), "steps", `${String(seq).padStart(3, "0")}-${stage}${opts.task ? `-${opts.task}` : ""}-${agent}`);
     const resultFile = `${base}.result.json`;
     const label = `${stage}${opts.task ? ` ${opts.task}` : ""} (${agent})`;

@@ -110,6 +110,8 @@ test("resume recovers a killed roast and rejects concurrent run commands", async
     expect(loadState("greet", repo).waiting?.kind).toBe("gate");
     expect(loadState("greet", repo).tasks.T1.status).toBe("passed");
     expect(events(repo, "greet").filter((e) => e.kind === "step.start" && e.stage === "roast")).toHaveLength(2);
+    const starts = events(repo, "greet").filter((e) => e.kind === "step.start");
+    expect(new Set(starts.map((e) => e.seq)).size).toBe(starts.length);
     expect(existsSync(pidFile)).toBe(false);
   } finally {
     first.kill("SIGKILL");

@@ -132,3 +132,20 @@ tool output, and final result records. `command` profiles emit only step start a
 bun test          # unit + end-to-end flows against temp repos with a scripted fake agent
 bun run typecheck
 ```
+
+### Interrupted runs and private artifacts
+
+Brewery reserves each step sequence in state before emitting its start event. An
+interrupted step therefore keeps its ID; resumed steps get new IDs and result
+paths. Agent invocation also removes any old result at its destination before
+launch, so a missing result cannot inherit an earlier PASS.
+
+Run acquisition, stale PID recovery, and ownership-checked release are serialized
+by a short-lived `run.guard` directory. A crash during that synchronous operation
+fails closed: after stopping all commands for that run and verifying none remain,
+remove only its `.terreno/brewery/<slug>/run.guard` directory, then resume. Do not
+remove a guard while another command may be acquiring or releasing the run lock.
+Normal interruption during an agent step leaves no guard and resumes automatically.
+
+Private `.terreno/` artifacts are excluded through the common Git directory,
+including linked worktrees. Brewery verifies the exclusion before building tasks.

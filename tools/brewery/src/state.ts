@@ -64,14 +64,22 @@ export const withRunLock = async <T>(state: RunState, work: () => Promise<T>): P
   mkdirSync(dir, { recursive: true });
   const lock = join(dir, "run.lock");
   const pidFile = join(dir, "run.pid");
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      break;
-    } catch (error) {
+  // Never reclaim this short-lived guard automatically: doing so would move the
+  // same stale-owner race to another pathname. A crash here fails closed.
+  const guard = join(dir, "run.guard");
+  const ownerFile = join(lock, "owner");
+  const owner = crypto.randomUUID();
+  const guarded = (action: () => void): void => {
+    try { mkdirSync(guard); }
+    catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      // A crash leaves both markers behind. A freshly-created lock without a pid
-      // belongs to a process still entering its critical section.
+      throw new Error(`brewery: ${state.slug} is already running (run.guard held; if abandoned, remove it only after stopping all run commands)`);
+    }
+    try { action(); }
+    finally { rmdirSync(guard); }
+  };
+  guarded(() => {
+    if (existsSync(lock)) {
       const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8").trim()) : 0;
       let alive = false;
       if (Number.isSafeInteger(pid) && pid > 0) {
@@ -84,13 +92,29 @@ export const withRunLock = async <T>(state: RunState, work: () => Promise<T>): P
       rmSync(lock, { recursive: true, force: true });
       rmSync(pidFile, { force: true });
     }
-  }
-  writeFileSync(pidFile, `${process.pid}\n`);
+    mkdirSync(lock);
+    writeFileSync(ownerFile, owner);
+    writeFileSync(pidFile, `${process.pid}\n`);
+  });
   try {
     return await work();
   } finally {
-    rmSync(pidFile, { force: true });
-    rmSync(lock, { recursive: true, force: true });
+    // Acquisition and release share the guard, so the token check and removal
+    // cannot race a replacement owner.
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      try {
+        guarded(() => {
+          if (!existsSync(ownerFile) || readFileSync(ownerFile, "utf8") !== owner) return;
+          rmSync(pidFile, { force: true });
+          rmSync(lock, { recursive: true, force: true });
+        });
+        break;
+      } catch (error) {
+        if (!existsSync(guard) || Date.now() >= deadline) throw error;
+        await Bun.sleep(10);
+      }
+    }
   }
 };
 

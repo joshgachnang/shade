@@ -56,8 +56,13 @@ agent's own narration, like Claude Code's thinking summaries.
    the saved request and notes, `approved/build/review/brew` goes to barrel (passed tasks are
    skipped, as they are today), and `finish` goes to finish. It refuses to run while another process holds
    the run lock.
+   Step IDs are persisted before start events and never reused after interruption;
+   each agent invocation clears any preexisting result at its destination.
 5. **Run lock + pid.** Write `.terreno/brewery/<slug>/run.pid` while a command runs, so Shade can
-   kill the process group for `now:` and `stop`.
+   kill the process group for `now:` and `stop`. Stale-owner recovery and ownership-checked
+   release share a short-lived `run.guard`; an abandoned guard fails closed (recovery
+   instructions in `tools/brewery/README.md`). Local linked worktrees resolve the common
+   Git directory correctly and verify `.terreno/` is ignored before task commits.
 
 ## Models
 

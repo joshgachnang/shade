@@ -1,6 +1,6 @@
 // git and GitHub. CI is an interface so the finish loop can be tested without GitHub.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface ShResult {
   code: number;
@@ -44,10 +44,14 @@ export const ensureExcluded = async (cwd: string): Promise<void> => {
   const probe = await sh(cwd, ["git", "check-ignore", "-q", ".terreno/brewery/x"]);
   if (probe.code === 0) return;
   const gitDir = await git(cwd, "rev-parse", "--git-common-dir");
-  const exclude = join(cwd, gitDir, "info", "exclude");
-  mkdirSync(join(cwd, gitDir, "info"), { recursive: true });
+  const info = resolve(cwd, gitDir, "info");
+  const exclude = join(info, "exclude");
+  mkdirSync(info, { recursive: true });
   const current = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
   appendFileSync(exclude, `${current.endsWith("\n") || !current ? "" : "\n"}.terreno/\n`);
+  if ((await sh(cwd, ["git", "check-ignore", "-q", ".terreno/brewery/x"])).code !== 0) {
+    throw new Error("brewery: cannot exclude private run artifacts from Git");
+  }
 };
 
 export const commitAll = async (cwd: string, message: string, amend: boolean): Promise<string> => {

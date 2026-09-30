@@ -13,6 +13,7 @@ interface Entry {
   result?: Record<string, unknown>;
   noResult?: boolean;
   sleepMs?: number;
+  sleepAfterResultMs?: number;
 }
 
 const prompt = await new Response(Bun.stdin.stream()).text();
@@ -42,3 +43,5 @@ for (const [path, content] of Object.entries(entry.write ?? {})) {
 if (!entry.noResult) {
   writeFileSync(process.env.BREWERY_RESULT_FILE as string, JSON.stringify(entry.result ?? { status: "PASS", action: "done" }));
 }
+
+if (entry.sleepAfterResultMs) await Bun.sleep(entry.sleepAfterResultMs);
