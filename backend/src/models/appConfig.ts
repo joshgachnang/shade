@@ -172,6 +172,10 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       // Host checkout dir for feature channels that can't run on zerg (zerg
       // disabled). Missing repos are cloned here with `gh repo clone`.
       localReposDir: {type: String, default: "~/src"},
+      // Complete + archive a feature channel once the PR it posted is merged.
+      archiveOnMerge: {type: Boolean, default: true},
+      // How often to check feature channels' PRs for a merge.
+      completionPollMs: {type: Number, default: 5 * 60 * 1000},
     },
 
     // Brewery-driven feature-channel runs. These fields are exposed by the

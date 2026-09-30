@@ -112,6 +112,16 @@ describe("ChannelManager sends via test connector", () => {
     expect(slackChannelId).toBe("test-channel-new-feature");
   });
 
+  test("archiveGroupChannel archives the group's channel through its connector", async () => {
+    await expect(manager.archiveGroupChannel(groupId)).resolves.toBeUndefined();
+  });
+
+  test("archiveGroupChannel rejects an unknown group", async () => {
+    await expect(
+      manager.archiveGroupChannel(new mongoose.Types.ObjectId().toString())
+    ).rejects.toThrow("not found");
+  });
+
   test("sendMessage to an unknown channel logs and returns without throwing", async () => {
     await manager.sendMessage(new mongoose.Types.ObjectId().toString(), "nowhere", "dropped");
   });

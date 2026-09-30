@@ -491,6 +491,21 @@ export class ChannelManager {
     return {slackChannelId};
   }
 
+  async archiveGroupChannel(groupId: string): Promise<void> {
+    const group = this.groupCache.get(groupId) ?? (await Group.findById(groupId));
+    if (!group) {
+      throw new Error(`Group ${groupId} not found`);
+    }
+    const connector = this.connectors.get(group.channelId.toString());
+    if (!connector) {
+      throw new Error(`No connector for group ${group.name}`);
+    }
+    if (!connector.archiveChannel) {
+      throw new Error(`${connector.channelDoc.type} channels do not support archiving`);
+    }
+    await connector.archiveChannel(group.externalId);
+  }
+
   getConnectedChannelCount(): number {
     let count = 0;
     for (const connector of this.connectors.values()) {

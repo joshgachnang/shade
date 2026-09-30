@@ -950,3 +950,41 @@ describe("create_feature tool", () => {
     });
   });
 });
+
+describe("complete_feature tool", () => {
+  test("queues completion from a feature channel", async () => {
+    const {group, channel} = await makeGroup();
+    await Group.findByIdAndUpdate(group._id, {$set: {featurePhase: "implementing"}});
+    const ctx = makeContext(group._id.toString(), channel._id.toString());
+    await fs.mkdir(ctx.ipcDir, {recursive: true});
+    try {
+      const text = await callTool(ctx, "complete_feature", {reason: "user says it shipped"});
+
+      expect(text).toContain("archiv");
+      const files = await fs.readdir(ctx.ipcDir);
+      expect(files).toHaveLength(1);
+      const ipc = JSON.parse(await fs.readFile(path.join(ctx.ipcDir, files[0]), "utf-8"));
+      expect(ipc).toMatchObject({
+        type: "complete_feature",
+        groupId: group._id.toString(),
+        reason: "user says it shipped",
+      });
+    } finally {
+      await fs.rm(ctx.ipcDir, {recursive: true, force: true});
+    }
+  });
+
+  test("refuses outside a feature channel", async () => {
+    const {group, channel} = await makeGroup({isMain: true});
+    const ctx = makeContext(group._id.toString(), channel._id.toString());
+    await fs.mkdir(ctx.ipcDir, {recursive: true});
+    try {
+      const text = await callTool(ctx, "complete_feature", {reason: "done"});
+
+      expect(text).toContain("only");
+      expect(await fs.readdir(ctx.ipcDir)).toHaveLength(0);
+    } finally {
+      await fs.rm(ctx.ipcDir, {recursive: true, force: true});
+    }
+  });
+});

@@ -146,6 +146,18 @@ export const buildDockerExecArgs = ({
 };
 
 /**
+ * Exec args safe to log: every `-e KEY=VALUE` keeps its name but not its
+ * value. The forwarded env carries API keys and OAuth tokens.
+ */
+export const redactExecArgs = (args: string[]): string[] =>
+  args.map((arg, index) => {
+    if (args[index - 1] !== "-e" || !arg.includes("=")) {
+      return arg;
+    }
+    return `${arg.slice(0, arg.indexOf("="))}=<redacted>`;
+  });
+
+/**
  * `docker exec` does not forward signals to the process it started, so killing
  * the host-side client leaves claude running in the container. This script,
  * run inside the container, finds every process stamped with the run id and
@@ -205,18 +217,18 @@ export const createContainerSpawner = ({
       ...filterContainerEnv(options.env, envPrefixes),
       [ZERG_RUN_ID_ENV]: runId,
     };
-    const argv = withSshHost(
-      buildDockerExecArgs({
-        session,
-        workdir: options.cwd ?? workdir,
-        env,
-        command: options.command,
-        args: options.args,
-      }),
-      sshHost
-    );
+    const dockerArgs = buildDockerExecArgs({
+      session,
+      workdir: options.cwd ?? workdir,
+      env,
+      command: options.command,
+      args: options.args,
+    });
+    const argv = withSshHost(dockerArgs, sshHost);
     logger.info(`Spawning Claude Code in zerg session ${session} (run ${runId})`);
-    logger.debug(`zerg exec argv: ${argv.join(" ")}`);
+    logger.debug(
+      `zerg exec${sshHost ? ` via ssh ${sshHost}` : ""}: ${redactExecArgs(dockerArgs).join(" ")}`
+    );
 
     const child = spawn(argv[0] as string, argv.slice(1), {
       stdio: ["pipe", "pipe", "pipe"],

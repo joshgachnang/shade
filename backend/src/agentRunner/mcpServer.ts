@@ -1084,6 +1084,45 @@ export const buildTools = (ctx: McpContext) => {
     }
   );
 
+  const completeFeatureTool = tool(
+    "complete_feature",
+    "Mark this feature channel's feature as done and archive the Slack channel. Call it only when the user says the feature is finished or abandoned, or its PR has merged (merged PRs are also detected and archived automatically). Post anything you still need to say before calling it — the channel is archived right after.",
+    {
+      reason: z
+        .string()
+        .describe(
+          "Short reason shown in the channel, e.g. 'PR #12 merged' or 'abandoned per user'"
+        ),
+    },
+    async (args) => {
+      const group = await Group.findById(ctx.groupId);
+      if (!group?.featurePhase) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: complete_feature only works in a feature channel. Nothing was archived.",
+            },
+          ],
+        };
+      }
+      const fileId = await writeIpcFile(ctx.ipcDir, {
+        type: "complete_feature",
+        groupId: ctx.groupId,
+        reason: args.reason,
+      });
+      logger.info(`MCP complete_feature queued IPC ${fileId} for group ${group.name}`);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Feature marked complete; this channel is being archived.",
+          },
+        ],
+      };
+    }
+  );
+
   // --- Apple Contacts tools ---
 
   const searchContactsTool = tool(
@@ -1680,6 +1719,7 @@ export const buildTools = (ctx: McpContext) => {
     respondWithCardTool,
     addReactionTool,
     createFeatureTool,
+    completeFeatureTool,
     scheduleTaskTool,
     listTasksTool,
     pauseTaskTool,
