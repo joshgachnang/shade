@@ -33,6 +33,7 @@ export interface BreweryState {
   }[];
   pollLeaseUntil?: Date;
   pr?: number;
+  prUrl?: string;
   lastEventAt?: Date;
 }
 

@@ -163,6 +163,7 @@ test("sign-off includes the IP summary/tasks, gates retain options, resumed clea
   const saved = await f.fresh();
   expect(saved.status).toBe("complete");
   expect(saved.brewery?.pr).toBe(42);
+  expect(saved.brewery?.prUrl).toBe("https://example.invalid/pull/42");
   expect(saved.brewery?.waiting).toBeUndefined();
   expect(saved.completedAt).toBeInstanceOf(Date);
   expect(f.messages).toContain("PR #42: https://example.invalid/pull/42");

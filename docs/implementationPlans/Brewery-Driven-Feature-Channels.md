@@ -168,7 +168,7 @@ Each title is the task's commit subject. Details for each task are in the sectio
 
 - [x] **T12** — Add a harness end-to-end test with a fake brewery command
   Request → plan posted → `ok` → progress → PR posted, in test mode via `bun run dev:test`.
-- [ ] **T13** — Show brewery phase and PR on the Features screen
+- [x] **T13** — Show brewery phase and PR on the Features screen
   `awaiting_approval` badge, phase, PR link; QA test case per `.claude/qa-test-case-format.md`.
 
 ## Prerequisites / risks

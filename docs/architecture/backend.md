@@ -36,7 +36,7 @@ All schemas get `addDefaultPlugins`: `created`/`updated` timestamps, soft delete
 | `phase`, `waiting` | Current brewery phase and optional `signoff` or `gate` wait with `since` date |
 | `eventsOffset` | Byte count already consumed from `events.jsonl`; defaults to `0` |
 | `stepMessages` | Slack message timestamps keyed by brewery step sequence; defaults to `[]` |
-| `pr`, `lastEventAt` | Optional PR number and latest event time |
+| `pr`, `prUrl`, `lastEventAt` | Optional PR number, destination URL from the brewery PR event, and latest event time |
 
 For example, a newly started local run can store:
 

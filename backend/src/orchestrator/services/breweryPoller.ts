@@ -271,6 +271,7 @@ export class BreweryPoller {
         case "pr":
           await transport.post(group, `PR #${event.number}: ${event.url}`);
           state.pr = event.number;
+          state.prUrl = event.url;
           break;
         case "done":
           await transport.post(

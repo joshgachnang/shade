@@ -1,6 +1,6 @@
 # QA Test Case Index
 
-Last updated: 2026-09-28
+Last updated: 2026-09-30
 
 | File | Feature | # Cases | P0 | P1 | P2 | Automated |
 |------|---------|---------|----|----|-----|-----------|
@@ -16,5 +16,6 @@ Last updated: 2026-09-28
 | console-home.md | Console home & merged sidebar | 7 | 3 | 2 | 2 | 5/7 |
 | sessions.md | Zerg sessions dashboard | 11 | 4 | 5 | 2 | 3/11 |
 | admin-brewery-config.md | Brewery admin configuration | 5 | 1 | 3 | 1 | 1/5 |
+| features-brewery.md | Features brewery progress | 8 | 1 | 7 | 0 | 7/8 |
 
-**Total:** 76 test cases | 26 P0 | 30 P1 | 20 P2 | 37/76 automated
+**Total:** 84 test cases | 27 P0 | 37 P1 | 20 P2 | 44/84 automated

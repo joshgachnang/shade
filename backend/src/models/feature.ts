@@ -70,6 +70,7 @@ const brewerySchema = new mongoose.Schema(
     eventsOffset: {type: Number, required: true, min: 0, default: 0},
     stepMessages: {type: [breweryStepMessageSchema], default: []},
     pr: {type: Number},
+    prUrl: {type: String},
     lastEventAt: {type: Date},
     pollLeaseUntil: {type: Date},
   },
