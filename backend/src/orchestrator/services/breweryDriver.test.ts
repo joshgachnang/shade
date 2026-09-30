@@ -698,3 +698,58 @@ test.each([
     }
   }
 });
+
+// A waiting event is visible before the preceding command releases its run lock.
+test.each([
+  "signoff",
+  "gate",
+] as const)("%s approval stays queued while the real brewery run lock is held", async (kind) => {
+  const f = await replyFixture();
+  f.feature.brewery!.waiting = {kind, since: new Date()};
+  f.feature.status = "awaiting_approval";
+  await f.feature.save();
+  const {newState, withRunLock} = await import("../../../../tools/brewery/src/state");
+  const state = newState({slug: "reply-test", repo: f.dir, ip: "", base: "main", phase: "signoff"});
+  await withRunLock(state, async () => {
+    expect(await f.driver.handleMessage(f.group, {content: "ok"})).toBe("deferred");
+    expect(await Bun.file(path.join(f.dir, "calls.jsonl")).exists()).toBe(false);
+    const saved = await Feature.findById(f.feature._id);
+    expect(saved?.status).toBe("awaiting_approval");
+    expect(saved?.brewery?.pollLeaseUntil).toBeUndefined();
+    expect(f.messages.at(-1)).toContain("retry automatically");
+  });
+  expect(await f.driver.handleMessage(f.group, {content: "ok"})).toBeUndefined();
+  expect(await f.calls(1)).toEqual([
+    ["answer", "reply-test", "ok", "--go", "--no-wait", "--repo", f.dir],
+  ]);
+  expect(f.messages.at(-1)).toBe("Reply sent to brewery.");
+});
+
+test.each([
+  "guard",
+  "missing pid",
+  "dead owner",
+  "invalid pid",
+])("waiting approval handles %s lock state safely", async (mode) => {
+  const f = await replyFixture();
+  f.feature.brewery!.waiting = {kind: "signoff", since: new Date()};
+  await f.feature.save();
+  const dir = path.join(f.dir, ".terreno/brewery/reply-test");
+  await fs.mkdir(path.join(dir, mode === "guard" ? "run.guard" : "run.lock"));
+  if (mode === "dead owner" || mode === "invalid pid") {
+    await fs.writeFile(path.join(dir, "run.pid"), mode === "dead owner" ? "2147483647" : "invalid");
+  }
+  const outcome = await f.driver.handleMessage(f.group, {content: "ok"});
+  if (mode === "dead owner") {
+    expect(await f.calls(1)).toEqual([
+      ["answer", "reply-test", "ok", "--go", "--no-wait", "--repo", f.dir],
+    ]);
+  } else {
+    expect(await Bun.file(path.join(f.dir, "calls.jsonl")).exists()).toBe(false);
+    expect(outcome).toBe(mode === "invalid pid" ? undefined : "deferred");
+    expect(f.messages.at(-1)).toContain(
+      mode === "invalid pid" ? "could not process" : "retry automatically"
+    );
+  }
+  expect((await Feature.findById(f.feature._id))?.brewery?.pollLeaseUntil).toBeUndefined();
+});

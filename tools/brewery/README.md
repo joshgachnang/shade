@@ -85,6 +85,12 @@ saved phase: it reruns distill with the saved request and notes, continues appro
 build, review, and brew runs through barrel, and continues finish through Taste. Passed
 tasks stay passed. A run waiting for sign-off or a gate still needs `brewery answer`.
 
+Review rounds persist whether they are still in progress and their blocking findings.
+Resume reruns an interrupted round, including the final permitted round, before PR
+submission. Exhausting the round limit permits submission only with a saved clean
+outcome; unresolved findings or older state without an outcome reopen the review
+gate. The human can retry or explicitly choose to ship at that gate.
+
 Each active command writes `.terreno/brewery/<slug>/run.pid` with its process ID and
 holds `run.lock` for the command's lifetime. A second run command for that slug exits
 with an "already running" error. A killed process leaves stale markers; the next run

@@ -124,3 +124,81 @@ test("abandoned recovery guard fails closed without changing markers", async () 
   expect(entered).toBe(false);
   expect(readFileSync(join(dir, "run.pid"), "utf8")).toBe("2147483647\n");
 });
+
+test.each(["branch review", "pick REVIEW", "roast REVIEW"])("resume completes the final review round interrupted during %s", async (interrupted) => {
+  const repo = tempRepo();
+  const ip = join(repo, "plan.md");
+  writeFileSync(ip, IP("approved"));
+  const finding = {id: "R1", severity: "blocking", where: "greeting.txt", attack: "missing greeting"};
+  const {config, planPath} = fakeSetup(repo, [
+    {match: "branch review", result: {status: "PASS", action: "reviewed", findings: [finding]}, ...(interrupted === "branch review" ? {sleepAfterResultMs: 30000} : {})},
+    {match: "pick REVIEW", write: {"greeting.txt": "hello"}, ...(interrupted === "pick REVIEW" ? {sleepAfterResultMs: 30000} : {})},
+    {match: "roast REVIEW", ...(interrupted === "roast REVIEW" ? {sleepAfterResultMs: 30000} : {})},
+    {match: "brew", result: {status: "BLOCKED", action: "test stops before PR"}},
+  ]);
+  const state = newState({slug: "final-review", repo, ip, base: "master", phase: "review"});
+  state.reviewRounds = config.limits.reviewRounds - 1;
+  saveState(state);
+  const args = ["bun", cli, "resume", state.slug, "--repo", repo, "--go", "--no-wait"];
+  const first = Bun.spawn(args, {cwd: repo, env: process.env, stdout: "ignore", stderr: "ignore"});
+  const dir = runDir(repo, state.slug);
+  try {
+    const {readdirSync} = await import("node:fs");
+    const needle = interrupted === "branch review" ? "-review-" : `-${interrupted.replace(" ", "-")}-`;
+    await waitFor(() => readdirSync(join(dir, "steps")).some((name) => name.includes(needle) && name.endsWith("result.json")));
+    first.kill("SIGKILL");
+    await first.exited;
+    // Resume must run review again and encounter the still-blocking finding.
+    writeFileSync(planPath, JSON.stringify([
+      {match: "branch review", result: {status: "PASS", action: "reviewed again", findings: [finding]}},
+      {match: "pick REVIEW", result: {status: "BLOCKED", action: "needs a decision", ask: [{q: "Fix greeting?", rec: "yes", opts: ["yes"]}]}},
+      {match: "brew", result: {status: "BLOCKED", action: "must not reach PR"}},
+    ]));
+    const resumed = Bun.spawnSync(args, {cwd: repo, env: process.env});
+    expect(resumed.exitCode).toBe(3);
+    const saved = loadState(state.slug, repo);
+    expect(saved.phase).toBe("review");
+    expect(saved.reviewPending).toBe(false);
+    expect(saved.waiting?.message).toContain("review findings");
+    expect(saved.history.some((entry) => entry.stage === "brew")).toBe(false);
+    expect(saved.history.filter((entry) => entry.stage === "review" && entry.action === "reviewed again")).toHaveLength(2);
+  } finally { first.kill("SIGKILL"); }
+}, 15000);
+
+test.each(["legacy interrupted", "unresolved", "passed"])("exhausted review resumes from durable %s outcome", (mode) => {
+  const repo = tempRepo();
+  const ip = join(repo, "plan.md");
+  writeFileSync(ip, IP("approved"));
+  const {config} = fakeSetup(repo, [{match: "brew", result: {status: "BLOCKED", action: "test stops before PR"}}]);
+  const state = newState({slug: "exhausted", repo, ip, base: "master", phase: "review"});
+  state.reviewRounds = config.limits.reviewRounds;
+  if (mode !== "legacy interrupted") state.reviewFindings = mode === "passed" ? [] : [{id: "R1", severity: "blocking", attack: "still broken", evidence: "fixture"}];
+  saveState(state);
+  const result = Bun.spawnSync(["bun", cli, "resume", state.slug, "--repo", repo, "--go", "--no-wait"], {cwd: repo, env: process.env});
+  expect(result.exitCode).toBe(3);
+  const saved = loadState(state.slug, repo);
+  expect(saved.phase).toBe(mode === "passed" ? "brew" : "review");
+  expect(saved.history.some((entry) => entry.stage === "brew")).toBe(mode === "passed");
+  expect(saved.waiting?.kind).toBe("gate");
+});
+
+test("failed final review without findings cannot authorize PR submission", () => {
+  const repo = tempRepo();
+  const ip = join(repo, "plan.md");
+  writeFileSync(ip, IP("approved"));
+  const {config} = fakeSetup(repo, [
+    {match: "branch review", noResult: true},
+    {match: "pick REVIEW", result: {status: "FAIL", action: "review must be rerun"}},
+    {match: "brew", result: {status: "BLOCKED", action: "must not reach PR"}},
+  ]);
+  const state = newState({slug: "failed-review", repo, ip, base: "master", phase: "review"});
+  state.reviewRounds = config.limits.reviewRounds - 1;
+  saveState(state);
+  const result = Bun.spawnSync(["bun", cli, "resume", state.slug, "--repo", repo, "--go", "--no-wait"], {cwd: repo, env: process.env});
+  expect(result.exitCode).toBe(3);
+  const saved = loadState(state.slug, repo);
+  expect(saved.phase).toBe("review");
+  expect(saved.reviewPending).toBe(false);
+  expect(saved.reviewFindings).toHaveLength(2);
+  expect(saved.history.some((entry) => entry.stage === "brew")).toBe(false);
+});

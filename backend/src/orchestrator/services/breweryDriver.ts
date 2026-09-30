@@ -237,6 +237,34 @@ export class BreweryDriver {
         );
         await post("Brewery resume requested.");
       } else if (latest.brewery.waiting) {
+        // waiting is emitted before notification delivery finishes and the CLI
+        // releases run.lock. Spawning answer then would lose the reply on lock contention.
+        const owner = await (this.options.exec ?? defaultExec)(
+          inWorkspace([
+            "bun",
+            "-e",
+            `const fs = require("node:fs");
+            const dir = process.argv[1];
+            if (fs.existsSync(dir + "/run.guard")) process.exit(75);
+            if (!fs.existsSync(dir + "/run.lock")) process.exit(0);
+            let raw;
+            try { raw = fs.readFileSync(dir + "/run.pid", "utf8").trim(); }
+            catch (e) { if (e.code === "ENOENT") process.exit(75); throw e; }
+            const pid = Number(raw);
+            if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(pid) || pid <= 1) process.exit(1);
+            try { process.kill(pid, 0); process.exit(75); }
+            catch (e) { if (e.code === "ESRCH") process.exit(0); throw e; }`,
+            runDir,
+          ]),
+          {timeoutMs: config.zerg.upTimeoutMs}
+        );
+        if (owner.code === 75) {
+          await post(
+            "Brewery is processing an update. Your reply is queued and will retry automatically."
+          );
+          return "deferred";
+        }
+        if (owner.code !== 0) throw new Error("Unable to check brewery run owner");
         await launch(["answer", state.slug, text, "--go", "--no-wait"]);
         // Keep waiting until the CLI's resumed event confirms the answer was accepted.
         await Feature.updateOne(

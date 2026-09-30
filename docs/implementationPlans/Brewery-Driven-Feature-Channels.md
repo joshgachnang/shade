@@ -58,6 +58,9 @@ agent's own narration, like Claude Code's thinking summaries.
    the run lock.
    Step IDs are persisted before start events and never reused after interruption;
    each agent invocation clears any preexisting result at its destination.
+   Review rounds persist their pending flag and blocking findings; resume reruns an
+   interrupted final round, and exhausted rounds require a saved clean outcome or
+   explicit human override before PR submission.
 5. **Run lock + pid.** Write `.terreno/brewery/<slug>/run.pid` while a command runs, so Shade can
    kill the process group for `now:` and `stop`. Stale-owner recovery and ownership-checked
    release share a short-lived `run.guard`; an abandoned guard fails closed (recovery
@@ -115,6 +118,8 @@ New `backend/src/orchestrator/services/breweryDriver.ts`:
   - `now: <text>`: kill the step, `brewery note`, `brewery resume --go`, then post "Interrupted
     <stage>; restarting with your note"
   - while waiting: `brewery answer <slug> "<reply>" --go --no-wait`, detached
+    after checking the CLI run owner; a live owner defers the unprocessed reply until
+    the preceding command releases its lock (including pending notification delivery).
   - otherwise: `brewery note` and ack "Queued for the next check-in (current: T3 roast)"
 
 `GroupQueue`: route `featureDriver === "brewery"` groups to `BreweryDriver.handleMessage` before

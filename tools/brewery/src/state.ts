@@ -3,7 +3,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Ask, Status } from "./agents.ts";
+import type { Ask, Finding, Status } from "./agents.ts";
 
 export type Phase = "distill" | "signoff" | "approved" | "build" | "review" | "brew" | "finish" | "done";
 
@@ -48,6 +48,8 @@ export interface RunState {
   notes?: string[];
   cutRounds: number;
   reviewRounds: number;
+  reviewPending?: boolean;
+  reviewFindings?: Finding[];
   finish?: { startedAt: string; pushes: number; reactions: number; stuck: number; lastKey?: string };
   history: HistoryEntry[];
 }
