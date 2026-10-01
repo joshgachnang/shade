@@ -23,6 +23,42 @@ All schemas get `addDefaultPlugins`: `created`/`updated` timestamps, soft delete
 
 **Feature verticals:** `Feature` (feature-channel workflow), `Movie` / `Frame` / `FrameAnalysis` / `Character` (movie analysis), `RadioStream` / `Transcript` (radio), `TriviaQuestion` / `TriviaScore` (separate `trivia` Mongo DB, optional), `PrWatch` (GitHub PR monitoring), `CalendarConfig` (Apple Calendar).
 
+### Feature channel state
+
+`Group.featureDriver` is optional. The value `"brewery"` identifies a brewery-driven feature channel; existing groups without it retain their current feature-phase behavior. `Feature.status` also accepts `"awaiting_approval"` while a brewery plan waits for sign-off.
+
+`Feature.brewery` is an optional subdocument. Its fields are:
+
+| Field | Purpose |
+|---|---|
+| `slug`, `repo` | Brewery run identity and repository name |
+| `workspace` | `{kind: "zerg", session}` or `{kind: "local", repoPath}` |
+| `phase`, `waiting` | Current brewery phase and optional `signoff` or `gate` wait with `since` date |
+| `eventsOffset` | Byte count already consumed from `events.jsonl`; defaults to `0` |
+| `stepMessages` | Slack message timestamps keyed by brewery step sequence; defaults to `[]` |
+| `pr`, `prUrl`, `lastEventAt` | Optional PR number, destination URL from the brewery PR event, and latest event time |
+
+For example, a newly started local run can store:
+
+```json
+{"slug":"example-feature","repo":"shade","workspace":{"kind":"local","repoPath":"/workspace/example-feature"},"eventsOffset":0,"stepMessages":[]}
+```
+
+### Brewery configuration
+
+Edit the `brewery` section of the App Config record in Admin to tune feature-channel runs. The fields are stored in `AppConfig` and are available through `loadAppConfig()`; an empty `agents` value lets brewery use its own agent configuration.
+
+| Field | Default | Purpose |
+|---|---:|---|
+| `command` | `brewery` | Executable used to launch brewery |
+| `pollIntervalMs` | `5000` | Delay between event reads |
+| `narrationFlushMs` | `4000` | Minimum delay between narration edits |
+| `maxNarrationLines` | `8` | Lines retained in each step message |
+| `agents` | empty | Optional `--agents` override |
+| `stepSilenceAlertMin` | `30` | Silence threshold before a dead-run alert |
+
+For example, setting `{"agents":"codex","maxNarrationLines":5}` selects an agent override and shortens step messages. Admin edits are limited to administrators by the App Config CRUD permissions.
+
 ## API surface
 
 - **Auto-generated CRUD** (`backend/src/api/crudRoutes.ts`): one `modelRouter` per model (`/users`, `/groups`, `/messages`, `/scheduledTasks`, …). Typical permissions: admin writes, authenticated reads; owner-scoped for `CalendarConfig`.

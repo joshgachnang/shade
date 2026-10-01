@@ -21,20 +21,21 @@ const startMongoServer = async (): Promise<string> => {
   return uri;
 };
 
+// Preload runs before test-module imports. Models such as TriviaQuestion open
+// connections at import time, before beforeAll hooks can configure their URI.
+process.env.NODE_ENV = "test";
+process.env.TOKEN_SECRET = "test-secret";
+process.env.PORT = "0";
+export const testMongoUri = await startMongoServer();
+process.env.TRIVIA_MONGO_URI = testMongoUri;
+
 beforeAll(async () => {
   if (isServerStarted) {
     return;
   }
 
-  // Set test env vars before anything imports config
-  process.env.NODE_ENV = "test";
-  process.env.TOKEN_SECRET = "test-secret";
-  process.env.PORT = "0"; // let OS pick a port
-
   try {
-    const uri = await startMongoServer();
-
-    await mongoose.connect(uri, {
+    await mongoose.connect(testMongoUri, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 30000,
       connectTimeoutMS: 5000,

@@ -1,6 +1,7 @@
 // The only path to the human. Agents never talk to them; they put decisions in `ask`,
 // and brewery sends one message, pings the phone (with no content), and waits.
 import type { Ask } from "./agents.ts";
+import { appendEvent } from "./events.ts";
 import { saveState, type RunState } from "./state.ts";
 
 export type Verdict = "approve" | "reject" | "answer";
@@ -67,6 +68,7 @@ export const waitForHuman = async (
 ): Promise<void> => {
   state.waiting = { kind, asks, message, since: new Date().toISOString() };
   saveState(state);
+  appendEvent(state, { kind: "waiting", waitingKind: kind, message, ...(state.ip ? { ip: state.ip } : {}) });
   await ping(ntfyUrl, `brewery: ${state.slug} needs you (${kind === "signoff" ? "sign-off" : "decision"})`);
   log(`\n──── message for the human ────\n${message}\n───────────────────────────────`);
   log(`Waiting. Answer with: brewery answer ${state.slug} "<reply>"`);

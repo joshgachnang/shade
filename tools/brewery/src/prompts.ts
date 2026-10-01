@@ -3,14 +3,21 @@
 import { join } from "node:path";
 import type { Ask, Finding } from "./agents.ts";
 import type { Ctx } from "./step.ts";
+import { refreshNotes } from "./state.ts";
 import type { PrSnapshot } from "./vcs.ts";
 
 const skill = (ctx: Ctx, path: string): string => join(ctx.config.skillsDir, path);
 
 export const header = (ctx: Ctx, resultFile: string): string => {
+  refreshNotes(ctx.state);
   const answers = ctx.state.answers.length
     ? `\nPrior human answers. Treat these as settled decisions; do not re-ask them.\n${ctx.state.answers
         .map((a) => `- Q: ${a.q}\n  A: ${a.a}`)
+        .join("\n")}\n`
+    : "";
+  const notes = ctx.state.notes?.length
+    ? `\nNotes the human added, mid-run. Apply these at the next sign-off or gate.\n${ctx.state.notes
+        .map((note) => `<note>\n${note}\n</note>`)
         .join("\n")}\n`
     : "";
   return `You are running one bounded step of a brewery run in ${ctx.state.repo}.
@@ -32,7 +39,7 @@ Rules for this step:
           "block": [{"kind": "human|environment|access|external", "why": "", "ev": ""}]}
   plus any step-specific keys named below. Omit keys you do not use. Writing this file is
   mandatory, including on failure.
-${answers}`;
+${answers}${notes}`;
 };
 
 export const distillBody = (ctx: Ctx, request: string, ipPath: string): string => `## Step: distill (write the IP)

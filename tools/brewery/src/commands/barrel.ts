@@ -1,6 +1,6 @@
 // Approved IP → green PR. Each Pick, each Roast, the branch review, and Brew are
 // separate agent processes; brewery commits between them so Roast judges a fixed tree.
-import type { Finding } from "../agents.ts";
+import { appendEvent } from "../events.ts";
 import { isApproved, markTask, parseTasks, readIp, writeIp } from "../ip.ts";
 import { brewBody, pickBody, reviewBody, reviewFixBody, roastBody, roastReviewFixBody } from "../prompts.ts";
 import { saveState, type TaskState } from "../state.ts";
@@ -90,30 +90,51 @@ const buildTask = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState)
 
 const reviewBranch = async (ctx: Ctx): Promise<StepOutcome> => {
   const { state, config } = ctx;
-  let open: Finding[] = [];
-  while (state.reviewRounds < config.limits.reviewRounds) {
-    state.reviewRounds += 1;
+  let open = state.reviewFindings;
+  while (state.reviewPending || state.reviewRounds < config.limits.reviewRounds) {
+    // An interrupted round must finish even when it is the final allowed round.
+    if (!state.reviewPending) state.reviewRounds += 1;
+    state.reviewPending = true;
+    saveState(state);
     const results = await runStage(ctx, "review", reviewBody(ctx, state.base), { parallel: true });
     open = results.flatMap((r) => (r.result.findings ?? []).filter((f) => f.severity === "blocking").map((f) => ({ ...f, agent: r.agent })));
+    for (const {agent, result} of results) {
+      if (result.status !== "PASS" && !(result.findings ?? []).some((f) => f.severity === "blocking")) {
+        open.push({id: `review-${agent}`, severity: "blocking", attack: `Review did not pass: ${result.action}`, evidence: evidenceText(result), agent});
+      }
+    }
+    state.reviewFindings = open;
+    saveState(state);
     ctx.log(`  review round ${state.reviewRounds}: ${open.length} blocking findings`);
-    if (!open.length) return "next";
+    if (!open.length) {
+      state.reviewPending = false;
+      saveState(state);
+      return "next";
+    }
     const [{ result: fixed }] = await runStage(ctx, "pick", reviewFixBody(ctx, open), { task: "REVIEW" });
     if (fixed.status === "BLOCKED") {
+      state.reviewPending = false;
       await gate(ctx, asksFrom(fixed, fixed.action), "a decision on review findings", fixed.summary ?? fixed.action);
       return "waiting";
     }
-    if (fixed.status !== "PASS" || !(await anyChanges(state.repo))) continue;
+    if (fixed.status !== "PASS" || !(await anyChanges(state.repo))) {
+      state.reviewPending = false;
+      saveState(state);
+      continue;
+    }
     await commitAll(state.repo, "Fix issues found in branch review", false);
     const verdict = mergeVerdicts(await runStage(ctx, "roast", roastReviewFixBody(ctx, open), { task: "REVIEW" }));
     if (verdict.status === "PASS") open = [];
+    state.reviewFindings = open;
+    state.reviewPending = false;
     saveState(state);
   }
-  if (!open.length) return "next";
+  if (open?.length === 0) return "next";
   await gate(
     ctx,
-    [{ q: `${open.length} blocking review findings remain after ${state.reviewRounds} rounds. Ship anyway?`, rec: "retry", opts: ["retry", "ship", "stop"] }],
+    [{ q: `${open?.length ?? "Unverified"} blocking review findings remain after ${state.reviewRounds} rounds. Ship anyway?`, rec: "retry", opts: ["retry", "ship", "stop"] }],
     "blocking review findings",
-    open.map((f) => `${f.where ?? ""}: ${f.attack}`).join("; ").slice(0, 600),
+    open?.map((f) => `${f.where ?? ""}: ${f.attack}`).join("; ").slice(0, 600) ?? "No completed review outcome was saved. Retry review before submitting the PR.",
   );
   return "waiting";
 };
@@ -130,6 +151,7 @@ const submit = async (ctx: Ctx, ci: Ci): Promise<StepOutcome> => {
     if ((result.status === "PASS" || result.status === "PENDING") && pr) {
       state.pr = pr;
       saveState(state);
+      appendEvent(state, { kind: "pr", number: pr, url: await ci.prUrl(state.repo, pr) });
       return "next";
     }
     ctx.log(`  brew attempt ${attempt}: ${result.action}`);

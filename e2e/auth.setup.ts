@@ -3,7 +3,7 @@ import {test as setup, expect} from "@playwright/test";
 setup("authenticate", async ({page, request}) => {
   setup.setTimeout(90000);
 
-  const baseApiUrl = "http://localhost:4020";
+  const baseApiUrl = "http://127.0.0.1:4020";
 
   // Create test user via API directly (faster and more reliable than UI)
   let token: string;

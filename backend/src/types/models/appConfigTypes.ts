@@ -83,6 +83,16 @@ export interface AppConfigFeatureChannels {
   completionPollMs: number;
 }
 
+export interface AppConfigBrewery {
+  command: string;
+  pollIntervalMs: number;
+  narrationFlushMs: number;
+  maxNarrationLines: number;
+  /** Empty string lets brewery use its own agent configuration. */
+  agents: string;
+  stepSilenceAlertMin: number;
+}
+
 export interface AppConfigScheduler {
   useTaskBoard: boolean;
 }
@@ -272,6 +282,7 @@ export interface AppConfigFields {
   taskWorker: AppConfigTaskWorker;
   zerg: AppConfigZerg;
   featureChannels: AppConfigFeatureChannels;
+  brewery: AppConfigBrewery;
   scheduler: AppConfigScheduler;
   builtinTasks: AppConfigBuiltinTasks;
   sessionReview: AppConfigSessionReview;

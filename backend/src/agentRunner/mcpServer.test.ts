@@ -899,6 +899,14 @@ describe("cancel_agent_task tool", () => {
 });
 
 describe("create_feature tool", () => {
+  test("describes brewery planning and approval to the calling agent", () => {
+    const tool = buildTools(makeContext("group", "channel")).find(
+      (tool) => tool.name === "create_feature"
+    )!;
+    expect(tool.description).toContain("brewery");
+    expect(tool.description).toContain("approval");
+    expect(tool.description).not.toContain("roast implementation workflow");
+  });
   const withIpcDir = async (ctx: McpContext, fn: () => Promise<void>): Promise<void> => {
     await fs.mkdir(ctx.ipcDir, {recursive: true});
     try {

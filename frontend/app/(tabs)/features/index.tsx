@@ -1,5 +1,5 @@
 import {Badge, Box, Button, Card, Heading, Page, Spinner, Text} from "@terreno/ui";
-import {useRouter} from "expo-router";
+import {type Href, Link, useRouter} from "expo-router";
 import type React from "react";
 import {useCallback} from "react";
 import {FlatList, Pressable} from "react-native";
@@ -9,6 +9,7 @@ const statusToVariant: Record<string, "info" | "success" | "error" | "warning" |
   planned: "neutral",
   in_progress: "info",
   paused: "warning",
+  awaiting_approval: "warning",
   complete: "success",
   error: "error",
 };
@@ -18,7 +19,7 @@ const FeatureListScreen: React.FC = () => {
   const {data, isLoading, refetch} = useListFeaturesQuery(undefined);
   const [createFeature] = useCreateFeatureMutation();
 
-  const features = data?.results || [];
+  const features = data?.data || [];
 
   const handleAddFeature = useCallback(async () => {
     const name = prompt("Feature name:");
@@ -50,9 +51,26 @@ const FeatureListScreen: React.FC = () => {
       const totalSteps = item.steps.length;
       const percentage = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
+      const prUrl = item.brewery?.prUrl;
+      let safePrUrl: string | undefined;
+      try {
+        if (prUrl && ["http:", "https:"].includes(new URL(prUrl).protocol)) {
+          safePrUrl = prUrl;
+        }
+      } catch {
+        // Incomplete or malformed historical URLs remain non-interactive.
+      }
+      const pr = item.brewery?.pr;
+      const hasPr = typeof pr === "number" && Number.isInteger(pr) && pr > 0;
+
       return (
-        <Pressable onPress={() => handleFeaturePress(item)} testID={`features-item-${item._id}`}>
-          <Card>
+        <Card>
+          <Pressable
+            onPress={() => handleFeaturePress(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open feature ${item.name}`}
+            testID={`features-item-${item._id}`}
+          >
             <Box padding={3} gap={2}>
               <Box direction="row" justifyContent="between" alignItems="center">
                 <Heading size="sm">{item.name}</Heading>
@@ -62,6 +80,11 @@ const FeatureListScreen: React.FC = () => {
                   value={item.status.replace("_", " ")}
                 />
               </Box>
+              {!!item.brewery?.phase && (
+                <Text testID={`features-item-${item._id}-phase`} size="sm" color="secondaryLight">
+                  Brewery: {item.brewery.phase}
+                </Text>
+              )}
               {item.description && (
                 <Text color="secondaryLight" size="sm">
                   {item.description}
@@ -88,8 +111,28 @@ const FeatureListScreen: React.FC = () => {
                 </Text>
               )}
             </Box>
-          </Card>
-        </Pressable>
+          </Pressable>
+          {hasPr && (
+            <Box padding={3}>
+              {safePrUrl ? (
+                <Link
+                  href={safePrUrl as Href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  accessibilityLabel={`Open PR #${pr}`}
+                  testID={`features-item-${item._id}-pr`}
+                  style={{minHeight: 44, paddingVertical: 12}}
+                >
+                  <Text color="link">Open PR #{pr}</Text>
+                </Link>
+              ) : (
+                <Text testID={`features-item-${item._id}-pr-number`} size="sm">
+                  PR #{pr}
+                </Text>
+              )}
+            </Box>
+          )}
+        </Card>
       );
     },
     [handleFeaturePress]

@@ -20,6 +20,63 @@ const featureStepSchema = new mongoose.Schema(
   {_id: true}
 );
 
+const breweryWorkspaceSchema = new mongoose.Schema(
+  {
+    kind: {type: String, required: true, enum: ["zerg", "local"]},
+    session: {
+      type: String,
+      required(this: {kind: string}) {
+        return this.kind === "zerg";
+      },
+    },
+    repoPath: {
+      type: String,
+      required(this: {kind: string}) {
+        return this.kind === "local";
+      },
+    },
+  },
+  {_id: false, strict: "throw"}
+);
+
+const breweryWaitingSchema = new mongoose.Schema(
+  {
+    kind: {type: String, required: true, enum: ["signoff", "gate"]},
+    since: {type: Date, required: true},
+  },
+  {_id: false, strict: "throw"}
+);
+
+const breweryStepMessageSchema = new mongoose.Schema(
+  {
+    seq: {type: Number, required: true},
+    ts: {type: String, required: true},
+    label: {type: String},
+    lines: {type: [String], default: []},
+    dirty: {type: Boolean, default: false},
+    flushedAt: {type: Date},
+    final: {type: String},
+  },
+  {_id: false, strict: "throw"}
+);
+
+const brewerySchema = new mongoose.Schema(
+  {
+    slug: {type: String, required: true},
+    repo: {type: String, required: true},
+    workspace: {type: breweryWorkspaceSchema, required: true},
+    phase: {type: String},
+    waiting: {type: breweryWaitingSchema},
+    eventsOffset: {type: Number, required: true, min: 0, default: 0},
+    stepMessages: {type: [breweryStepMessageSchema], default: []},
+    pr: {type: Number},
+    prUrl: {type: String},
+    lastEventAt: {type: Date},
+    pollLeaseUntil: {type: Date},
+  },
+  {_id: false, strict: "throw"}
+);
+
 const featureSchema = new mongoose.Schema<FeatureDocument, FeatureModel>(
   {
     name: {type: String, required: true, trim: true},
@@ -28,8 +85,9 @@ const featureSchema = new mongoose.Schema<FeatureDocument, FeatureModel>(
     status: {
       type: String,
       default: "planned",
-      enum: ["planned", "in_progress", "paused", "complete", "error"],
+      enum: ["planned", "in_progress", "awaiting_approval", "paused", "complete", "error"],
     },
+    brewery: {type: brewerySchema},
     steps: {type: [featureStepSchema], default: []},
     currentStepIndex: {type: Number, default: 0},
     startedAt: {type: Date},

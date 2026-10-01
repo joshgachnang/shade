@@ -1,5 +1,6 @@
 // Apply a human reply, from any channel, then say whether the run can continue.
 import { formatAsks, parseReply } from "../human.ts";
+import { appendEvent } from "../events.ts";
 import { applyReplyBody } from "../prompts.ts";
 import { appendContext, saveState } from "../state.ts";
 import { runStage, type Ctx } from "../step.ts";
@@ -11,6 +12,8 @@ export const answer = async (ctx: Ctx, reply: string): Promise<AnswerOutcome> =>
   const { state } = ctx;
   const waiting = state.waiting;
   if (!waiting) throw new Error(`brewery: ${state.slug} is not waiting on an answer (phase ${state.phase}).`);
+  appendEvent(state, { kind: "resumed" });
+  appendEvent(state, { kind: "note", text: reply });
   const at = new Date().toISOString();
   appendContext(state, `Human reply (${at.slice(0, 16)})`, `Questions asked:\n${formatAsks(waiting.asks) || "(none)"}\n\nReply:\n${reply}`);
   state.answers.push({ q: waiting.asks.map((a) => a.q).join(" / ") || waiting.message.split("\n")[0], a: reply, at });

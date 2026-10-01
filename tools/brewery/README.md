@@ -80,9 +80,78 @@ reply right there instead. Reply from anywhere with `brewery answer <slug> "<rep
 `brewery status` lists runs and what is waiting on you. Each step's prompt, log, and result
 are in `.terreno/brewery/<slug>/steps/`.
 
+If a process stops during a step, run `brewery resume <slug> --go`. Brewery reads the
+saved phase: it reruns distill with the saved request and notes, continues approved,
+build, review, and brew runs through barrel, and continues finish through Taste. Passed
+tasks stay passed. A run waiting for sign-off or a gate still needs `brewery answer`.
+
+Review rounds persist whether they are still in progress and their blocking findings.
+Resume reruns an interrupted round, including the final permitted round, before PR
+submission. Exhausting the round limit permits submission only with a saved clean
+outcome; unresolved findings or older state without an outcome reopen the review
+gate. The human can retry or explicitly choose to ship at that gate.
+
+Each active command writes `.terreno/brewery/<slug>/run.pid` with its process ID and
+holds `run.lock` for the command's lifetime. A second run command for that slug exits
+with an "already running" error. A killed process leaves stale markers; the next run
+removes them when that PID is no longer alive. `brewery note` remains available during
+a run because it uses the separate short-lived state lock.
+
+To add guidance while a run is active, use `brewery note <slug> "<text>"`. Brewery keeps
+the text in `state.notes`, appends it verbatim to `context.md` for cut, emits a `note`
+event, and includes it in later step prompts. The note does not resume or interrupt the
+current step; later steps apply it at the next sign-off or gate.
+
+## Progress events
+
+Each run appends one JSON object per line to `.terreno/brewery/<slug>/events.jsonl`.
+Consumers can keep a byte offset and read only new lines. Every event has an ISO 8601
+`t` timestamp and a `kind` field. The file stays outside git with the rest of the run
+state.
+
+| Kind | Fields | When emitted |
+| --- | --- | --- |
+| `step.start` | `seq`, `stage`, optional `task`, `agent` | Before an agent process starts |
+| `step.end` | `seq`, `status`, `action`, `seconds` | After its result is read, including failed results |
+| `narration` | `seq`, `text` | As Claude or Codex emits assistant text or starts a tool; one line, at most 300 characters |
+| `waiting` | `waitingKind` (`signoff` or `gate`), `message`, optional `ip` | When brewery stops for a human answer |
+| `resumed` | — | When brewery accepts an answer to a waiting run |
+| `note` | `text` | When a human answer is recorded |
+| `pr` | `number`, `url` | When brewery finds the run's PR |
+| `ci` | `state` (`pending`, `fail`, or `pass`) | After each CI snapshot |
+| `done` | — | When the PR is green and the run finishes |
+| `error` | `message` | When a run command exits with an error |
+
+For example, `{"t":"2026-09-28T12:00:00.000Z","kind":"step.start","seq":1,"stage":"distill","agent":"claude"}`
+starts a step. Match its `seq` to the later `step.end`. Fan-out steps have a separate
+sequence number per agent.
+
+Claude runs with `--output-format stream-json --verbose`; Codex runs with `exec --json`.
+The raw JSONL output remains in each step's `.log` file. Brewery reads complete stdout
+lines as they arrive and appends `narration` events for assistant text and brief tool
+summaries, such as `Read groupQueue.ts` or `Bash: bun test`. It ignores malformed lines,
+tool output, and final result records. `command` profiles emit only step start and end.
+
 ## Development
 
 ```bash
 bun test          # unit + end-to-end flows against temp repos with a scripted fake agent
 bun run typecheck
 ```
+
+### Interrupted runs and private artifacts
+
+Brewery reserves each step sequence in state before emitting its start event. An
+interrupted step therefore keeps its ID; resumed steps get new IDs and result
+paths. Agent invocation also removes any old result at its destination before
+launch, so a missing result cannot inherit an earlier PASS.
+
+Run acquisition, stale PID recovery, and ownership-checked release are serialized
+by a short-lived `run.guard` directory. A crash during that synchronous operation
+fails closed: after stopping all commands for that run and verifying none remain,
+remove only its `.terreno/brewery/<slug>/run.guard` directory, then resume. Do not
+remove a guard while another command may be acquiring or releasing the run lock.
+Normal interruption during an agent step leaves no guard and resumes automatically.
+
+Private `.terreno/` artifacts are excluded through the common Git directory,
+including linked worktrees. Brewery verifies the exclusion before building tasks.

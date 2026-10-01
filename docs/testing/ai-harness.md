@@ -61,7 +61,7 @@ curl -s "localhost:4020/test/outbox?groupId=$GROUP" -H "$AUTH" | jq '.data[].con
 
 - `pattern` is a regex tested against the **full prompt, which includes recent conversation history** — a fixture can keep matching after its triggering message. Scope patterns tightly, set `consumeOnce: true` for one-shots, or `DELETE` fixtures between scenarios.
 - Highest `priority` wins; `consumeOnce` fixtures are claimed atomically (never double-fire).
-- `actions` execute through the real pipeline: `send_message` / `add_reaction` / `schedule_task` write real IPC files relayed by `IpcWatcher`; `create_task` inserts a real `AgentTask` for the worker.
+- `actions` execute through the real pipeline: `send_message` / `add_reaction` / `schedule_task` write real IPC files relayed by `IpcWatcher`; `create_feature` writes an authorized feature-creation IPC command; `create_task` inserts a real `AgentTask` for the worker.
 - No match → the mock echoes the prompt (`[mock] received: …`; disable via `AppConfig.testMode.echoFallback`).
 
 ## Other observables
@@ -69,11 +69,59 @@ curl -s "localhost:4020/test/outbox?groupId=$GROUP" -H "$AUTH" | jq '.data[].con
 - `TaskRunLog` / `AIRequest` rows per run (`modelBackend: "mock"`, cost 0) — `GET /taskRunLogs?groupId=`.
 - Session JSONL transcripts under `$SHADE_DATA_DIR/sessions/<groupId>/`.
 - Scheduled/board tasks via `GET /scheduledTasks`, `GET /agentTasks`.
-- Known gap: mid-run IPC `send_message` deliveries are sent to the channel but **not** persisted as `Message` docs (pre-existing behavior), so they don't appear in `/test/outbox`. The agent's final reply and `deliverResult` board-task results are persisted.
+- Direct test-channel deliveries, including mid-run IPC messages and brewery reply notices, persist bot `Message` records and appear in `/test/outbox`. Group sends persist their enriched plain/rich records once through ChannelManager.
 
 ## In bun tests
 
 `backend/src/tests/testHelper.ts` wraps the whole loop: `setupTestServer`, `sendCommand`, `getOutbox`, `tickHarness`, `resetHarness`, `waitFor`. See `backend/src/tests/harness.e2e.test.ts` for the canonical end-to-end example. CI's Playwright job runs the backend with `SHADE_TEST_MODE=1`.
+
+The Bun preload provisions MongoDB before test modules are imported and directs the
+import-time trivia connection to that same test server. Both connections close before
+the in-memory server stops. Tests that create audit records must remove their own records
+afterward: session-review reports intentionally aggregate activity across all groups.
+
+## Brewery request-to-PR test
+
+Run `cd backend && bun test src/tests/brewery.harness.e2e.test.ts` with port 4020 free.
+The test launches the actual `bun run dev:test` gateway against the test runner's MongoDB,
+configures `AppConfig.brewery.command` to a disposable fake executable, and creates a local
+Git repository with `origin/HEAD`. No brewery agents, Slack credentials, GitHub calls, or
+real PRs are needed. Temporary worktrees, executable, process groups, and database rows
+are cleaned up afterward. Run against a disposable test database (the default in-memory
+MongoDB is sufficient).
+The child receives the preload's connected MongoDB URI explicitly, so other tests
+changing `process.env.MONGO_URI` cannot redirect it. Its working directory is a
+temporary sandbox linking the backend's unchanged package script and sources;
+server log files are removed with that sandbox rather than left in `backend/`.
+Check package-suite compatibility with `cd backend && bun test`.
+
+The HTTP scenario programs a one-shot `create_feature` fixture in the main group, sends
+`POST /command`, observes the plan in `/test/outbox`, replies `ok` in the new feature
+group exactly once (lease contention is retried by MessageLoop), observes the reply acknowledgement, narration and the final edit under the same message ID, and checks the
+PR and completion posts. A second scenario checks an emitted CLI error and absence of
+feature-channel agent runs. The fake CLI's completion waits for a test-controlled file,
+so live progress is observed before the PR event without timing-dependent sleeps.
+
+For a manual harness session, set `zerg.enabled=false`, `featureChannels.localReposDir`
+and `brewery.command` in AppConfig, then script the main group's fixture:
+
+```json
+{"name":"reading-room","match":{"pattern":"reading room"},"response":"Feature requested","consumeOnce":true,"actions":[{"tool":"create_feature","args":{"name":"feat-reading-room","repo":"reading-room","request":"Add a quiet reading room"}}]}
+```
+
+The repository must exist locally with `origin/HEAD` set. The bundled fake CLI at
+`backend/src/tests/fixtures/fake-brewery.ts` supports `agents`, `distill`, and `answer`;
+use an executable Bun wrapper as the configured command. To finish its live step,
+create `.terreno/brewery/<slug>/finish` inside the feature worktree. The fixture exits
+with an error if completion is not released within 20 seconds.
+
+In test mode the brewery poller replaces only Slack post/update delivery with persisted
+outbox messages, restricted to channels of type `test`. Edits retain the original message
+ID. The real driver, IPC authorization, queue, detached CLI, file reader, and model state
+transitions still run. Production continues to use Slack. HTTP-only helpers live in
+`backend/src/tests/harnessClient.ts`, re-exported by `testHelper.ts` for existing tests.
+This is a backend/channel harness flow; it introduces no browser or native UI, so frontend
+QA Markdown and Playwright do not apply.
 
 ## Safety rails
 

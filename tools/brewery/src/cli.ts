@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { availability } from "./agents.ts";
+import { appendEvent } from "./events.ts";
 import { answer } from "./commands/answer.ts";
 import { barrel } from "./commands/barrel.ts";
 import { findingsTable, runCut } from "./commands/cut.ts";
@@ -11,7 +12,7 @@ import { finish } from "./commands/finish.ts";
 import { FAN_OUT, loadConfig, STAGES, userConfigPath } from "./config.ts";
 import { readReplyFromTty } from "./human.ts";
 import { isApproved, parseTasks, readIp, readStatus } from "./ip.ts";
-import { appendContext, loadState, newState, readIndex, saveState, slugify, type RunState } from "./state.ts";
+import { appendContext, appendNote, loadState, newState, readIndex, saveState, slugify, withRunLock, type RunState } from "./state.ts";
 import type { Ctx } from "./step.ts";
 import { defaultBase, ensureExcluded, githubCi, repoRoot } from "./vcs.ts";
 
@@ -23,6 +24,10 @@ Usage:
   brewery answer <slug> "<reply>" [--go]
       Apply a sign-off reply ("ok", "ok, 2b", "no: <why>") or a gate answer
       ("1a", "retry: <hint>", "skip", "ship", "stop"), then continue a waiting run.
+  brewery note <slug> "<text>"
+      Record a mid-run human note for later steps and cut.
+  brewery resume <slug> [--go]
+      Continue a stopped run from its saved phase (refuses a concurrent run).
   brewery barrel <slug> | --ip <path>
       Approved IP → pick/roast every task → branch review → brew → finish.
   brewery finish [pr] [--slug s]
@@ -66,7 +71,11 @@ const str = (value: string | true | undefined): string | undefined => (typeof va
 
 const log = (line: string): void => console.log(line);
 
-const makeCtx = (state: RunState, agentsFlag?: string): Ctx => ({ state, config: loadConfig(state.repo, agentsFlag), log });
+let activeState: RunState | undefined;
+const makeCtx = (state: RunState, agentsFlag?: string): Ctx => {
+  activeState = state;
+  return { state, config: loadConfig(state.repo, agentsFlag), log };
+};
 
 const afterApproval = async (ctx: Ctx, go: boolean): Promise<number> => {
   if (!go) return 0;
@@ -99,23 +108,39 @@ const cmdDistill = async (positional: string[], flags: Record<string, string | t
   const ipFlag = str(flags.ip);
   const ip = ipFlag ? (isAbsolute(ipFlag) ? ipFlag : join(repo, ipFlag)) : defaultIpPath(repo, slug);
   const state = newState({ slug, repo, ip, base: await defaultBase(repo), phase: "distill" });
-  const ctx = makeCtx(state, str(flags.agents));
-  log(`brewery distill ${slug} in ${repo}`);
-  await distill(ctx, request);
-  return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
+  return withRunLock(state, async () => {
+    const ctx = makeCtx(state, str(flags.agents));
+    log(`brewery distill ${slug} in ${repo}`);
+    await distill(ctx, request);
+    return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
+  });
 };
 
 const cmdAnswer = async (positional: string[], flags: Record<string, string | true>): Promise<number> => {
   const [slug, ...rest] = positional;
   const reply = rest.join(" ");
   if (!slug || !reply) throw new Error('usage: brewery answer <slug> "<reply>"');
-  const ctx = makeCtx(loadState(slug, str(flags.repo)), str(flags.agents));
-  const outcome = await answer(ctx, reply);
-  if (outcome === "approved") return afterApproval(ctx, Boolean(flags.go));
-  if (outcome === "stopped") return 0;
-  if (outcome === "waiting") return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
-  const result = await barrel(ctx, githubCi);
-  return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  const state = loadState(slug, str(flags.repo));
+  return withRunLock(state, async () => {
+    const ctx = makeCtx(state, str(flags.agents));
+    const outcome = await answer(ctx, reply);
+    if (outcome === "approved") return afterApproval(ctx, Boolean(flags.go));
+    if (outcome === "stopped") return 0;
+    if (outcome === "waiting") return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
+    const result = await barrel(ctx, githubCi);
+    return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  });
+};
+
+const cmdNote = (positional: string[], flags: Record<string, string | true>): number => {
+  const [slug, ...rest] = positional;
+  const note = rest.join(" ");
+  if (!slug || !note.trim()) throw new Error('usage: brewery note <slug> "<text>"');
+  const state = loadState(slug, str(flags.repo));
+  appendNote(state, note);
+  appendEvent(state, { kind: "note", text: note });
+  log(`Noted for later steps in ${slug}.`);
+  return 0;
 };
 
 const cmdBarrel = async (positional: string[], flags: Record<string, string | true>): Promise<number> => {
@@ -128,14 +153,16 @@ const cmdBarrel = async (positional: string[], flags: Record<string, string | tr
     state = existsSync(join(repo, ".terreno", "brewery", slug, "state.json"))
       ? loadState(slug, repo)
       : newState({ slug, repo, ip, base: await defaultBase(repo), phase: "approved" });
-    saveState(state);
   } else {
     if (!positional[0]) throw new Error("usage: brewery barrel <slug> | --ip <path>");
     state = loadState(positional[0], str(flags.repo));
   }
-  const ctx = makeCtx(state, str(flags.agents));
-  const result = await barrel(ctx, githubCi);
-  return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  return withRunLock(state, async () => {
+    saveState(state);
+    const ctx = makeCtx(state, str(flags.agents));
+    const result = await barrel(ctx, githubCi);
+    return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  });
 };
 
 const cmdFinish = async (positional: string[], flags: Record<string, string | true>): Promise<number> => {
@@ -148,10 +175,34 @@ const cmdFinish = async (positional: string[], flags: Record<string, string | tr
   const state = existsSync(join(repo, ".terreno", "brewery", slug, "state.json"))
     ? loadState(slug, repo)
     : newState({ slug, repo, ip: "", base: await defaultBase(repo), phase: "finish" });
-  state.waiting = undefined;
-  const ctx = makeCtx(state, str(flags.agents));
-  const result = await finish(ctx, githubCi, pr);
-  return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  return withRunLock(state, async () => {
+    state.waiting = undefined;
+    const ctx = makeCtx(state, str(flags.agents));
+    const result = await finish(ctx, githubCi, pr);
+    return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  });
+};
+
+const cmdResume = async (positional: string[], flags: Record<string, string | true>): Promise<number> => {
+  const slug = positional[0];
+  if (!slug || positional.length !== 1) throw new Error("usage: brewery resume <slug> [--go]");
+  const state = loadState(slug, str(flags.repo));
+  return withRunLock(state, async () => {
+    const ctx = makeCtx(state, str(flags.agents));
+    if (state.waiting) return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
+    if (state.phase === "distill" || state.phase === "signoff") {
+      if (!state.request) throw new Error(`brewery: ${slug} has no saved request to resume`);
+      await distill(ctx, state.request);
+      return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
+    }
+    if (state.phase === "done") return 0;
+    if (state.phase === "finish") {
+      const result = await finish(ctx, githubCi);
+      return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+    }
+    const result = await barrel(ctx, githubCi);
+    return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
+  });
 };
 
 const cmdCut = async (positional: string[], flags: Record<string, string | true>): Promise<number> => {
@@ -162,12 +213,14 @@ const cmdCut = async (positional: string[], flags: Record<string, string | true>
   const slug = `cut-${basename(ip, ".md")}`;
   const state = newState({ slug, repo, ip, base: await defaultBase(repo), phase: "distill" });
   const context = str(flags.context) ? readFileSync(str(flags.context) as string, "utf8") : str(flags.request);
-  if (context) appendContext(state, "What the human said", context);
-  saveState(state);
-  const findings = await runCut(makeCtx(state, str(flags.agents)));
-  log(`\nCut: ${findings.length} findings (${findings.filter((f) => f.severity === "blocking").length} blocking) on ${relative(repo, ip)}, context: ${context ? "provided" : "ticket+Decisions"}\n`);
-  log(findingsTable(findings));
-  return 0;
+  return withRunLock(state, async () => {
+    if (context) appendContext(state, "What the human said", context);
+    saveState(state);
+    const findings = await runCut(makeCtx(state, str(flags.agents)));
+    log(`\nCut: ${findings.length} findings (${findings.filter((f) => f.severity === "blocking").length} blocking) on ${relative(repo, ip)}, context: ${context ? "provided" : "ticket+Decisions"}\n`);
+    log(findingsTable(findings));
+    return 0;
+  });
 };
 
 const cmdStatus = (positional: string[]): number => {
@@ -214,12 +267,19 @@ const cmdAgents = async (flags: Record<string, string | true>): Promise<number> 
 
 const main = async (): Promise<number> => {
   const [command, ...rest] = process.argv.slice(2);
+  if (command === "note" || command === "answer") {
+    const parsed = parseArgs(rest.slice(2));
+    if (parsed.positional.length) throw new Error(`usage: brewery ${command} <slug> "<text>"`);
+    return command === "note" ? cmdNote(rest.slice(0, 2), parsed.flags) : cmdAnswer(rest.slice(0, 2), parsed.flags);
+  }
   const { positional, flags } = parseArgs(rest);
   switch (command) {
     case "distill":
       return cmdDistill(positional, flags);
     case "answer":
       return cmdAnswer(positional, flags);
+    case "resume":
+      return cmdResume(positional, flags);
     case "barrel":
       return cmdBarrel(positional, flags);
     case "finish":
@@ -245,6 +305,7 @@ const main = async (): Promise<number> => {
 main()
   .then((code) => process.exit(code))
   .catch((error: Error) => {
+    if (activeState) appendEvent(activeState, { kind: "error", message: error.message });
     console.error(error.message);
     process.exit(1);
   });
