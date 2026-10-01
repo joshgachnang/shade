@@ -1,36 +1,42 @@
-import {expect, test} from "@playwright/test";
+import {expect, type Page, test} from "@playwright/test";
+
+// Navigation lives in a helper (not beforeEach) so a test can register a
+// waitForResponse before the request that the navigation triggers.
+const openCalendarScreen = async (page: Page): Promise<void> => {
+  await page.goto("/", {timeout: 60000});
+  await page.waitForLoadState("networkidle");
+
+  const calendarNav = page.getByRole("button", {name: "Calendar", exact: true});
+  await calendarNav.waitFor({state: "visible", timeout: 15000});
+  await calendarNav.click();
+  await page.getByTestId("calendars-screen").waitFor({state: "visible", timeout: 15000});
+};
 
 test.describe("Feature: Calendar", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
 
-  test.beforeEach(async ({page}) => {
-    await page.goto("/", {timeout: 60000});
-    await page.waitForLoadState("networkidle");
-
-    const calendarNav = page.getByRole("button", {name: "Calendar", exact: true});
-    await calendarNav.waitFor({state: "visible", timeout: 15000});
-    await calendarNav.click();
-    await page.getByTestId("calendars-screen").waitFor({state: "visible", timeout: 15000});
-  });
-
   test("user can open the Calendar screen and see events or empty state", async ({page}) => {
+    await openCalendarScreen(page);
     await expect(
       page.getByTestId("calendars-list").or(page.getByTestId("calendars-empty-state"))
     ).toBeVisible({timeout: 15000});
   });
 
   test("calendar events load from the API", async ({page}) => {
-    const response = await page.waitForResponse(
+    const responsePromise = page.waitForResponse(
       (res) =>
         res.url().includes("/calendarEvents") &&
         res.request().method() === "GET" &&
         res.status() === 200,
       {timeout: 30000}
     );
+    await openCalendarScreen(page);
+    const response = await responsePromise;
     expect(response.ok()).toBe(true);
   });
 
   test("user can open the add-event modal", async ({page}) => {
+    await openCalendarScreen(page);
     await page.getByTestId("calendars-add-button").click();
     await page.getByTestId("calendars-add-modal").waitFor({state: "visible", timeout: 15000});
     await expect(page.getByTestId("calendars-add-title")).toBeVisible();
@@ -39,6 +45,7 @@ test.describe("Feature: Calendar", () => {
   });
 
   test("add-event submit stays disabled until title and dates are entered", async ({page}) => {
+    await openCalendarScreen(page);
     await page.getByTestId("calendars-add-button").click();
     await page.getByTestId("calendars-add-modal").waitFor({state: "visible", timeout: 15000});
 
@@ -54,6 +61,7 @@ test.describe("Feature: Calendar", () => {
   });
 
   test("user can dismiss the add-event modal", async ({page}) => {
+    await openCalendarScreen(page);
     await page.getByTestId("calendars-add-button").click();
     await page.getByTestId("calendars-add-modal").waitFor({state: "visible", timeout: 15000});
 

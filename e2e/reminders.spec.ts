@@ -1,19 +1,22 @@
-import {expect, test} from "@playwright/test";
+import {expect, type Page, test} from "@playwright/test";
+
+// Navigation lives in a helper (not beforeEach) so a test can register a
+// waitForResponse before the request that the navigation triggers.
+const openRemindersScreen = async (page: Page): Promise<void> => {
+  await page.goto("/", {timeout: 60000});
+  await page.waitForLoadState("networkidle");
+
+  const remindersNav = page.getByRole("button", {name: "Reminders", exact: true});
+  await remindersNav.waitFor({state: "visible", timeout: 15000});
+  await remindersNav.click();
+  await page.getByTestId("reminders-screen").waitFor({state: "visible", timeout: 15000});
+};
 
 test.describe("Feature: Reminders", () => {
   test.use({storageState: "./e2e/.auth/user.json"});
 
-  test.beforeEach(async ({page}) => {
-    await page.goto("/", {timeout: 60000});
-    await page.waitForLoadState("networkidle");
-
-    const remindersNav = page.getByRole("button", {name: "Reminders", exact: true});
-    await remindersNav.waitFor({state: "visible", timeout: 15000});
-    await remindersNav.click();
-    await page.getByTestId("reminders-screen").waitFor({state: "visible", timeout: 15000});
-  });
-
   test("user can open the Reminders screen and see list or empty state", async ({page}) => {
+    await openRemindersScreen(page);
     // Either synced reminders render or the empty state shows — both are valid.
     await expect(
       page.getByTestId("reminders-list").or(page.getByTestId("reminders-empty-state"))
@@ -21,17 +24,20 @@ test.describe("Feature: Reminders", () => {
   });
 
   test("reminders load from the API", async ({page}) => {
-    const response = await page.waitForResponse(
+    const responsePromise = page.waitForResponse(
       (res) =>
         res.url().includes("/reminders") &&
         res.request().method() === "GET" &&
         res.status() === 200,
       {timeout: 30000}
     );
+    await openRemindersScreen(page);
+    const response = await responsePromise;
     expect(response.ok()).toBe(true);
   });
 
   test("user can open the add-reminder modal", async ({page}) => {
+    await openRemindersScreen(page);
     await page.getByTestId("reminders-add-button").click();
     await page.getByTestId("reminders-add-modal").waitFor({state: "visible", timeout: 15000});
     await expect(page.getByTestId("reminders-add-title")).toBeVisible();
@@ -39,6 +45,7 @@ test.describe("Feature: Reminders", () => {
   });
 
   test("add-reminder submit stays disabled until a title is entered", async ({page}) => {
+    await openRemindersScreen(page);
     await page.getByTestId("reminders-add-button").click();
     await page.getByTestId("reminders-add-modal").waitFor({state: "visible", timeout: 15000});
 
@@ -50,6 +57,7 @@ test.describe("Feature: Reminders", () => {
   });
 
   test("user can dismiss the add-reminder modal", async ({page}) => {
+    await openRemindersScreen(page);
     await page.getByTestId("reminders-add-button").click();
     await page.getByTestId("reminders-add-modal").waitFor({state: "visible", timeout: 15000});
 
