@@ -175,7 +175,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
     - a second flow test, where the fix never repairs the cycle, throws with the cycle in the
       message and never sets `awaiting sign-off`.
 
-- [ ] **T5** — Run ready tasks in parallel up to the configured limit
+- [x] **T5** — Run ready tasks in parallel up to the configured limit
   - Depends on: T1, T3
   - Files: `tools/brewery/src/commands/barrel.ts`, `tools/brewery/src/state.ts`,
     `tools/brewery/src/cli.ts`, `tools/brewery/test/flow.test.ts`

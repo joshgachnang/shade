@@ -8,7 +8,9 @@ import type { Ask, Status } from "./agents.ts";
 export type Phase = "distill" | "signoff" | "approved" | "build" | "review" | "brew" | "finish" | "done";
 
 export interface TaskState {
-  status: "todo" | "passed" | "skipped";
+  status: "todo" | "running" | "passed" | "skipped";
+  worktree?: string;
+  branch?: string;
   attempts: number;
   commit?: string;
   evidence?: string;
@@ -46,6 +48,8 @@ export interface RunState {
   answers: Answer[];
   cutRounds: number;
   reviewRounds: number;
+  parallelRan?: boolean;
+  landing?: { task: string; head: string; ip: string; index?: { mode: string; sha: string; path: string } };
   finish?: { startedAt: string; pushes: number; reactions: number; stuck: number; lastKey?: string };
   history: HistoryEntry[];
 }

@@ -56,6 +56,8 @@ An alternative to the coffee pipeline for unattended work, with separate Claude/
 processes per step: `/distill` (IP with triaged questions, attacked by `/cut`, async sign-off),
 `/barrel` (pick/roast every task → brew), `/finish` (taste until conflict-free and green). The
 `brewery` CLI in `tools/brewery/` (see its README) drives them and enforces the separation.
+It builds ready dependency tasks in isolated worktrees up to `limits.parallelTasks`
+(`--parallel N` overrides one run), then lands passed commits serially.
 
 ### Conventions
 

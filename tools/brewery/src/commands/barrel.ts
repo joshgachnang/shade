@@ -1,7 +1,7 @@
 // Approved IP → green PR. Each Pick, each Roast, the branch review, and Brew are
 // separate agent processes; brewery commits between them so Roast judges a fixed tree.
-import type { Finding } from "../agents.ts";
-import { isApproved, markTask, parseTasks, readIp, writeIp } from "../ip.ts";
+import type { Ask, Finding } from "../agents.ts";
+import { isApproved, markTask, parseTasks, readyTasks, taskGraphProblems, readIp, writeIp } from "../ip.ts";
 import { brewBody, pickBody, reviewBody, reviewFixBody, roastBody, roastReviewFixBody } from "../prompts.ts";
 import { runDir, saveState, type TaskState } from "../state.ts";
 import { evidenceText, mergeVerdicts, runStage, type Ctx } from "../step.ts";
@@ -32,30 +32,88 @@ const ensureBranch = async (ctx: Ctx): Promise<void> => {
 };
 
 type StepOutcome = "next" | "waiting";
+type TaskGate = { asks: Ask[]; need: string; detail: string };
+type BuildResult = { gate?: TaskGate };
 
-const land = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState): Promise<void> => {
+// A crash between cherry-pick and the checked/amended commit must not leave
+// partial credit on the feature branch. Only the serial land queue owns this journal.
+const recoverLanding = async (ctx: Ctx): Promise<void> => {
+  const { state } = ctx;
+  const landing = state.landing;
+  if (!landing) return;
+  const active = await sh(state.repo, ["git", "rev-parse", "--verify", "--quiet", "CHERRY_PICK_HEAD"]);
+  if (active.code === 0) await git(state.repo, "cherry-pick", "--abort");
+  try {
+    // Preflight failures did not move HEAD; leave unrelated working files alone.
+    // On interrupted land, --merge preserves unrelated unstaged edits.
+    if ((await headSha(state.repo)) !== landing.head) await git(state.repo, "reset", "--merge", landing.head);
+  } finally {
+    writeIp(state.ip, landing.ip);
+  }
+  if (landing.index) {
+    const { mode, sha, path } = landing.index;
+    await git(state.repo, "update-index", "--cacheinfo", mode, sha, path);
+  }
+  state.landing = undefined;
+  saveState(state);
+};
+
+const land = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState): Promise<boolean> => {
   const { state } = ctx;
   if (!ts.commit) throw new Error(`brewery: ${id} has no commit to land`);
   const ip = readIp(state.ip);
   const ipRel = relative(state.repo, state.ip);
   const index = await git(state.repo, "ls-files", "--stage", "--", ipRel);
   const tracked = /^(\d+) ([a-f0-9]+) 0\t/.exec(index);
+  const stray = (await trackedChanges(state.repo)).filter((line) => !line.endsWith(ipRel));
+  if (stray.length) throw new Error(`brewery: uncommitted changes on the feature branch before land ${id}:\n${stray.join("\n")}`);
+  state.landing = {
+    task: id, head: await headSha(state.repo), ip,
+    index: tracked ? { mode: tracked[1], sha: tracked[2], path: ipRel } : undefined,
+  };
+  saveState(state);
   // Approval edits belong in the task commit. Move them out of the way while
   // cherry-picking the worktree's copy, preserving them if landing fails.
   if (tracked) await git(state.repo, "restore", "--source=HEAD", "--staged", "--worktree", "--", ipRel);
   else unlinkSync(state.ip);
-  try {
-    await git(state.repo, "cherry-pick", ts.commit);
-  } catch (error) {
-    writeIp(state.ip, ip);
-    if (tracked) await git(state.repo, "update-index", "--cacheinfo", tracked[1], tracked[2], ipRel);
-    throw error;
+  const picked = await sh(state.repo, ["git", "cherry-pick", ts.commit]);
+  if (picked.code !== 0) {
+    let paths = (await git(state.repo, "diff", "--name-only", "--diff-filter=U")).split("\n").filter(Boolean);
+    // Concurrent worktrees carry older task checkboxes. Reconcile only that
+    // bookkeeping; substantive IP edits remain real conflicts and get rebuilt.
+    const taskIp = await git(ts.worktree!, "show", `${ts.commit}:${ipRel}`);
+    const withoutMarks = (text: string) => text.replace(/^(\s*- )\[[ xX]\]/gm, "$1[ ]").trim();
+    if (paths.includes(ipRel) && withoutMarks(taskIp) === withoutMarks(ip)) {
+      writeIp(state.ip, ip);
+      await git(state.repo, "add", "--", ipRel);
+      paths = paths.filter((path) => path !== ipRel);
+    }
+    if (!paths.length && picked.out.includes("CONFLICT")) {
+      await git(state.repo, "-c", "core.editor=true", "cherry-pick", "--continue");
+    } else {
+      const aborted = await sh(state.repo, ["git", "cherry-pick", "--abort"]);
+      writeIp(state.ip, ip);
+      if (tracked) await git(state.repo, "update-index", "--cacheinfo", tracked[1], tracked[2], ipRel);
+      if (!paths.length || aborted.code !== 0) throw new Error(`brewery: land ${id} failed: ${picked.err || picked.out}`);
+      const earlier: string[] = [];
+      for (const [otherId, other] of Object.entries(state.tasks)) {
+        if (other.status !== "passed" || !other.commit) continue;
+        const touched = (await git(state.repo, "diff-tree", "--no-commit-id", "--name-only", "-r", other.commit)).split("\n");
+        if (paths.some((path) => touched.includes(path))) earlier.push(otherId);
+      }
+      ts.evidence = `Land conflict: ${paths.join(", ")}; rebuild on the new head; ${earlier.join(", ") || "another task"} landed first and touched these`;
+      ctx.log(`  ${id}: ${ts.evidence}`);
+      state.landing = undefined;
+      return false;
+    }
   }
   writeIp(state.ip, markTask(readIp(state.ip), id));
   ts.commit = await commitAll(state.repo, taskTitle, true);
   ts.status = "passed";
   ts.evidence = undefined;
+  state.landing = undefined;
   saveState(state);
+  return true;
 };
 
 const taskContext = (ctx: Ctx, cwd: string): Ctx => {
@@ -70,19 +128,15 @@ const taskContext = (ctx: Ctx, cwd: string): Ctx => {
   };
 };
 
-const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, ts: TaskState): Promise<StepOutcome> => {
+const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, ts: TaskState): Promise<BuildResult> => {
   const { state, config } = ctx;
   for (;;) {
     if (ts.attempts >= config.limits.pickAttempts) {
       const last = ts.evidence?.slice(0, 600) ?? "no evidence recorded";
-      await gate(
-        ctx,
-        [{ q: `${id} (${taskTitle}) failed ${ts.attempts} attempts. How should I proceed?`, rec: "retry: <a hint>", opts: ["retry: <a hint>", "skip", "stop"] }],
-        `${id} is stuck`,
-        `Last failure: ${last}`,
-        id,
-      );
-      return "waiting";
+      return { gate: {
+        asks: [{ q: `${id} (${taskTitle}) failed ${ts.attempts} attempts. How should I proceed?`, rec: "retry: <a hint>", opts: ["retry: <a hint>", "skip", "stop"] }],
+        need: `${id} is stuck`, detail: `Last failure: ${last}`,
+      } };
     }
     ts.attempts += 1;
     saveState(state);
@@ -111,8 +165,7 @@ const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, t
 
     const [{ result: picked }] = await runStage(ctx, "pick", pickBody(taskCtx, id, taskTitle, ts.evidence), { task: id, cwd });
     if (picked.status === "BLOCKED") {
-      await gate(ctx, asksFrom(picked, picked.action), `a decision on ${id}`, picked.summary ?? picked.action, id);
-      return "waiting";
+      return { gate: { asks: asksFrom(picked, picked.action), need: `a decision on ${id}`, detail: picked.summary ?? picked.action } };
     }
     if (picked.status !== "PASS") {
       ts.evidence = evidenceText(picked);
@@ -134,12 +187,10 @@ const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, t
     if (await anyChanges(cwd)) ctx.log(`  note: roast left changes in the tree; folding them into ${id}`);
     if (verdict.status === "PASS") {
       if (await anyChanges(cwd)) ts.commit = await commitAll(cwd, taskTitle, true);
-      await land(ctx, id, taskTitle, ts);
-      return "next";
+      return {};
     }
     if (verdict.status === "BLOCKED") {
-      await gate(ctx, asksFrom(verdict, verdict.action), `a decision on ${id}`, verdict.action, id);
-      return "waiting";
+      return { gate: { asks: asksFrom(verdict, verdict.action), need: `a decision on ${id}`, detail: verdict.action } };
     }
     ts.evidence = evidenceText(verdict);
   }
@@ -195,6 +246,105 @@ const submit = async (ctx: Ctx, ci: Ci): Promise<StepOutcome> => {
   return "waiting";
 };
 
+const cleanupTask = async (ctx: Ctx, id: string): Promise<void> => {
+  const ts = ctx.state.tasks[id];
+  const cwd = ts.worktree ?? join(runDir(ctx.state.repo, ctx.state.slug), "worktrees", id);
+  const branch = ts.branch ?? `brewery/${ctx.state.slug}/${id}`;
+  if (existsSync(cwd)) await removeWorktree(ctx.state.repo, cwd);
+  if ((await sh(ctx.state.repo, ["git", "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0) {
+    await git(ctx.state.repo, "branch", "-D", branch);
+  }
+  ts.worktree = undefined;
+  ts.branch = undefined;
+};
+
+const buildReadyTasks = async (ctx: Ctx): Promise<StepOutcome> => {
+  const { state, config } = ctx;
+  await recoverLanding(ctx);
+  const tasks = parseTasks(readIp(state.ip));
+  const problems = taskGraphProblems(tasks);
+  if (problems.length) throw new Error(`brewery: invalid task graph: ${problems.join("; ")}`);
+  const limit = config.limits.parallelTasks;
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("brewery: parallelTasks must be a positive integer");
+  for (const task of tasks) {
+    const ts = state.tasks[task.id] ??= { status: task.done ? "passed" : "todo", attempts: 0 };
+    if (ts.status === "running") {
+      await cleanupTask(ctx, task.id);
+      ts.status = "todo";
+      ts.commit = undefined;
+      ts.evidence = "Interrupted build; rebuild from the feature branch head.";
+    } else if (ts.status !== "todo") await cleanupTask(ctx, task.id);
+  }
+  saveState(state);
+  type Completion = { id: string; result?: BuildResult; error?: unknown };
+  const running = new Map<string, Promise<Completion>>();
+  let firstGate: { id: string; gate: TaskGate } | undefined;
+  let firstError: unknown;
+  const landed = () => new Set(tasks.filter((t) => state.tasks[t.id].status === "passed" || state.tasks[t.id].status === "skipped").map((t) => t.id));
+  for (;;) {
+    if (!firstGate && !firstError) {
+      const ready = readyTasks(tasks, landed()).filter((t) => state.tasks[t.id].status === "todo");
+      for (const task of ready.slice(0, Math.max(0, limit - running.size))) {
+        const ts = state.tasks[task.id];
+        ts.status = "running";
+        ts.worktree = join(runDir(state.repo, state.slug), "worktrees", task.id);
+        ts.branch = `brewery/${state.slug}/${task.id}`;
+        if (running.size) state.parallelRan = true;
+        saveState(state);
+        ctx.log(`■ ${task.id} — ${task.title}`);
+        running.set(task.id, buildTask(ctx, ts.worktree, task.id, task.title, ts).then(
+          (result) => {
+            if (result.gate && !firstGate) firstGate = { id: task.id, gate: result.gate };
+            return { id: task.id, result };
+          },
+          (error: unknown) => {
+            firstError ??= error;
+            return { id: task.id, error };
+          },
+        ));
+      }
+    }
+    if (!running.size) break;
+    const completed = await Promise.race(running.values());
+    running.delete(completed.id);
+    const ts = state.tasks[completed.id];
+    if (completed.error) continue; // Leave running persisted for clean crash recovery.
+    if (completed.result?.gate) {
+      ts.status = "todo";
+      if (firstGate?.id !== completed.id) {
+        await cleanupTask(ctx, completed.id);
+        ts.commit = undefined;
+      }
+      saveState(state);
+      continue;
+    }
+    // Only the scheduler writes the feature branch: this is the serial land queue.
+    try {
+      const task = tasks.find((t) => t.id === completed.id)!;
+      const passed = await land(ctx, task.id, task.title, ts);
+      await cleanupTask(ctx, task.id);
+      if (!passed) {
+        ts.status = "todo";
+        ts.commit = undefined;
+      }
+      saveState(state);
+    } catch (error) {
+      firstError ??= error;
+      await recoverLanding(ctx);
+    }
+  }
+  if (firstGate) {
+    const { id, gate: request } = firstGate;
+    await gate(ctx, request.asks, request.need, request.detail, id);
+    return "waiting";
+  }
+  if (firstError) throw firstError;
+  if (tasks.some((t) => state.tasks[t.id].status === "todo")) {
+    throw new Error("brewery: unfinished tasks have no landed dependency frontier");
+  }
+  return "next";
+};
+
 export const barrel = async (ctx: Ctx, ci: Ci): Promise<Outcome> => {
   const { state } = ctx;
   if (state.waiting) throw new Error(`brewery: ${state.slug} is waiting on you. Answer with: brewery answer ${state.slug} "<reply>"`);
@@ -202,6 +352,10 @@ export const barrel = async (ctx: Ctx, ci: Ci): Promise<Outcome> => {
   if (state.phase === "done") {
     ctx.log(`${state.slug} is already done (PR #${state.pr}).`);
     return "done";
+  }
+  if (state.landing) {
+    await ensureBranch(ctx);
+    await recoverLanding(ctx);
   }
   if (!isApproved(readIp(state.ip))) {
     throw new Error(`brewery: ${relative(state.repo, state.ip)} is not approved. Run distill and sign off first.`);
@@ -212,23 +366,7 @@ export const barrel = async (ctx: Ctx, ci: Ci): Promise<Outcome> => {
   saveState(state);
 
   if (state.phase === "build") {
-    for (const task of parseTasks(readIp(state.ip))) {
-      state.tasks[task.id] ??= { status: task.done ? "passed" : "todo", attempts: 0 };
-      const ts = state.tasks[task.id];
-      const cwd = join(runDir(state.repo, state.slug), "worktrees", task.id);
-      const cleanup = async (): Promise<void> => {
-        if (!existsSync(cwd)) return;
-        await removeWorktree(state.repo, cwd);
-        await git(state.repo, "branch", "-D", `brewery/${state.slug}/${task.id}`);
-      };
-      if (ts.status !== "todo") {
-        await cleanup();
-        continue;
-      }
-      ctx.log(`■ ${task.id} — ${task.title}`);
-      if ((await buildTask(ctx, cwd, task.id, task.title, ts)) === "waiting") return "waiting";
-      await cleanup();
-    }
+    if ((await buildReadyTasks(ctx)) === "waiting") return "waiting";
     state.phase = "review";
     saveState(state);
   }

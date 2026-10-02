@@ -10,7 +10,7 @@ brewery distill "<request>"      claude writes the IP ─┐
                                   claude fixes the findings (≤2 rounds)
                                   → sign-off message, ntfy ping, exit 3
 brewery answer <slug> "ok, 2b"   apply the reply → Status: approved
-brewery barrel <slug>            per task: create worktree → setup → codex picks → commit → claude roasts
+brewery barrel <slug>            ready tasks (up to parallelTasks), each: create worktree → setup → codex picks → commit → claude roasts
                                     (FAIL → pick again with evidence, amend the worktree commit)
                                     PASS → cherry-pick onto feature branch → tick checkbox and amend → remove worktree
                                   branch review: claude + codex in parallel → fix blocking findings
@@ -53,7 +53,7 @@ the litellm gateway, so they get a real tool-using harness:
 Put it in `~/.config/brewery/config.json`, or `<repo>/.brewery.json` per repo. Override a
 single run with `--agents pick=claude,roast=claude+codex`.
 
-Each task builds sequentially in `.terreno/brewery/<slug>/worktrees/<id>` on local branch
+Each ready task builds in `.terreno/brewery/<slug>/worktrees/<id>` on local branch
 `brewery/<slug>/<id>`, starting from the feature branch's current head. Pick and Roast
 read the IP and repository skills in that worktree. Step logs and run state remain in
 the main tree. After Roast passes, brewery cherry-picks the task commit, checks its IP
@@ -64,7 +64,35 @@ retain their worktree and commit for a later retry; skipping a task removes that
 | Config | Default | Behavior |
 | --- | --- | --- |
 | `worktreeSetup` | `[]` | Shell commands run in order in each fresh task worktree, before Pick. Shade uses `["bun bootstrap"]`. A nonzero exit records stdout/stderr as failure evidence, removes the tree, and consumes a Pick attempt. |
-| `limits.parallelTasks` | `3` | Reserved concurrency limit; task builds currently remain sequential. |
+| `limits.parallelTasks` | `3` | Maximum concurrent task builds. `--parallel N` overrides it for one run; `--parallel 1` runs sequentially. |
+
+## Parallel builds
+
+Declare `Depends on: none` or `Depends on: T1, T3` in each task's details. A missing
+line depends on the previous task, so older IPs retain their sequential order. Tasks
+become ready only when all dependencies have landed; an explicitly skipped dependency
+also releases its dependants. Ready tasks start in IP order up to `limits.parallelTasks`.
+Each runs Pick and Roast in its own worktree, and a single serial queue lands passed
+task commits on the feature branch. Dependencies therefore start with their parents'
+landed commits and checked IP entries already present.
+
+```bash
+brewery barrel my-feature --parallel 2 --no-wait
+```
+
+If landing conflicts, brewery aborts the cherry-pick, records the conflicting paths and
+the earlier tasks that touched them, removes the worktree, and rebuilds from the new
+branch head. This consumes another Pick attempt and remains bounded by `pickAttempts`.
+Differences consisting only of IP checkboxes are reconciled during landing.
+
+The first BLOCKED or stuck task stops new starts. Running siblings finish and land;
+the first gate is saved in `state.waiting`, later gated siblings reset to `todo`, and
+an unattended CLI run exits 3. The first gated task retains its tree for an explicit
+retry. After a crash, tasks persisted as `running` lose their partial worktrees and
+commits and return to `todo`, keeping their consumed attempt count. A durable landing journal restores the pre-land
+branch head and approved IP after an interrupted cherry-pick, before rebuilding. `brewery status`
+shows active tasks, for example `running T2, T3`. Step artifacts carry unique sequence
+numbers and task ids in the main tree.
 
 `cut`, `roast`, and `review` fan out. Every listed agent runs, and a FAIL from any one of
 them fails the step. Other stages use the first available agent. An unavailable agent

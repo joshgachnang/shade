@@ -1,7 +1,7 @@
 // End-to-end runs against a temp git repo with scripted fake agents.
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { answer } from "../src/commands/answer.ts";
 import { barrel } from "../src/commands/barrel.ts";
 import { cutAndFix, distill, sendForSignoff, writeDraft } from "../src/commands/distill.ts";
@@ -189,6 +189,248 @@ describe("barrel", () => {
     const state = newState({ slug: "greet", repo, ip: join(repo, "docs/plans/greet.md"), base: "master", phase: "approved" });
     return { repo, ctx: quietCtx(state, config) };
   };
+
+  const diamond = IP("approved 2026-09-27").replace(
+    "- [ ] **T1** — Add greeting file\n- [ ] **T2** — Add farewell file",
+    "- [ ] **T1** — Root\n  - Depends on: none\n- [ ] **T2** — Left\n  - Depends on: T1\n- [ ] **T3** — Right\n  - Depends on: T1\n- [ ] **T4** — Join\n  - Depends on: T2, T3",
+  );
+  const successfulTasks = (ids: string[]) => [
+    ...ids.flatMap((id) => [
+      { match: `pick ${id}`, sleepMs: 250, write: { [`${id}.txt`]: `${id}\n` }, result: { status: "PASS", action: "built" } },
+      { match: `roast ${id}`, result: { status: "PASS", action: "proven" } },
+    ]),
+    { match: "branch review", result: { status: "PASS", action: "reviewed", findings: [] } },
+    { match: "brew", result: { status: "PASS", action: "opened", pr: 7 } },
+  ];
+  const timings = (ctx: ReturnType<typeof quietCtx>) => readFileSync(`${ctx.config.agents.alpha.env?.FAKE_PLAN}.timings.log`, "utf8")
+    .trim().split("\n").map((line) => {
+      const [step, event, at] = line.split("\t");
+      return { step, event, at: Number(at) };
+    });
+
+  test("schedules a diamond concurrently and starts the join after both parents land", async () => {
+    const { repo, ctx } = setupApproved(successfulTasks(["T1", "T2", "T3", "T4"]).map((entry) =>
+      ["pick T2", "pick T3"].includes(entry.match)
+        ? { ...entry, signal: entry.match, waitFor: [entry.match === "pick T2" ? "pick T3" : "pick T2"] } : entry));
+    writeFileSync(ctx.state.ip, diamond);
+    ctx.config.limits.parallelTasks = 2;
+    // The join's setup sees the landed parent commits, including their IP marks.
+    ctx.config.worktreeSetup = ["if test -f T2.txt && test -f T3.txt; then git show HEAD:docs/plans/greet.md > parents.md; fi"];
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+    const events = timings(ctx);
+    const at = (id: string, event: string) => events.find((e) => e.step.startsWith(`pick ${id} `) && e.event === event)!.at;
+    expect(at("T2", "start")).toBeLessThan(at("T3", "end"));
+    expect(at("T3", "start")).toBeLessThan(at("T2", "end"));
+    expect(at("T4", "start")).toBeGreaterThanOrEqual(Math.max(at("T2", "end"), at("T3", "end")));
+    expect(parseTasks(readFileSync(join(repo, "parents.md"), "utf8")).map((t) => t.done)).toEqual([true, true, true, false]);
+    expect(run(repo, "git", "rev-list", "--count", "master..HEAD")).toBe("4");
+    expect(parseTasks(readIp(ctx.state.ip)).every((t) => t.done)).toBe(true);
+    expect(ctx.state.tasks.T2.attempts).toBe(1);
+    expect(ctx.state.tasks.T3.attempts).toBe(1);
+    expect(ctx.state.parallelRan).toBe(true);
+    expect(run(repo, "git", "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+  });
+
+  test("limits a three-task ready frontier to two simultaneous builds", async () => {
+    const { repo, ctx } = setupApproved(successfulTasks(["T1", "T2", "T3"]).map((entry) =>
+      ["pick T1", "pick T2"].includes(entry.match)
+        ? { ...entry, signal: entry.match, waitFor: [entry.match === "pick T1" ? "pick T2" : "pick T1"] } : entry));
+    writeFileSync(ctx.state.ip, IP("approved 2026-09-27").replace(
+      "- [ ] **T2** — Add farewell file",
+      "- [ ] **T2** — Add farewell file\n  - Depends on: none\n- [ ] **T3** — Third\n  - Depends on: none",
+    ));
+    ctx.config.limits.parallelTasks = 2;
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+    const events = timings(ctx);
+    const thirdStart = events.find((e) => e.step.startsWith("pick T3 ") && e.event === "start")!.at;
+    const parentEnds = events.filter((e) => /^roast T[12] /.test(e.step) && e.event === "end").map((e) => e.at);
+    expect(thirdStart).toBeGreaterThanOrEqual(Math.min(...parentEnds));
+    expect(run(repo, "git", "rev-list", "--count", "master..HEAD")).toBe("3");
+  });
+
+  test("CLI --parallel 1 overrides config and runs the diamond strictly in order", async () => {
+    const { repo, ctx } = setupApproved([
+      ...successfulTasks(["T1", "T2", "T3", "T4"]).filter((entry) => entry.match !== "brew"),
+      { match: "brew", result: { status: "BLOCKED", action: "test stops before external CI" } },
+    ]);
+    writeFileSync(ctx.state.ip, diamond);
+    saveState(ctx.state);
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../src/cli.ts"), "barrel", "greet", "--repo", repo, "--parallel", "1", "--no-wait"], { stdout: "pipe", stderr: "pipe", env: { ...process.env } });
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    expect(await proc.exited).toBe(3);
+    expect(err).toBe("");
+    expect(out).toContain("test stops before external CI");
+    expect(JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8")).parallelRan).toBeUndefined();
+    const events = timings(ctx);
+    expect(events.filter((e) => e.step.startsWith("pick ") && e.event === "start").map((e) => e.step.split(" ")[1])).toEqual(["T1", "T2", "T3", "T4"]);
+    for (let i = 1; i < 4; i++) {
+      const start = events.find((e) => e.step.startsWith(`pick T${i + 1} `) && e.event === "start")!.at;
+      const end = events.find((e) => e.step.startsWith(`roast T${i} `) && e.event === "end")!.at;
+      expect(start).toBeGreaterThanOrEqual(end);
+    }
+    expect(run(repo, "git", "rev-list", "--count", "master..HEAD")).toBe("4");
+  }, 60_000);
+
+  test("rebuilds a conflicting independent task once on the new head and lands both", async () => {
+    const { repo, ctx } = setupApproved([
+      { match: "pick T1", sleepMs: 250, write: { "shared.txt": "one\n" }, result: { status: "PASS", action: "built" } },
+      { match: "pick T2", sleepMs: 500, write: { "shared.txt": "two\n" }, result: { status: "PASS", action: "built" } },
+      { match: "roast", result: { status: "PASS", action: "proven" } },
+      ...successfulTasks([]),
+    ]);
+    writeFileSync(ctx.state.ip, IP("approved 2026-09-27").replace("- [ ] **T2** — Add farewell file", "- [ ] **T2** — Add farewell file\n  - Depends on: none"));
+    ctx.config.limits.parallelTasks = 2;
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+    expect(Object.values(ctx.state.tasks).map((t) => t.attempts).sort()).toEqual([1, 2]);
+    const retried = Object.entries(ctx.state.tasks).find(([, t]) => t.attempts === 2)![0];
+    const prompts = stepPrompts(repo, "greet", new RegExp(`-pick-${retried}-`));
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("shared.txt");
+    expect(prompts[1]).toContain("rebuild on the new head");
+    expect(prompts[1]).toContain(`${retried === "T1" ? "T2" : "T1"} landed first and touched these`);
+    expect(run(repo, "git", "rev-list", "--count", "master..HEAD")).toBe("2");
+    expect(run(repo, "git", "show", `${ctx.state.tasks.T1.commit}:shared.txt`)).toBe("one");
+    expect(run(repo, "git", "show", `${ctx.state.tasks.T2.commit}:shared.txt`)).toBe("two");
+    expect(parseTasks(readIp(ctx.state.ip)).map((t) => t.done)).toEqual([true, true]);
+    expect(run(repo, "git", "status", "--porcelain")).toBe("");
+    expect(run(repo, "git", "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+  });
+
+  test("drains a running sibling after a gate without starting newly ready tasks", async () => {
+    const { repo, ctx } = setupApproved([
+      ...successfulTasks(["T1"]),
+      { match: "pick T2", signal: "left", waitFor: ["right"], result: { status: "BLOCKED", action: "choose left behavior" } },
+      ...successfulTasks(["T3"]).map((entry) => entry.match === "pick T3" ? { ...entry, signal: "right", waitForTask: { id: "T2", status: "todo" } } : entry),
+    ]);
+    writeFileSync(ctx.state.ip, diamond.replace("  - Depends on: T2, T3", "  - Depends on: T3"));
+    ctx.config.limits.parallelTasks = 2;
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("waiting");
+    expect(ctx.state.waiting?.task).toBe("T2");
+    expect(ctx.state.waiting?.message).toContain("choose left behavior");
+    expect(ctx.state.tasks.T3.status).toBe("passed");
+    expect(readFileSync(join(repo, "T3.txt"), "utf8")).toBe("T3\n");
+    expect(ctx.state.tasks.T4.status).toBe("todo");
+    expect(ctx.state.history.some((entry) => entry.task === "T4")).toBe(false);
+    expect(ctx.state.phase).toBe("build");
+    expect(parseTasks(readIp(ctx.state.ip)).map((t) => t.done)).toEqual([true, false, true, false]);
+  });
+
+  test("preserves the first gate and resets later gated siblings to todo", async () => {
+    const { repo, ctx } = setupApproved([
+      ...successfulTasks(["T1"]),
+      { match: "pick T2", signal: "left", waitFor: ["right"], result: { status: "BLOCKED", action: "first choice" } },
+      { match: "pick T3", signal: "right", waitForTask: { id: "T2", status: "todo" }, write: { "discard.txt": "partial\n" }, result: { status: "BLOCKED", action: "second choice" } },
+    ]);
+    writeFileSync(ctx.state.ip, diamond);
+    ctx.config.limits.parallelTasks = 2;
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("waiting");
+    expect(ctx.state.waiting?.task).toBe("T2");
+    expect(ctx.state.waiting?.message).toContain("first choice");
+    expect(ctx.state.tasks.T3.status).toBe("todo");
+    expect(ctx.state.tasks.T3.worktree).toBeUndefined();
+    expect(existsSync(join(runDir(repo, "greet"), "worktrees", "T3"))).toBe(false);
+    expect(existsSync(join(repo, "discard.txt"))).toBe(false);
+    expect(ctx.lines.filter((line) => line.startsWith("Waiting. Answer with:"))).toHaveLength(1);
+  });
+
+  test("cleans an interrupted running task and discards its partial commit on resume", async () => {
+    const { repo, ctx } = setupApproved(successfulTasks(["T1", "T2"]));
+    run(repo, "git", "add", "docs/plans/greet.md");
+    run(repo, "git", "commit", "-m", "Approved plan");
+    run(repo, "git", "checkout", "-b", "greet");
+    const tree = join(runDir(repo, "greet"), "worktrees", "T1");
+    run(repo, "git", "worktree", "add", "-b", "brewery/greet/T1", tree, "HEAD");
+    writeFileSync(join(tree, "partial.txt"), "discard this\n");
+    run(tree, "git", "add", "partial.txt");
+    run(tree, "git", "commit", "-m", "Interrupted partial work");
+    ctx.state.phase = "build";
+    ctx.state.branch = "greet";
+    ctx.state.tasks.T1 = { status: "running", attempts: 1, worktree: tree, branch: "brewery/greet/T1", commit: run(tree, "git", "rev-parse", "HEAD") };
+    saveState(ctx.state);
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+    expect(existsSync(join(repo, "partial.txt"))).toBe(false);
+    expect(ctx.state.tasks.T1.attempts).toBe(2);
+    expect(ctx.state.tasks.T1.status).toBe("passed");
+    expect(ctx.state.tasks.T1.worktree).toBeUndefined();
+    expect(stepPrompts(repo, "greet", /-pick-T1-/)[0]).toContain("Interrupted build");
+    expect(run(repo, "git", "log", "--format=%s", "master..HEAD").split("\n")).toEqual(["Add farewell file", "Add greeting file"]);
+    expect(run(repo, "git", "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+  });
+
+  test.each([[false, false], [true, false], [true, true]])("restores the approved IP after a preflight landing failure (tracked IP=%s, tracked collision=%s)", async (tracked, trackedCollision) => {
+    const repo = tempRepo();
+    const ip = join(repo, "docs/plans/greet.md");
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ip, IP("approved 2026-09-27"));
+    if (tracked) {
+      writeFileSync(ip, IP("draft"));
+      run(repo, "git", "add", "docs/plans/greet.md");
+      run(repo, "git", "commit", "-m", "Draft plan");
+      writeFileSync(ip, IP("approved 2026-09-27"));
+      run(repo, "git", "add", "docs/plans/greet.md");
+    }
+    if (trackedCollision) {
+      run(repo, "git", "restore", "--staged", "docs/plans/greet.md");
+      writeFileSync(join(repo, "collision.txt"), "baseline\n");
+      run(repo, "git", "add", "collision.txt");
+      run(repo, "git", "commit", "-m", "Baseline collision");
+      run(repo, "git", "add", "docs/plans/greet.md");
+    }
+    const tree = join(runDir(repo, "greet"), "worktrees", "T1");
+    const { config } = fakeSetup(repo, [
+      { match: "pick T1", write: { "collision.txt": "task output\n" }, result: { status: "PASS", action: "built" } },
+      { match: "roast T1", write: { [relative(tree, join(repo, "collision.txt"))]: "keep external file\n" }, result: { status: "PASS", action: "proven" } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "greet", repo, ip, base: "master", phase: "approved" }), config);
+    await expect(barrel(ctx, fakeCi([green("a")]))).rejects.toThrow(trackedCollision ? "uncommitted changes" : "would be overwritten");
+    expect(readIp(ip)).toBe(IP("approved 2026-09-27"));
+    expect(readFileSync(join(repo, "collision.txt"), "utf8")).toBe("keep external file\n");
+    expect(ctx.state.landing).toBeUndefined();
+    expect(run(repo, "git", "log", "--format=%s", "master..HEAD")).toBe("");
+    if (tracked) expect(run(repo, "git", "diff", "--cached")).toContain("approved 2026-09-27");
+  });
+
+  test("rolls back an interrupted cherry-pick before rebuilding a running task", async () => {
+    const { repo, ctx } = setupApproved(successfulTasks(["T1", "T2"]));
+    run(repo, "git", "add", "docs/plans/greet.md");
+    run(repo, "git", "commit", "-m", "Approved plan");
+    run(repo, "git", "checkout", "-b", "greet");
+    const before = run(repo, "git", "rev-parse", "HEAD");
+    const tree = join(runDir(repo, "greet"), "worktrees", "T1");
+    run(repo, "git", "worktree", "add", "-b", "brewery/greet/T1", tree, "HEAD");
+    writeFileSync(join(tree, "T1.txt"), "T1\n");
+    writeFileSync(join(tree, "partial.txt"), "discard transaction\n");
+    run(tree, "git", "add", "-A");
+    run(tree, "git", "commit", "-m", "Unfinished landing");
+    const commit = run(tree, "git", "rev-parse", "HEAD");
+    run(repo, "git", "cherry-pick", commit);
+    ctx.state.phase = "build";
+    ctx.state.branch = "greet";
+    ctx.state.tasks.T1 = { status: "running", attempts: 1, worktree: tree, branch: "brewery/greet/T1", commit };
+    ctx.state.landing = { task: "T1", head: before, ip: readIp(ctx.state.ip) };
+    saveState(ctx.state);
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+    expect(ctx.state.landing).toBeUndefined();
+    expect(existsSync(join(repo, "partial.txt"))).toBe(false);
+    expect(ctx.state.tasks.T1.attempts).toBe(2);
+    expect(run(repo, "git", "log", "--format=%s", "master..HEAD").split("\n")).toEqual(["Add farewell file", "Add greeting file"]);
+    expect(parseTasks(readIp(ctx.state.ip)).every((task) => task.done)).toBe(true);
+  });
+
+  test("status reports running tasks and invalid parallel overrides fail clearly", async () => {
+    const { repo, ctx } = setupApproved([]);
+    ctx.state.tasks = { T2: { status: "running", attempts: 1 }, T3: { status: "running", attempts: 1 } };
+    saveState(ctx.state);
+    const cli = join(import.meta.dir, "../src/cli.ts");
+    const status = Bun.spawnSync(["bun", cli, "status", "greet"], { cwd: repo, env: { ...process.env } });
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout.toString()).toContain("running T2, T3");
+    for (const value of ["", "0", "-1", "1.5", "nope", "9007199254740992"]) {
+      const proc = Bun.spawnSync(["bun", cli, "barrel", "greet", "--repo", repo, "--parallel", ...(value ? [value] : []), "--no-wait"], { env: { ...process.env } });
+      expect(proc.exitCode).toBe(1);
+      expect(proc.stderr.toString()).toContain("--parallel needs a positive integer");
+    }
+  });
 
   test("builds every task with a separate roast, amends retries, and finishes green", async () => {
     const { repo, ctx } = setupApproved([

@@ -38,6 +38,7 @@ Common flags:
   --repo <dir>             Target repository (default: current directory)
   --no-wait                Never read a reply from the terminal
   --go                     After approval, keep going into barrel
+  --parallel N             Max concurrent task builds for this run (1 = sequential)
 
 Config: ${userConfigPath()} and <repo>/.brewery.json.
 Exit codes: 0 done or approved, 3 waiting on the human, 1 error.`;
@@ -66,7 +67,15 @@ const str = (value: string | true | undefined): string | undefined => (typeof va
 
 const log = (line: string): void => console.log(line);
 
-const makeCtx = (state: RunState, agentsFlag?: string): Ctx => ({ state, config: loadConfig(state.repo, agentsFlag), log });
+const makeCtx = (state: RunState, agentsFlag?: string, parallel?: string | true): Ctx => {
+  const config = loadConfig(state.repo, agentsFlag);
+  if (parallel !== undefined) {
+    const limit = typeof parallel === "string" && /^\d+$/.test(parallel) ? Number(parallel) : NaN;
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("brewery: --parallel needs a positive integer");
+    config.limits.parallelTasks = limit;
+  }
+  return { state, config, log };
+};
 
 const afterApproval = async (ctx: Ctx, go: boolean): Promise<number> => {
   if (!go) return 0;
@@ -99,7 +108,7 @@ const cmdDistill = async (positional: string[], flags: Record<string, string | t
   const ipFlag = str(flags.ip);
   const ip = ipFlag ? (isAbsolute(ipFlag) ? ipFlag : join(repo, ipFlag)) : defaultIpPath(repo, slug);
   const state = newState({ slug, repo, ip, base: await defaultBase(repo), phase: "distill" });
-  const ctx = makeCtx(state, str(flags.agents));
+  const ctx = makeCtx(state, str(flags.agents), flags.parallel);
   log(`brewery distill ${slug} in ${repo}`);
   await distill(ctx, request);
   return replyLoop(ctx, !flags["no-wait"], Boolean(flags.go));
@@ -109,7 +118,7 @@ const cmdAnswer = async (positional: string[], flags: Record<string, string | tr
   const [slug, ...rest] = positional;
   const reply = rest.join(" ");
   if (!slug || !reply) throw new Error('usage: brewery answer <slug> "<reply>"');
-  const ctx = makeCtx(loadState(slug, str(flags.repo)), str(flags.agents));
+  const ctx = makeCtx(loadState(slug, str(flags.repo)), str(flags.agents), flags.parallel);
   const outcome = await answer(ctx, reply);
   if (outcome === "approved") return afterApproval(ctx, Boolean(flags.go));
   if (outcome === "stopped") return 0;
@@ -133,7 +142,7 @@ const cmdBarrel = async (positional: string[], flags: Record<string, string | tr
     if (!positional[0]) throw new Error("usage: brewery barrel <slug> | --ip <path>");
     state = loadState(positional[0], str(flags.repo));
   }
-  const ctx = makeCtx(state, str(flags.agents));
+  const ctx = makeCtx(state, str(flags.agents), flags.parallel);
   const result = await barrel(ctx, githubCi);
   return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
 };
@@ -149,7 +158,7 @@ const cmdFinish = async (positional: string[], flags: Record<string, string | tr
     ? loadState(slug, repo)
     : newState({ slug, repo, ip: "", base: await defaultBase(repo), phase: "finish" });
   state.waiting = undefined;
-  const ctx = makeCtx(state, str(flags.agents));
+  const ctx = makeCtx(state, str(flags.agents), flags.parallel);
   const result = await finish(ctx, githubCi, pr);
   return result === "done" ? 0 : replyLoop(ctx, !flags["no-wait"], true);
 };
@@ -164,7 +173,7 @@ const cmdCut = async (positional: string[], flags: Record<string, string | true>
   const context = str(flags.context) ? readFileSync(str(flags.context) as string, "utf8") : str(flags.request);
   if (context) appendContext(state, "What the human said", context);
   saveState(state);
-  const findings = await runCut(makeCtx(state, str(flags.agents)));
+  const findings = await runCut(makeCtx(state, str(flags.agents), flags.parallel));
   log(`\nCut: ${findings.length} findings (${findings.filter((f) => f.severity === "blocking").length} blocking) on ${relative(repo, ip)}, context: ${context ? "provided" : "ticket+Decisions"}\n`);
   log(findingsTable(findings));
   return 0;
@@ -189,8 +198,10 @@ const cmdStatus = (positional: string[]): number => {
       const text = readIp(state.ip);
       ipInfo = ` ${passed}/${parseTasks(text).length} tasks, IP ${isApproved(text) ? "approved" : (readStatus(text) ?? "?")}`;
     }
+    const running = Object.entries(state.tasks).filter(([, t]) => t.status === "running").map(([id]) => id);
+    const active = running.length ? `  running ${running.join(", ")}` : "";
     const wait = state.waiting ? `  ⚑ waiting on you (${state.waiting.kind}) since ${state.waiting.since.slice(0, 16)}` : "";
-    log(`${slug.padEnd(32)} ${state.phase.padEnd(9)}${state.pr ? ` PR #${state.pr}` : ""}${ipInfo}  ${basename(state.repo)}${wait}`);
+    log(`${slug.padEnd(32)} ${state.phase.padEnd(9)}${state.pr ? ` PR #${state.pr}` : ""}${ipInfo}  ${basename(state.repo)}${active}${wait}`);
     if (positional[0] && state.waiting) log(`\n${state.waiting.message}`);
   }
   return 0;
