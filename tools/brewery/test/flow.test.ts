@@ -4,10 +4,10 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 
 import { join } from "node:path";
 import { answer } from "../src/commands/answer.ts";
 import { barrel } from "../src/commands/barrel.ts";
-import { distill } from "../src/commands/distill.ts";
+import { cutAndFix, distill, sendForSignoff, writeDraft } from "../src/commands/distill.ts";
 import { finish } from "../src/commands/finish.ts";
 import { readIp, readStatus, parseTasks } from "../src/ip.ts";
-import { newState, readContext, runDir } from "../src/state.ts";
+import { newState, readContext, runDir, saveState } from "../src/state.ts";
 import type { PrSnapshot } from "../src/vcs.ts";
 import { fakeCi, fakeSetup, IP, quietCtx, run, tempRepo } from "./helpers.ts";
 
@@ -25,6 +25,107 @@ const stepPrompts = (repo: string, slug: string, pattern: RegExp): string[] => {
 };
 
 describe("distill → sign-off → answer", () => {
+  const cycleIp = IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T2");
+
+  test("rejects a cyclic draft and reaches sign-off only after a usable draft is written", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill (write the IP)", times: 1, write: { "docs/plans/g.md": cycleIp }, result: { status: "PASS", action: "drafted" } },
+      { match: "distill (write the IP)", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "repaired" } },
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "distill" }), config);
+    await distill(ctx, "Add a greeting");
+    expect(ctx.lines.join("\n")).toContain("unusable: Dependency cycle: T1 → T2 → T1");
+    expect(ctx.state.history.filter((h) => h.stage === "distill")).toHaveLength(2);
+    expect(ctx.state.waiting?.kind).toBe("signoff");
+  });
+
+  test.each([
+    ["cycle", cycleIp, "T1 → T2 → T1"],
+    ["unknown dependency", IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T99"), "T1 depends on unknown task T99"],
+    ["self dependency", IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T1"), "T1 depends on itself"],
+  ])("a draft with an unrepaired %s exhausts the two draft attempts without sign-off", async (_kind, text, problem) => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill (write the IP)", write: { "docs/plans/g.md": text }, result: { status: "PASS", action: "drafted" } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "distill" }), config);
+    saveState(ctx.state);
+    await expect(writeDraft(ctx, "Add a greeting")).rejects.toThrow(problem);
+    expect(ctx.state.history).toHaveLength(2);
+    expect(ctx.state.waiting).toBeUndefined();
+    expect(readStatus(readIp(ctx.state.ip))).toBe("draft");
+  });
+
+  test("repairs an existing cycle even when Cut returns no findings", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+      { match: "distill step 10", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "repaired" } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "distill" }), config);
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ctx.state.ip, cycleIp);
+    saveState(ctx.state);
+    await sendForSignoff(ctx, await cutAndFix(ctx, [], 2));
+    const [fix] = stepPrompts(repo, "g", /distill-alpha/);
+    expect(fix).toContain("T1 → T2 → T1");
+    expect(fix).toContain('"axis": "decomposition"');
+    expect(ctx.state.waiting?.kind).toBe("signoff");
+  });
+
+  test("returns a cycle introduced by a fix as a blocking decomposition finding until repaired", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill (write the IP)", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "drafted" } },
+      { match: "cut (attack the IP)", agent: "alpha", times: 1, result: { status: "PASS", action: "cut", findings: [{ severity: "blocking", attack: "Split the task", evidence: "Two behaviors" }] } },
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+      { match: "distill step 10", times: 1, write: { "docs/plans/g.md": cycleIp }, result: { status: "PASS", action: "fixed", structural: false } },
+      { match: "distill step 10", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "repaired", structural: false } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "distill" }), config);
+    await distill(ctx, "Add a greeting");
+    const fixes = stepPrompts(repo, "g", /distill-alpha/).filter((p) => p.includes("## Step: distill step 10"));
+    expect(fixes).toHaveLength(2);
+    expect(fixes[1]).toContain("T1 → T2 → T1");
+    expect(fixes[1]).toContain('"severity": "blocking"');
+    expect(fixes[1]).toContain('"axis": "decomposition"');
+    expect(ctx.state.cutRounds).toBe(2);
+    expect(ctx.state.waiting?.kind).toBe("signoff");
+    expect(readStatus(readIp(ctx.state.ip))).toStartWith("awaiting sign-off");
+  });
+
+  test("an unrepaired cycle introduced by a fix exhausts cut rounds and never reaches sign-off", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill (write the IP)", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "drafted" } },
+      { match: "cut (attack the IP)", agent: "alpha", times: 1, result: { status: "PASS", action: "cut", findings: [{ severity: "blocking", attack: "Split the task", evidence: "Two behaviors" }] } },
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+      { match: "distill step 10", write: { "docs/plans/g.md": cycleIp }, result: { status: "PASS", action: "claimed fixed", structural: false } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "distill" }), config);
+    await expect(distill(ctx, "Add a greeting")).rejects.toThrow("T1 → T2 → T1");
+    expect(ctx.state.cutRounds).toBe(config.limits.cutRounds);
+    const fixes = stepPrompts(repo, "g", /distill-alpha/).filter((p) => p.includes("## Step: distill step 10"));
+    expect(fixes).toHaveLength(2);
+    expect(fixes[1]).toContain("T1 → T2 → T1");
+    expect(ctx.state.waiting).toBeUndefined();
+    expect(ctx.state.phase).toBe("distill");
+    expect(readStatus(readIp(ctx.state.ip))).toBe("draft");
+  });
+
+  test("zero cut rounds cannot pass an existing invalid graph to sign-off", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, []);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "distill" }), config);
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ctx.state.ip, cycleIp);
+    await expect(cutAndFix(ctx, [], 0)).rejects.toThrow("T1 → T2 → T1");
+    expect(ctx.state.history).toHaveLength(0);
+    expect(ctx.state.waiting).toBeUndefined();
+  });
+
   test("writes the IP, cuts it in a clean tree with only the human's words, and waits for sign-off", async () => {
     const repo = tempRepo();
     const ask = { q: "Plain text or markdown?", rec: "Plain text", opts: ["Plain text", "Markdown"] };

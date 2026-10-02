@@ -78,10 +78,14 @@ them fails the step. Other stages use the first available agent. An unavailable 
 | Cut sees only the human's words | Its prompt holds only `.terreno/brewery/<slug>/context.md` (your request and replies, verbatim), and it runs in a `git worktree` of HEAD where `.terreno/` does not exist. |
 | Roast judges a fixed tree | brewery commits after Pick, before Roast. Retries amend the task's commit. |
 | No self-approval | brewery owns the IP's `Status:` line and resets one an agent approved. Only `brewery answer` approves. |
+| Valid task graph before sign-off | Distill rejects drafts with unknown dependencies, self-dependencies, or cycles. Cut/fix rechecks the graph after every edit and passes remaining problems as blocking decomposition findings, even when Cut found nothing. An invalid graph after `limits.cutRounds` throws before sign-off. |
 | Progress can't be faked | brewery checks each task box only after a Roast PASS and cherry-pick onto the feature branch. |
 | Bounded loops | Pick attempts per task, cut and review rounds, finish pushes and hours, and a "same failure twice" stop. |
 | No tokens while waiting | brewery runs `gh pr checks --watch` itself and starts a Taste agent only on a red snapshot. |
 | Privacy | ntfy pings carry no content. The full message prints to the terminal and is saved in state. |
+
+For example, `T1` depending on `T2` while `T2` depends on `T1` produces the finding
+`Dependency cycle: T1 → T2 → T1`. A fix must remove the cycle before sign-off can proceed.
 
 ## Human loop
 

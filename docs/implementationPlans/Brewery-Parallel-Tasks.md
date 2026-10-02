@@ -160,7 +160,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
   - Docs: `tools/brewery/README.md` (the barrel diagram and a `worktreeSetup` row in the config
     example).
 
-- [ ] **T4** — Return an invalid task graph to distill as a blocking finding
+- [x] **T4** — Return an invalid task graph to distill as a blocking finding
   - Depends on: T1
   - Files: `tools/brewery/src/commands/distill.ts`, `tools/brewery/test/flow.test.ts`
   - `ipProblems` adds `taskGraphProblems`.
