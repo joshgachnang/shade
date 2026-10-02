@@ -196,6 +196,17 @@ describe("config and agents", () => {
     expect(loadConfig(repo).skillsDir).toBe(join(repo, ".claude", "skills"));
   });
 
+  test("worktree configuration has defaults and repo overrides", () => {
+    process.env.BREWERY_CONFIG = join(tmpdir(), "brewery-no-such-config.json");
+    const repo = mkdtempSync(join(tmpdir(), "brewery-config-"));
+    expect(loadConfig(repo).worktreeSetup).toEqual([]);
+    expect(loadConfig(repo).limits.parallelTasks).toBe(3);
+    writeFileSync(join(repo, ".brewery.json"), JSON.stringify({ worktreeSetup: ["bun bootstrap"], limits: { parallelTasks: 1 } }));
+    expect(loadConfig(repo).worktreeSetup).toEqual(["bun bootstrap"]);
+    expect(loadConfig(repo).limits.parallelTasks).toBe(1);
+    expect(loadConfig(repo).limits.pickAttempts).toBe(3);
+  });
+
   test("slugify keeps the first six words", () => {
     expect(slugify("Add a CSV export to the admin reports page, please")).toBe("add-a-csv-export-to-the");
   });

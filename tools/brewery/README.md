@@ -10,8 +10,9 @@ brewery distill "<request>"      claude writes the IP ─┐
                                   claude fixes the findings (≤2 rounds)
                                   → sign-off message, ntfy ping, exit 3
 brewery answer <slug> "ok, 2b"   apply the reply → Status: approved
-brewery barrel <slug>            per task: codex picks → brewery commits → claude roasts
-                                    (FAIL → pick again with evidence, amend the commit)
+brewery barrel <slug>            per task: create worktree → setup → codex picks → commit → claude roasts
+                                    (FAIL → pick again with evidence, amend the worktree commit)
+                                    PASS → cherry-pick onto feature branch → tick checkbox and amend → remove worktree
                                   branch review: claude + codex in parallel → fix blocking findings
                                   brew: claude opens the PR
                                   finish: gh waits (no tokens) → claude tastes each red snapshot
@@ -44,12 +45,26 @@ the litellm gateway, so they get a real tool-using harness:
   },
   "stages": { "pick": ["codex"], "roast": ["claude", "local"], "cut": ["claude", "codex", "local"] },
   "notify": { "ntfyUrl": "https://ntfy.sh/<topic>" },
-  "limits": { "pickAttempts": 3, "finishPushes": 6, "finishHours": 4 }
+  "worktreeSetup": ["bun bootstrap"],
+  "limits": { "pickAttempts": 3, "parallelTasks": 3, "finishPushes": 6, "finishHours": 4 }
 }
 ```
 
 Put it in `~/.config/brewery/config.json`, or `<repo>/.brewery.json` per repo. Override a
 single run with `--agents pick=claude,roast=claude+codex`.
+
+Each task builds sequentially in `.terreno/brewery/<slug>/worktrees/<id>` on local branch
+`brewery/<slug>/<id>`, starting from the feature branch's current head. Pick and Roast
+read the IP and repository skills in that worktree. Step logs and run state remain in
+the main tree. After Roast passes, brewery cherry-picks the task commit, checks its IP
+box inside that landed commit, records the landed SHA, and removes the worktree and
+local branch. Retries after Roast failures amend the same worktree commit. Gated tasks
+retain their worktree and commit for a later retry; skipping a task removes that tree.
+
+| Config | Default | Behavior |
+| --- | --- | --- |
+| `worktreeSetup` | `[]` | Shell commands run in order in each fresh task worktree, before Pick. Shade uses `["bun bootstrap"]`. A nonzero exit records stdout/stderr as failure evidence, removes the tree, and consumes a Pick attempt. |
+| `limits.parallelTasks` | `3` | Reserved concurrency limit; task builds currently remain sequential. |
 
 `cut`, `roast`, and `review` fan out. Every listed agent runs, and a FAIL from any one of
 them fails the step. Other stages use the first available agent. An unavailable agent
@@ -63,7 +78,7 @@ them fails the step. Other stages use the first available agent. An unavailable 
 | Cut sees only the human's words | Its prompt holds only `.terreno/brewery/<slug>/context.md` (your request and replies, verbatim), and it runs in a `git worktree` of HEAD where `.terreno/` does not exist. |
 | Roast judges a fixed tree | brewery commits after Pick, before Roast. Retries amend the task's commit. |
 | No self-approval | brewery owns the IP's `Status:` line and resets one an agent approved. Only `brewery answer` approves. |
-| Progress can't be faked | brewery checks each task box only after a Roast PASS. |
+| Progress can't be faked | brewery checks each task box only after a Roast PASS and cherry-pick onto the feature branch. |
 | Bounded loops | Pick attempts per task, cut and review rounds, finish pushes and hours, and a "same failure twice" stop. |
 | No tokens while waiting | brewery runs `gh pr checks --watch` itself and starts a Taste agent only on a red snapshot. |
 | Privacy | ntfy pings carry no content. The full message prints to the terminal and is saved in state. |

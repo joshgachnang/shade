@@ -3,12 +3,13 @@
 import type { Finding } from "../agents.ts";
 import { isApproved, markTask, parseTasks, readIp, writeIp } from "../ip.ts";
 import { brewBody, pickBody, reviewBody, reviewFixBody, roastBody, roastReviewFixBody } from "../prompts.ts";
-import { saveState, type TaskState } from "../state.ts";
+import { runDir, saveState, type TaskState } from "../state.ts";
 import { evidenceText, mergeVerdicts, runStage, type Ctx } from "../step.ts";
-import { anyChanges, commitAll, currentBranch, ensureExcluded, git, headSha, sh, trackedChanges, type Ci } from "../vcs.ts";
+import { addWorktree, removeWorktree, anyChanges, commitAll, currentBranch, ensureExcluded, git, headSha, sh, trackedChanges, type Ci } from "../vcs.ts";
 import { finish, type Outcome } from "./finish.ts";
 import { asksFrom, gate } from "./gate.ts";
-import { relative } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 
 const ensureBranch = async (ctx: Ctx): Promise<void> => {
   const { state } = ctx;
@@ -32,7 +33,44 @@ const ensureBranch = async (ctx: Ctx): Promise<void> => {
 
 type StepOutcome = "next" | "waiting";
 
-const buildTask = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState): Promise<StepOutcome> => {
+const land = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState): Promise<void> => {
+  const { state } = ctx;
+  if (!ts.commit) throw new Error(`brewery: ${id} has no commit to land`);
+  const ip = readIp(state.ip);
+  const ipRel = relative(state.repo, state.ip);
+  const index = await git(state.repo, "ls-files", "--stage", "--", ipRel);
+  const tracked = /^(\d+) ([a-f0-9]+) 0\t/.exec(index);
+  // Approval edits belong in the task commit. Move them out of the way while
+  // cherry-picking the worktree's copy, preserving them if landing fails.
+  if (tracked) await git(state.repo, "restore", "--source=HEAD", "--staged", "--worktree", "--", ipRel);
+  else unlinkSync(state.ip);
+  try {
+    await git(state.repo, "cherry-pick", ts.commit);
+  } catch (error) {
+    writeIp(state.ip, ip);
+    if (tracked) await git(state.repo, "update-index", "--cacheinfo", tracked[1], tracked[2], ipRel);
+    throw error;
+  }
+  writeIp(state.ip, markTask(readIp(state.ip), id));
+  ts.commit = await commitAll(state.repo, taskTitle, true);
+  ts.status = "passed";
+  ts.evidence = undefined;
+  saveState(state);
+};
+
+const taskContext = (ctx: Ctx, cwd: string): Ctx => {
+  const skillsRel = relative(ctx.state.repo, ctx.config.skillsDir);
+  return {
+    ...ctx,
+    state: { ...ctx.state, repo: cwd, ip: join(cwd, relative(ctx.state.repo, ctx.state.ip)) },
+    config: {
+      ...ctx.config,
+      skillsDir: skillsRel.startsWith("..") ? ctx.config.skillsDir : join(cwd, skillsRel),
+    },
+  };
+};
+
+const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, ts: TaskState): Promise<StepOutcome> => {
   const { state, config } = ctx;
   for (;;) {
     if (ts.attempts >= config.limits.pickAttempts) {
@@ -49,7 +87,29 @@ const buildTask = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState)
     ts.attempts += 1;
     saveState(state);
 
-    const [{ result: picked }] = await runStage(ctx, "pick", pickBody(ctx, id, taskTitle, ts.evidence), { task: id });
+    const branch = `brewery/${state.slug}/${id}`;
+    const taskCtx = taskContext(ctx, cwd);
+    if (!existsSync(cwd)) {
+      await addWorktree(state.repo, cwd, branch, await headSha(state.repo));
+      // The current approved IP can have tracked edits or still be untracked.
+      mkdirSync(dirname(taskCtx.state.ip), { recursive: true });
+      writeIp(taskCtx.state.ip, readIp(state.ip));
+      let setupFailed = false;
+      for (const command of config.worktreeSetup) {
+        const setup = await sh(cwd, ["bash", "-lc", command]);
+        if (setup.code === 0) continue;
+        ts.evidence = `Worktree setup FAIL: ${command} (exit ${setup.code})\n${setup.out}\n${setup.err}`;
+        ctx.log(`  ${ts.evidence}`);
+        await removeWorktree(state.repo, cwd);
+        await git(state.repo, "branch", "-D", branch);
+        saveState(state);
+        setupFailed = true;
+        break;
+      }
+      if (setupFailed) continue;
+    }
+
+    const [{ result: picked }] = await runStage(ctx, "pick", pickBody(taskCtx, id, taskTitle, ts.evidence), { task: id, cwd });
     if (picked.status === "BLOCKED") {
       await gate(ctx, asksFrom(picked, picked.action), `a decision on ${id}`, picked.summary ?? picked.action, id);
       return "waiting";
@@ -58,26 +118,23 @@ const buildTask = async (ctx: Ctx, id: string, taskTitle: string, ts: TaskState)
       ts.evidence = evidenceText(picked);
       continue;
     }
-    if (!(await anyChanges(state.repo))) {
+    if (!(await anyChanges(cwd))) {
       if (!ts.commit) {
         ts.evidence = "Pick reported PASS but changed no files.";
         continue;
       }
     } else {
       // Retries amend the task's own unpushed commit instead of stacking fix-ups.
-      const amend = Boolean(ts.commit) && ts.commit === (await headSha(state.repo));
-      ts.commit = await commitAll(state.repo, taskTitle, amend);
+      const amend = Boolean(ts.commit) && ts.commit === (await headSha(cwd));
+      ts.commit = await commitAll(cwd, taskTitle, amend);
     }
     saveState(state);
 
-    const verdict = mergeVerdicts(await runStage(ctx, "roast", roastBody(ctx, id, taskTitle, state.base), { task: id }));
-    if (await anyChanges(state.repo)) ctx.log(`  note: roast left changes in the tree; folding them into ${id}`);
+    const verdict = mergeVerdicts(await runStage(ctx, "roast", roastBody(taskCtx, id, taskTitle, state.base), { task: id, cwd }));
+    if (await anyChanges(cwd)) ctx.log(`  note: roast left changes in the tree; folding them into ${id}`);
     if (verdict.status === "PASS") {
-      writeIp(state.ip, markTask(readIp(state.ip), id));
-      ts.commit = await commitAll(state.repo, taskTitle, true);
-      ts.status = "passed";
-      ts.evidence = undefined;
-      saveState(state);
+      if (await anyChanges(cwd)) ts.commit = await commitAll(cwd, taskTitle, true);
+      await land(ctx, id, taskTitle, ts);
       return "next";
     }
     if (verdict.status === "BLOCKED") {
@@ -158,9 +215,19 @@ export const barrel = async (ctx: Ctx, ci: Ci): Promise<Outcome> => {
     for (const task of parseTasks(readIp(state.ip))) {
       state.tasks[task.id] ??= { status: task.done ? "passed" : "todo", attempts: 0 };
       const ts = state.tasks[task.id];
-      if (ts.status !== "todo") continue;
+      const cwd = join(runDir(state.repo, state.slug), "worktrees", task.id);
+      const cleanup = async (): Promise<void> => {
+        if (!existsSync(cwd)) return;
+        await removeWorktree(state.repo, cwd);
+        await git(state.repo, "branch", "-D", `brewery/${state.slug}/${task.id}`);
+      };
+      if (ts.status !== "todo") {
+        await cleanup();
+        continue;
+      }
       ctx.log(`■ ${task.id} — ${task.title}`);
-      if ((await buildTask(ctx, task.id, task.title, ts)) === "waiting") return "waiting";
+      if ((await buildTask(ctx, cwd, task.id, task.title, ts)) === "waiting") return "waiting";
+      await cleanup();
     }
     state.phase = "review";
     saveState(state);

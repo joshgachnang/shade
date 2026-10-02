@@ -34,6 +34,7 @@ export const FAN_OUT: ReadonlySet<Stage> = new Set<Stage>(["cut", "roast", "revi
 
 export interface Limits {
   pickAttempts: number;
+  parallelTasks: number;
   cutRounds: number;
   reviewRounds: number;
   finishPushes: number;
@@ -46,6 +47,7 @@ export interface Config {
   agents: Record<string, AgentProfile>;
   stages: Record<Stage, string[]>;
   skillsDir: string;
+  worktreeSetup: string[];
   notify: { ntfyUrl?: string };
   limits: Limits;
 }
@@ -75,9 +77,11 @@ export const DEFAULT_CONFIG: Config = {
     taste: ["claude"],
   },
   skillsDir: join(homedir(), ".claude", "skills"),
+  worktreeSetup: [],
   notify: {},
   limits: {
     pickAttempts: 3,
+    parallelTasks: 3,
     cutRounds: 2,
     reviewRounds: 2,
     finishPushes: 6,
@@ -105,6 +109,7 @@ const merge = (base: Config, over: PartialConfig): Config => ({
   agents: { ...base.agents, ...over.agents },
   stages: { ...base.stages, ...over.stages },
   skillsDir: over.skillsDir ?? base.skillsDir,
+  worktreeSetup: over.worktreeSetup ?? base.worktreeSetup,
   notify: { ...base.notify, ...over.notify },
   limits: { ...base.limits, ...over.limits },
 });

@@ -131,7 +131,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
     - unit tests assert `cutBody` names the decomposition axis;
     - an existing flow test still passes with the fake agent's IP unchanged.
 
-- [ ] **T3** — Build each task in its own worktree and land it on the feature branch
+- [x] **T3** — Build each task in its own worktree and land it on the feature branch
   - Depends on: none
   - Files: `tools/brewery/src/commands/barrel.ts`, `tools/brewery/src/vcs.ts`,
     `tools/brewery/src/config.ts`, `tools/brewery/test/flow.test.ts`, `.brewery.json` (new, at the
