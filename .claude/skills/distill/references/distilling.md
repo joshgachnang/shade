@@ -101,12 +101,21 @@ Open risks: <none, or one line each>
 ```
 
 The detailed task list, Assumptions, and the bottom sections follow. Write each task as one
-line in exactly this format, with its details in an indented block or the lines below it.
+line in exactly this format, with its details in an indented block.
 `brewery` parses these lines to track and commit each task, and uses the title as the
-commit subject:
+commit subject. In that block, `Depends on:` declares task dependencies, with or without
+a bullet, case-insensitively. Separate task IDs with commas and/or `and`; use `none`
+for an independent task. The block ends at the next task, heading, or unindented prose.
+A missing dependency line means the previous task in IP order; the first task defaults
+to no dependencies. Graph validation reports unknown IDs, self-dependencies, and cycle
+paths. A not-done task is ready when all its dependencies have landed on the feature
+branch; checking a dependency's box alone does not count as landing:
 
 ```markdown
 - [ ] **T1** — Add the cursor field to the reports API
+  - Depends on: none
+- [ ] **T2** — Use the cursor in the reports client
+  - Depends on: T1
 ```
 
 ## Anti-patterns

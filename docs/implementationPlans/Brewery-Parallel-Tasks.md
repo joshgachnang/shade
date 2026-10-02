@@ -82,7 +82,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
 
 ## Tasks
 
-- [ ] **T1** — Parse and validate task dependencies in the IP
+- [x] **T1** — Parse and validate task dependencies in the IP
   - Depends on: none
   - Files: `tools/brewery/src/ip.ts`, `tools/brewery/test/unit.test.ts`
   - `IpTask` gains `deps: string[]`. `parseTasks` reads a `Depends on: T1, T2` / `Depends on: none`
