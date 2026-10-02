@@ -104,7 +104,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
       `deps` `[]` and `["T1"]`.
   - Docs: the task-line paragraph in `.claude/skills/distill/references/distilling.md`.
 
-- [ ] **T2** — Teach distill and cut to split work into small, parallel-ready tasks
+- [x] **T2** — Teach distill and cut to split work into small, parallel-ready tasks
   - Depends on: none
   - Files:
     - `tools/brewery/src/prompts.ts` (`distillBody`, `fixBody`, `cutBody`)

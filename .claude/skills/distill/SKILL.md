@@ -50,12 +50,17 @@ interactive, single-session run.
    recommendation, mark the question fundamental, and it goes first in the sign-off.
    With no fundamental questions, skip straight to writing.
 7. **Shape.** Contracts, models, and APIs before implementation detail. Scope, non-scope,
-   architecture decisions, risks, rollout, dependencies.
+   architecture decisions, risks, rollout, dependencies. Put the tracer first, then split
+   work into the smallest independently testable behaviours, each roast-able on its own.
+   Split any task that needs more than one roast-able behaviour. Prefer wide over deep:
+   fan out independent work and keep dependency chains short. Tasks that share a file
+   depend on each other, so their writes are ordered.
 8. **Specify proof.** Every acceptance criterion is observable and names its verification
    method. "Manual check" is not one.
-9. **Write** the IP: the brief on top, then the dependency-ordered tracer-bullet task
-   list (files or seams, criteria, blockers, verification, docs, supporting skills), then
-   the bottom sections from [`distilling`](references/distilling.md): Open questions,
+9. **Write** the IP: the brief on top, then the tracer first and the small, parallel-ready task
+   list (criteria, blockers, verification, docs, supporting skills). Every task carries
+   `Depends on:` (`none` or task IDs) and `Files:` (the files or seams it touches). Follow
+   the task list with the bottom sections from [`distilling`](references/distilling.md): Open questions,
    Expansions, Decisions, Sign-off. Build the plan on the recommendations. Set
    `Status: draft`.
 10. **Cut, then fix.** Invoke the `cut` skill with the IP path and the user-context packet

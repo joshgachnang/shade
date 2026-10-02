@@ -6,10 +6,47 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildMessage, formatAsks, parseReply, smsVersion } from "../src/human.ts";
 import { isApproved, markTask, orientation, parseTasks, readStatus, readyTasks, setStatus, taskGraphProblems, title } from "../src/ip.ts";
-import { slugify } from "../src/state.ts";
+import { newState, slugify } from "../src/state.ts";
+import { cutBody, distillBody, fixBody } from "../src/prompts.ts";
+import type { Ctx } from "../src/step.ts";
 import { mergeVerdicts } from "../src/step.ts";
 import { isGreen } from "../src/commands/finish.ts";
 import { IP } from "./helpers.ts";
+
+describe("planning prompts", () => {
+  const ctx: Ctx = {
+    state: newState({ slug: "add-greeting", repo: "/repo", ip: "/repo/plan.md", base: "master", phase: "distill" }),
+    config: { ...DEFAULT_CONFIG, skillsDir: "/repo/.claude/skills" },
+    log: () => {},
+  };
+
+  for (const [name, body] of [
+    ["distill", () => distillBody(ctx, "Add greeting", "/repo/plan.md")],
+    ["fix", () => fixBody(ctx, [])],
+  ] as const) {
+    test(`${name} requires small, parallel-ready tasks`, () => {
+      const prompt = body();
+      expect(prompt).toContain("tracer first");
+      expect(prompt).toContain("one independently testable behaviour");
+      expect(prompt).toContain("roasted on its own");
+      expect(prompt).toContain("Depends on: none");
+      expect(prompt).toContain("Depends on: T1, T3");
+      expect(prompt).toContain("Every task carries an indented Depends on: line");
+      expect(prompt).toContain("Files: listing the files or seams it touches");
+      expect(prompt).toContain("tasks that share a file depend on each other");
+      expect(prompt).toContain("Prefer wide over deep");
+      expect(prompt).toContain("Split any task that needs more than one roast-able behaviour");
+    });
+  }
+
+  test("cut attacks false independence, oversized tasks, and unnecessary chains", () => {
+    const prompt = cutBody(ctx, "Add greeting", "plan.md");
+    expect(prompt).toContain("7. Decomposition");
+    expect(prompt).toContain("two tasks that write the same file with no dependency between them");
+    expect(prompt).toContain("a task that is really two independently roast-able behaviours");
+    expect(prompt).toContain("a chain that could be a fan-out");
+  });
+});
 
 describe("ip", () => {
   test("parses task lines, status, title, and orientation", () => {

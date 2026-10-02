@@ -58,7 +58,10 @@ planner's context). Pass the packet and this brief:
 >    missing seams, wrong order, hidden dependencies, claims about the code that are false.
 > 6. **Risk.** PHI or security exposure, data migration, irreversible operations,
 >    rollout and compatibility gaps the plan does not address.
-> 7. **Readability.** The brief does not make sense to someone who knows only the request.
+> 7. **Decomposition.** Two tasks that write the same file with no dependency between
+>    them; a task that is really two independently roast-able behaviours; a chain that
+>    could be a fan-out. Check `Depends on:` against `Files:` and the proof for each task.
+> 8. **Readability.** The brief does not make sense to someone who knows only the request.
 >
 > Return at most 12 findings, most severe first, as a markdown table:
 > `ID | Severity (blocking / should-fix / nit) | Axis | Where in the IP | Attack | Evidence | Suggested fix`.

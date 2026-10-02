@@ -7,6 +7,15 @@ import type { PrSnapshot } from "./vcs.ts";
 
 const skill = (ctx: Ctx, path: string): string => join(ctx.config.skillsDir, path);
 
+const taskSplitting = `Task splitting rules:
+- Put the tracer first.
+- Each task is one independently testable behaviour that can be roasted on its own.
+- Every task carries an indented Depends on: line (Depends on: none or Depends on: T1, T3)
+  and Files: listing the files or seams it touches.
+- Two tasks that share a file depend on each other; order their writes with a dependency.
+- Prefer wide over deep: fan out independent tasks and keep dependency chains short.
+- Split any task that needs more than one roast-able behaviour.`;
+
 export const header = (ctx: Ctx, resultFile: string): string => {
   const answers = ctx.state.answers.length
     ? `\nPrior human answers. Treat these as settled decisions; do not re-ask them.\n${ctx.state.answers
@@ -50,6 +59,8 @@ Read and follow ${skill(ctx, "distill/SKILL.md")} steps 1–9, with these overri
 - In \`ask\`, put the sign-off questions: fundamental first, then the open questions whose
   answers would change the most. At most 5. Status PASS when the IP is written.
 
+${taskSplitting}
+
 The request, verbatim:
 
 <request>
@@ -63,6 +74,8 @@ The IP is ${ctx.state.ip}. A fresh attacker that saw only the human's words prod
 findings. For each one, edit the IP, move it to Open questions or Expansions, or rebut it in
 one line with evidence. Every blocking finding must be handled. Record the tally in the
 Sign-off section's \`Cut:\` line. Leave the \`Status:\` line alone. Keep the task line format.
+
+${taskSplitting}
 
 Result keys: \`structural\` (true when a blocking finding changed tasks, the tracer, or the
 data model), \`tally\` ({edited, moved, rebutted}), and \`ask\` (the refreshed sign-off
@@ -100,6 +113,9 @@ export const cutBody = (ctx: Ctx, context: string, ipRel: string): string => `##
 Read ${skill(ctx, "cut/SKILL.md")} and act as the attacker it describes. You are in a clean
 checkout. You have only what the human said and the plan at ${ipRel}. You may read the files
 the IP cites to check its claims about the code. Do not look for planning notes.
+
+Attack axis 7. Decomposition: two tasks that write the same file with no dependency between them;
+a task that is really two independently roast-able behaviours; a chain that could be a fan-out.
 
 Result: status PASS, and \`findings\`: at most 12, most severe first, each
 {"id": "C1", "severity": "blocking" | "should-fix" | "nit", "axis": "", "where": "",
