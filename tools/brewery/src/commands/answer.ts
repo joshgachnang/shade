@@ -3,6 +3,7 @@ import { formatAsks, parseReply } from "../human.ts";
 import { applyReplyBody } from "../prompts.ts";
 import { appendContext, saveState } from "../state.ts";
 import { runStage, type Ctx } from "../step.ts";
+import { anyChanges, commitAll } from "../vcs.ts";
 import { approve, cutAndFix, sendForSignoff } from "./distill.ts";
 
 export type AnswerOutcome = "approved" | "waiting" | "continue" | "stopped";
@@ -44,7 +45,14 @@ export const answer = async (ctx: Ctx, reply: string): Promise<AnswerOutcome> =>
     if (text.startsWith("skip")) task.status = "skipped";
     else task.attempts = 0;
   }
-  if (state.phase === "review") {
+  if (state.phase === "integrate") {
+    if (text.startsWith("ship")) {
+      // A blocked repair can leave edits; branch review must see their committed HEAD.
+      if (await anyChanges(state.repo)) await commitAll(state.repo, "Fix integration of parallel tasks", false);
+      state.phase = "review";
+    } else state.integrationRounds = 0;
+  }
+  if (state.phase === "review" && waiting.task !== "INTEGRATE") {
     if (text.startsWith("ship")) state.phase = "brew";
     else state.reviewRounds = 0;
   }

@@ -13,6 +13,7 @@ brewery answer <slug> "ok, 2b"   apply the reply → Status: approved
 brewery barrel <slug>            ready tasks (up to parallelTasks), each: create worktree → setup → codex picks → commit → claude roasts
                                     (FAIL → pick again with evidence, amend the worktree commit)
                                     PASS → cherry-pick onto feature branch → tick checkbox and amend → remove worktree
+                                  if tasks overlapped: integrated roast → repair and commit → roast again
                                   branch review: claude + codex in parallel → fix blocking findings
                                   brew: claude opens the PR
                                   finish: gh waits (no tokens) → claude tastes each red snapshot
@@ -94,6 +95,20 @@ branch head and approved IP after an interrupted cherry-pick, before rebuilding.
 shows active tasks, for example `running T2, T3`. Step artifacts carry unique sequence
 numbers and task ids in the main tree.
 
+After all tasks land, a run in which at least two task builds overlapped enters the
+persisted `integrate` phase before branch review. `roast INTEGRATE` uses `stages.roast`
+fan-out to prove every task's acceptance criteria on the combined HEAD and run the
+repository's full test command. Sequential runs skip this phase.
+
+A failure passes pooled evidence to `pick INTEGRATE` in the main tree. Brewery commits
+repairs as `Fix integration of parallel tasks` before roasting the combined tree again.
+Repair attempts use a separate persisted `integrationRounds` counter, bounded by
+`limits.reviewRounds`; branch review keeps its own full allowance. Exhaustion gates
+with `retry` / `ship` / `stop`: retry resets integration's allowance, ship proceeds to
+branch review, and stop preserves the phase for later resumption. A BLOCKED integration
+step gates immediately without starting review. Retained repair edits are committed
+before a resumed Roast or a `ship` reply advances to branch review.
+
 `cut`, `roast`, and `review` fan out. Every listed agent runs, and a FAIL from any one of
 them fails the step. Other stages use the first available agent. An unavailable agent
 (missing binary, unset key) is skipped with a note.
@@ -122,7 +137,7 @@ saves the state, and exits with code 3. When you are at the terminal, it asks fo
 reply right there instead. Reply from anywhere with `brewery answer <slug> "<reply>"`:
 
 - sign-off: `ok`, `ok, 2b`, `no: <why>`, or answers without approval (applied, then asked again)
-- gates: `1a`, `retry: <hint>`, `skip` (task), `ship` (review), `stop`
+- gates: `1a`, `retry: <hint>`, `skip` (task), `ship` (integration or review), `stop`
 
 `brewery status` lists runs and what is waiting on you. Each step's prompt, log, and result
 are in `.terreno/brewery/<slug>/steps/`.

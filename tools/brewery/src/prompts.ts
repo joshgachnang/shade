@@ -151,6 +151,29 @@ running things. Do not fix implementation code. Do not commit.
 Status PASS only when every criterion has passing evidence. FAIL with one \`fail\` entry per
 disproved criterion (need, want, got, reproducible ev).`;
 
+export const integratedRoastBody = (ctx: Ctx): string => `## Step: roast INTEGRATE (integrated branch)
+
+Independently prove every task's acceptance criteria on the combined tree against the
+IP at ${ctx.state.ip}. Run the repo's full test command, including cross-task behavior.
+All tasks have landed on this feature branch. Judge the combined HEAD, not just the
+last task commit. Use ${skill(ctx, "barrel/stages/roast.md")} for verification method.
+Do not fix code or commit. Do only this integrated roast, then exit.
+Status PASS only with passing evidence for every criterion; otherwise FAIL with
+one fail entry per disproved criterion (need, want, got, reproducible ev).`;
+
+export const integrationFixBody = (ctx: Ctx, evidence: string): string => `## Step: pick INTEGRATE (fix integration of parallel tasks)
+
+Read ${skill(ctx, "barrel/stages/pick.md")} for method (specify, failing test, fix, clean up).
+Fix the combined-tree failures against the IP at ${ctx.state.ip} in the main tree.
+Do not commit, push, edit task checkboxes, run Roast, or continue to another stage.
+Status PASS when the integration failures are fixed and your own checks are green.
+Use the evidence below to form a focused hypothesis and add a regression test.
+
+Evidence:
+\`\`\`json
+${evidence}
+\`\`\``;
+
 export const reviewBody = (ctx: Ctx, base: string): string => `## Step: branch review
 
 Review the whole branch against the IP at ${ctx.state.ip}, following

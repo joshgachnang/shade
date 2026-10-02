@@ -199,6 +199,7 @@ describe("barrel", () => {
       { match: `pick ${id}`, sleepMs: 250, write: { [`${id}.txt`]: `${id}\n` }, result: { status: "PASS", action: "built" } },
       { match: `roast ${id}`, result: { status: "PASS", action: "proven" } },
     ]),
+    { match: "roast INTEGRATE", result: { status: "PASS", action: "combined tree proven" } },
     { match: "branch review", result: { status: "PASS", action: "reviewed", findings: [] } },
     { match: "brew", result: { status: "PASS", action: "opened", pr: 7 } },
   ];
@@ -207,6 +208,124 @@ describe("barrel", () => {
       const [step, event, at] = line.split("\t");
       return { step, event, at: Number(at) };
     });
+
+  test("integrated roast repairs a combined-tree failure before branch review", async () => {
+    const failure = { need: "combined greeting", want: "compatible tasks", got: "incompatible", ev: "bun test: combined greeting failed" };
+    const { repo, ctx } = setupApproved([
+      { match: "roast INTEGRATE", agent: "beta", times: 1, result: { status: "FAIL", action: "repair combined greeting", fail: [failure] } },
+      { match: "roast INTEGRATE", result: { status: "PASS", action: "combined tree proven" } },
+      { match: "pick INTEGRATE", write: { "integration.txt": "compatible\n" }, result: { status: "PASS", action: "repaired" } },
+      ...successfulTasks(["T1", "T2", "T3", "T4"]).map((entry) =>
+        ["pick T2", "pick T3"].includes(entry.match)
+          ? { ...entry, signal: entry.match, waitFor: [entry.match === "pick T2" ? "pick T3" : "pick T2"] } : entry),
+    ]);
+    writeFileSync(ctx.state.ip, diamond);
+    ctx.config.stages.roast = ["alpha", "beta"];
+    expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+    expect(readFileSync(join(repo, "integration.txt"), "utf8")).toBe("compatible\n");
+    expect(run(repo, "git", "log", "--format=%s", "master..HEAD").split("\n")).toEqual([
+      "Fix integration of parallel tasks", "Join", expect.any(String), expect.any(String), "Root",
+    ]);
+    const history = ctx.state.history;
+    const integrated = history.filter((e) => e.task === "INTEGRATE");
+    expect(integrated.filter((e) => e.stage === "roast")).toHaveLength(4);
+    expect(integrated.filter((e) => e.stage === "pick")).toHaveLength(1);
+    expect(Math.min(...history.filter((e) => e.stage === "review").map((e) => e.seq)))
+      .toBeGreaterThan(Math.max(...integrated.map((e) => e.seq)));
+    const fixPrompt = stepPrompts(repo, "greet", /-pick-INTEGRATE-/)[0];
+    expect(fixPrompt).toContain(failure.ev);
+    expect(fixPrompt).toContain("[beta]");
+    const roastPrompt = stepPrompts(repo, "greet", /-roast-INTEGRATE-/)[0];
+    expect(roastPrompt).toContain("every task's acceptance criteria on the combined tree");
+    expect(roastPrompt).toContain("full test command");
+    const calls = readFileSync(`${ctx.config.agents.alpha.env?.FAKE_PLAN}.calls.log`, "utf8").split("\n");
+    expect(calls.filter((line) => line.includes("INTEGRATE")).every((line) => line.split("\t")[2] === repo)).toBe(true);
+    expect(run(repo, "git", "status", "--porcelain")).toBe("");
+  });
+
+  for (const reply of ["retry", "ship", "stop"]) {
+    test(`integration exhaustion persists its gate and handles ${reply}`, async () => {
+      const { repo, ctx } = setupApproved([
+        { match: "roast INTEGRATE", result: { status: "FAIL", action: "combined failure", fail: [{ need: "compatibility", want: "pass", got: "fail", ev: "bun test: integration failed" }] } },
+        { match: "pick INTEGRATE", result: { status: "PASS", action: "no repair found" } },
+        ...successfulTasks([]),
+      ]);
+      // Resume an already landed parallel build; no task gets rebuilt.
+      writeFileSync(ctx.state.ip, IP("approved 2026-09-27").replaceAll("- [ ]", "- [x]"));
+      run(repo, "git", "add", "docs/plans/greet.md");
+      run(repo, "git", "commit", "-m", "Landed tasks");
+      ctx.state.parallelRan = true;
+      ctx.config.limits.reviewRounds = 1;
+      const ci = fakeCi([green("a")]);
+      expect(await barrel(ctx, ci)).toBe("waiting");
+      expect(ctx.state.phase).toBe("integrate");
+      expect(ctx.state.integrationRounds).toBe(1);
+      expect(ctx.state.reviewRounds).toBe(0);
+      expect(ctx.state.waiting?.task).toBe("INTEGRATE");
+      expect(ctx.state.waiting?.asks[0].opts).toEqual(["retry", "ship", "stop"]);
+      expect(ctx.state.waiting?.message).toContain("integration failed");
+      expect(ctx.state.history.filter((e) => e.task === "INTEGRATE" && e.stage === "roast")).toHaveLength(2);
+      expect(ctx.state.history.some((e) => e.stage === "review")).toBe(false);
+      expect(run(repo, "git", "rev-list", "--count", "master..HEAD")).toBe("0");
+      expect(await answer(ctx, reply)).toBe(reply === "stop" ? "stopped" : "continue");
+      if (reply === "stop") {
+        expect(ctx.state.phase).toBe("integrate");
+        expect(ctx.state.integrationRounds).toBe(1);
+        return;
+      }
+      if (reply === "ship") {
+        expect(ctx.state.phase).toBe("review");
+        expect(await barrel(ctx, ci)).toBe("done");
+        expect(ctx.state.history.filter((e) => e.task === "INTEGRATE" && e.stage === "roast")).toHaveLength(2);
+      } else {
+        expect(ctx.state.integrationRounds).toBe(0);
+        // Reload durable state to prove the bounded integration retry survives a new invocation.
+        const resumed = quietCtx(JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8")), ctx.config);
+        expect(await barrel(resumed, ci)).toBe("waiting");
+        expect(resumed.state.integrationRounds).toBe(1);
+        expect(resumed.state.history.filter((e) => e.task === "INTEGRATE" && e.stage === "pick")).toHaveLength(2);
+      }
+    });
+  }
+
+  for (const reply of ["retry: retained repair is approved", "ship"]) {
+    test(`resumed BLOCKED integration Pick commits retained repairs on ${reply}`, async () => {
+      const { repo, ctx } = setupApproved([
+        { match: "roast INTEGRATE", times: 1, result: { status: "FAIL", action: "repair" } },
+        { match: "pick INTEGRATE", write: { "retained.txt": "repair\n" }, result: { status: "BLOCKED", action: "approve retained repair" } },
+        ...successfulTasks([]),
+      ]);
+      writeFileSync(ctx.state.ip, IP("approved 2026-09-27").replaceAll("- [ ]", "- [x]"));
+      run(repo, "git", "add", "docs/plans/greet.md");
+      run(repo, "git", "commit", "-m", "Landed tasks");
+      ctx.state.parallelRan = true;
+      const ci = fakeCi([green("a")]);
+      expect(await barrel(ctx, ci)).toBe("waiting");
+      expect(run(repo, "git", "status", "--porcelain")).toContain("retained.txt");
+      expect(await answer(ctx, reply)).toBe("continue");
+      const resumed = quietCtx(JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8")), ctx.config);
+      expect(await barrel(resumed, ci)).toBe("done");
+      expect(run(repo, "git", "log", "--format=%s", "master..HEAD")).toBe("Fix integration of parallel tasks");
+      expect(run(repo, "git", "show", "HEAD:retained.txt")).toBe("repair");
+      expect(run(repo, "git", "status", "--porcelain")).toBe("");
+    });
+  }
+
+  for (const blockedStage of ["roast", "pick"]) {
+    test(`BLOCKED integrated ${blockedStage} gates before review`, async () => {
+      const blocked = { status: "BLOCKED", action: "choose integration behavior", ask: [{ q: "Which behavior?", rec: "compatible", opts: ["compatible", "legacy"] }] };
+      const { ctx } = setupApproved([
+        { match: "roast INTEGRATE", result: blockedStage === "roast" ? blocked : { status: "FAIL", action: "repair" } },
+        { match: "pick INTEGRATE", result: blocked },
+      ]);
+      writeFileSync(ctx.state.ip, IP("approved 2026-09-27").replaceAll("- [ ]", "- [x]"));
+      ctx.state.parallelRan = true;
+      expect(await barrel(ctx, fakeCi([green("a")]))).toBe("waiting");
+      expect(ctx.state.waiting?.task).toBe("INTEGRATE");
+      expect(ctx.state.waiting?.asks[0].q).toBe("Which behavior?");
+      expect(ctx.state.history.some((e) => e.stage === "review")).toBe(false);
+    });
+  }
 
   test("schedules a diamond concurrently and starts the join after both parents land", async () => {
     const { repo, ctx } = setupApproved(successfulTasks(["T1", "T2", "T3", "T4"]).map((entry) =>
@@ -260,7 +379,9 @@ describe("barrel", () => {
     expect(await proc.exited).toBe(3);
     expect(err).toBe("");
     expect(out).toContain("test stops before external CI");
-    expect(JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8")).parallelRan).toBeUndefined();
+    const sequentialState = JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8"));
+    expect(sequentialState.parallelRan).toBeUndefined();
+    expect(sequentialState.history.some((entry: { task?: string }) => entry.task === "INTEGRATE")).toBe(false);
     const events = timings(ctx);
     expect(events.filter((e) => e.step.startsWith("pick ") && e.event === "start").map((e) => e.step.split(" ")[1])).toEqual(["T1", "T2", "T3", "T4"]);
     for (let i = 1; i < 4; i++) {

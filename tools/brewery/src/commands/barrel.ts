@@ -2,7 +2,7 @@
 // separate agent processes; brewery commits between them so Roast judges a fixed tree.
 import type { Ask, Finding } from "../agents.ts";
 import { isApproved, markTask, parseTasks, readyTasks, taskGraphProblems, readIp, writeIp } from "../ip.ts";
-import { brewBody, pickBody, reviewBody, reviewFixBody, roastBody, roastReviewFixBody } from "../prompts.ts";
+import { integratedRoastBody, integrationFixBody, brewBody, pickBody, reviewBody, reviewFixBody, roastBody, roastReviewFixBody } from "../prompts.ts";
 import { runDir, saveState, type TaskState } from "../state.ts";
 import { evidenceText, mergeVerdicts, runStage, type Ctx } from "../step.ts";
 import { addWorktree, removeWorktree, anyChanges, commitAll, currentBranch, ensureExcluded, git, headSha, sh, trackedChanges, type Ci } from "../vcs.ts";
@@ -196,6 +196,35 @@ const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, t
   }
 };
 
+const integrateBranch = async (ctx: Ctx): Promise<StepOutcome> => {
+  const { state, config } = ctx;
+  for (;;) {
+    // A resumed BLOCKED Pick can retain partial repairs in the main tree.
+    // Commit them before any Roast so verification always judges a fixed HEAD.
+    if (await anyChanges(state.repo)) await commitAll(state.repo, "Fix integration of parallel tasks", false);
+    const verdict = mergeVerdicts(await runStage(ctx, "roast", integratedRoastBody(ctx), { task: "INTEGRATE", parallel: true }));
+    if (verdict.status === "PASS") return "next";
+    if (verdict.status === "BLOCKED") {
+      await gate(ctx, asksFrom(verdict, verdict.action), "a decision on integration", verdict.action, "INTEGRATE");
+      return "waiting";
+    }
+    const evidence = evidenceText(verdict);
+    if ((state.integrationRounds ?? 0) >= config.limits.reviewRounds) {
+      await gate(ctx,
+        [{ q: `Integration still fails after ${state.integrationRounds ?? 0} repair rounds. How should I proceed?`, rec: "retry", opts: ["retry", "ship", "stop"] }],
+        "integration failures", evidence.slice(0, 600), "INTEGRATE");
+      return "waiting";
+    }
+    state.integrationRounds = (state.integrationRounds ?? 0) + 1;
+    saveState(state);
+    const [{ result: fixed }] = await runStage(ctx, "pick", integrationFixBody(ctx, evidence), { task: "INTEGRATE" });
+    if (fixed.status === "BLOCKED") {
+      await gate(ctx, asksFrom(fixed, fixed.action), "a decision on integration", fixed.summary ?? fixed.action, "INTEGRATE");
+      return "waiting";
+    }
+  }
+};
+
 const reviewBranch = async (ctx: Ctx): Promise<StepOutcome> => {
   const { state, config } = ctx;
   let open: Finding[] = [];
@@ -367,6 +396,11 @@ export const barrel = async (ctx: Ctx, ci: Ci): Promise<Outcome> => {
 
   if (state.phase === "build") {
     if ((await buildReadyTasks(ctx)) === "waiting") return "waiting";
+    state.phase = state.parallelRan ? "integrate" : "review";
+    saveState(state);
+  }
+  if (state.phase === "integrate") {
+    if ((await integrateBranch(ctx)) === "waiting") return "waiting";
     state.phase = "review";
     saveState(state);
   }

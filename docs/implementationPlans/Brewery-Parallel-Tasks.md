@@ -215,7 +215,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
     - `.claude/skills/barrel/SKILL.md`: Drive step 2 and the brewery paragraph;
     - shade `CLAUDE.md`: one sentence in the brewery paragraph.
 
-- [ ] **T6** — Roast the integrated branch after a parallel build
+- [x] **T6** — Roast the integrated branch after a parallel build
   - Depends on: T5
   - Files: `tools/brewery/src/commands/barrel.ts`, `tools/brewery/src/prompts.ts`,
     `tools/brewery/test/flow.test.ts`
