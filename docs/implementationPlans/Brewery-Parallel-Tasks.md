@@ -1,6 +1,6 @@
 # Brewery: build small, composable tasks in parallel
 
-**Status:** Design
+**Status:** Open
 **Priority:** High
 **Effort:** Medium batch (3-5 days)
 **IP:** IP-019
@@ -242,14 +242,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
 
 ## Open questions (recommendation assumed)
 
-| ID | Question | Recommendation | Why | If answered differently | Tasks affected |
-| --- | --- | --- | --- | --- | --- |
-| Q1 | Default `limits.parallelTasks`? | 3 | Wide enough to roughly halve a typical 6-task plan, and each task holds a worktree plus a pick agent; zerg sessions default to 8 GB | A different default, one constant | T3 |
-| Q2 | How does a passed task reach the feature branch? | Cherry-pick, so each task stays one commit | Keeps today's history and Brew's "do not rewrite task commits" rule | Merge commits: history shows the fan-out, but brew/finish need to tolerate merges | T3, T5 |
-| Q3 | On a land conflict, rebuild or ask you? | Rebuild from the new head, counting an attempt | Conflicts are engineering work, not a human gate, per barrel's gate rules | Gate on every conflict: safer, slower, more pings | T5 |
-| Q4 | Run a combined roast after a parallel build? | Yes, only when tasks overlapped | Tasks that pass separately can break each other; review is read-only and CI comes too late | Skip it and rely on branch review plus finish's CI; saves one fan-out per run | T6 |
-| Q5 | Set up each worktree with `bun bootstrap` in shade? | Yes, through `.brewery.json` `worktreeSetup` | `CLAUDE.md` requires it in any fresh worktree; picks can't run tests without it | Share `node_modules` by symlink: faster, but leaks state between tasks | T3 |
-| Q6 | What does a task with no `Depends on:` line mean? | The previous task | Old IPs keep running exactly as now; distill always writes the line from now on | `none`: old IPs suddenly fan out without having been split for it | T1 |
+None.
 
 ## Expansions (follow up later)
 
@@ -261,9 +254,18 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
 
 ## Decisions
 
-None.
+Settled by the sign-off reply "ok" on 2026-10-02, which accepts every recommendation.
+
+| ID | Question asked | Answer | What it changes |
+| --- | --- | --- | --- |
+| Q1 | Default `limits.parallelTasks`? | 3 (recommendation accepted) | T3 |
+| Q2 | How does a passed task reach the feature branch? | Cherry-pick, so each task stays one commit (recommendation accepted) | T3, T5 |
+| Q3 | On a land conflict, rebuild or ask you? | Rebuild from the new head, counting an attempt (recommendation accepted) | T5 |
+| Q4 | Run a combined roast after a parallel build? | Yes, only when tasks overlapped (recommendation accepted) | T6 |
+| Q5 | Set up each worktree with `bun bootstrap` in shade? | Yes, through `.brewery.json` `worktreeSetup` (recommendation accepted) | T3 |
+| Q6 | What does a task with no `Depends on:` line mean? | The previous task (recommendation accepted) | T1 |
 
 ## Sign-off
 
-Status: awaiting sign-off (sent 2026-10-01 via Claude Code)
+Status: approved 2026-10-02
 Cut: 0 rounds (written by hand in a zerg session, not by `brewery distill`; run `brewery cut` on it before approving if you want the attack)
