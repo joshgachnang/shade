@@ -61,6 +61,12 @@ the main tree. After Roast passes, brewery cherry-picks the task commit, checks 
 box inside that landed commit, records the landed SHA, and removes the worktree and
 local branch. Retries after Roast failures amend the same worktree commit. Gated tasks
 retain their worktree and commit for a later retry; skipping a task removes that tree.
+Cut and failure-path cleanup is best effort: a removal or branch deletion failure logs a
+cleanup warning and preserves the original findings, error, or setup evidence. Failed
+setup trees are never passed to Pick; cleanup retries consume the bounded attempt
+allowance and gate with the setup evidence if cleanup remains unsuccessful. Retained
+task paths stay in state for later cleanup. Cleanup after a successful land remains
+strict, so a failure stops the run with the landed commit recorded.
 
 | Config | Default | Behavior |
 | --- | --- | --- |

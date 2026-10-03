@@ -1,8 +1,9 @@
 // End-to-end runs against a temp git repo with scripted fake agents.
-import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { answer } from "../src/commands/answer.ts";
+import { runCut } from "../src/commands/cut.ts";
 import { barrel } from "../src/commands/barrel.ts";
 import { cutAndFix, distill, sendForSignoff, writeDraft } from "../src/commands/distill.ts";
 import { finish } from "../src/commands/finish.ts";
@@ -385,6 +386,42 @@ describe("distill → sign-off → answer", () => {
     expect(state.waiting?.kind).toBe("signoff");
     expect(readStatus(readIp(state.ip))).toStartWith("awaiting sign-off");
   });
+});
+
+describe("cut cleanup failures", () => {
+  for (const failure of ["exit", "spawn"] as const) {
+    for (const successful of [false, true]) {
+      test(`preserves ${successful ? "findings" : "the cut error"} when removal fails at ${failure}`, async () => {
+        const repo = tempRepo();
+        const ip = join(repo, "plan.md");
+        writeFileSync(ip, IP("draft"));
+        const finding = { severity: "blocking" as const, attack: "Missing greeting", evidence: "No greeting in the plan" };
+        const { config } = fakeSetup(repo, [{ match: "cut", result: { status: "PASS", action: "attacked", findings: [finding] } }]);
+        config.stages.cut = successful ? ["alpha"] : [];
+        const ctx = quietCtx(newState({ slug: "greet", repo, ip, base: "master", phase: "distill" }), config);
+        const spawn = Bun.spawn;
+        let tree: string | undefined;
+        // Force failure only at the OS boundary; keep the real stage and Git repo.
+        const spy = spyOn(Bun, "spawn").mockImplementation(((argv: string[], options: unknown) => {
+          if (argv[0] === "git" && argv[1] === "worktree" && argv[2] === "remove") {
+            tree = argv.at(-1);
+            if (failure === "spawn") throw new Error("cleanup spawn unavailable");
+            return spawn(["git", "worktree", "remove", "--force", join(repo, "missing-tree")], options as Parameters<typeof spawn>[1]);
+          }
+          return spawn(argv, options as Parameters<typeof spawn>[1]);
+        }) as typeof Bun.spawn);
+        try {
+          if (successful) expect(await runCut(ctx)).toEqual([{ ...finding, agent: "alpha" }]);
+          else await expect(runCut(ctx)).rejects.toThrow("brewery: no available agent for cut");
+          expect(ctx.lines.some((line) => line.includes("cleanup") && line.includes(tree!))).toBe(true);
+          expect(ctx.lines.join("\n")).toContain(failure === "spawn" ? "cleanup spawn unavailable" : "not a working tree");
+        } finally {
+          spy.mockRestore();
+          if (tree) run(repo, "git", "worktree", "remove", "--force", tree);
+        }
+      });
+    }
+  }
 });
 
 describe("barrel", () => {
@@ -852,6 +889,72 @@ describe("barrel", () => {
     expect(run(repo, "git", "branch", "--list", "brewery/greet/T1")).toBe("");
     expect(parseTasks(readIp(ctx.state.ip)).map((task) => task.done)).toEqual([false, false]);
     expect(run(repo, "git", "log", "--format=%s", "master..HEAD")).toBe("");
+  });
+
+  test("preserves setup evidence and gates when a locked task worktree cannot be cleaned", async () => {
+    const { repo, ctx } = setupApproved([]);
+    ctx.config.limits.pickAttempts = 2;
+    ctx.config.worktreeSetup = ["git worktree lock --reason cleanup-test .; printf 'setup stdout'; printf 'setup stderr' >&2; exit 7"];
+    const tree = join(runDir(repo, "greet"), "worktrees", "T1");
+    try {
+      expect(await barrel(ctx, fakeCi([green("a")]))).toBe("waiting");
+      const saved = loadState("greet", repo);
+      expect(saved.tasks.T1.attempts).toBe(2);
+      expect(saved.tasks.T1.evidence).toContain("Worktree setup FAIL");
+      expect(saved.tasks.T1.evidence).toContain("exit 7");
+      expect(saved.tasks.T1.evidence).toContain("setup stdout");
+      expect(saved.tasks.T1.evidence).toContain("setup stderr");
+      expect(saved.waiting?.task).toBe("T1");
+      expect(saved.waiting?.message).toContain("setup stderr");
+      expect(saved.history).toHaveLength(0);
+      expect(ctx.lines.join("\n")).toContain("cleanup");
+      expect(ctx.lines.join("\n")).toContain("locked");
+      expect(saved.tasks.T1.worktree).toBe(tree);
+      expect(parseTasks(readIp(ctx.state.ip)).map((task) => task.done)).toEqual([false, false]);
+    } finally {
+      run(repo, "git", "worktree", "unlock", tree);
+      run(repo, "git", "worktree", "remove", "--force", tree);
+    }
+  });
+
+  test("logs failed cleanup of a skipped task while other tasks still land", async () => {
+    const { repo, ctx } = setupApproved(successfulTasks(["T2"]));
+    const tree = join(runDir(repo, "greet"), "worktrees", "T1");
+    const branch = "brewery/greet/T1";
+    run(repo, "git", "worktree", "add", "-b", branch, tree, "HEAD");
+    run(repo, "git", "worktree", "lock", tree);
+    ctx.state.tasks.T1 = { status: "skipped", attempts: 1, worktree: tree, branch };
+    try {
+      expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+      expect(ctx.state.tasks.T1).toMatchObject({ status: "skipped", worktree: tree, branch });
+      expect(ctx.state.tasks.T2.status).toBe("passed");
+      expect(ctx.lines.join("\n")).toContain("cleanup failed for T1");
+      expect(readFileSync(join(repo, "T2.txt"), "utf8")).toBe("T2\n");
+    } finally {
+      run(repo, "git", "worktree", "unlock", tree);
+      run(repo, "git", "worktree", "remove", "--force", tree);
+    }
+  });
+
+  test("keeps post-land cleanup strict and preserves the landed commit", async () => {
+    const { repo, ctx } = setupApproved(successfulTasks(["T1", "T2"]));
+    ctx.config.worktreeSetup = ["git worktree lock --reason strict-land-test ."];
+    const tree = join(runDir(repo, "greet"), "worktrees", "T1");
+    try {
+      await expect(barrel(ctx, fakeCi([green("a")]))).rejects.toThrow("cannot remove a locked working tree");
+      const saved = loadState("greet", repo);
+      expect(saved.tasks.T1.status).toBe("passed");
+      expect(saved.tasks.T1.commit).toBe(run(repo, "git", "rev-parse", "HEAD"));
+      expect(parseTasks(readIp(ctx.state.ip)).map((task) => task.done)).toEqual([true, false]);
+      expect(saved.tasks.T1.worktree).toBe(tree);
+      expect(saved.history.some((entry) => entry.task === "T2")).toBe(false);
+      // Resuming cannot bypass the strict post-land cleanup gate.
+      await expect(barrel(ctx, fakeCi([green("a")]))).rejects.toThrow("cannot remove a locked working tree");
+      expect(ctx.state.history.some((entry) => entry.task === "T2")).toBe(false);
+    } finally {
+      run(repo, "git", "worktree", "unlock", tree);
+      run(repo, "git", "worktree", "remove", "--force", tree);
+    }
   });
 
   test("uses tracked approval edits in the worktree and lands them with the task", async () => {

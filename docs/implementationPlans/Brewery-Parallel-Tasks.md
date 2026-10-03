@@ -259,7 +259,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
     - a flow test where the structural fix leaves the graph invalid: `brewery answer` still works
       afterwards (the run is waiting, not stranded).
 
-- [ ] **T8** — Keep worktree cleanup from masking or causing failures
+- [x] **T8** — Keep worktree cleanup from masking or causing failures
   - Depends on: none
   - Files: `tools/brewery/src/vcs.ts`, `tools/brewery/src/commands/cut.ts`,
     `tools/brewery/src/commands/barrel.ts`, `tools/brewery/test/flow.test.ts`

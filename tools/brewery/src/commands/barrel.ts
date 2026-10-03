@@ -6,7 +6,7 @@ import { integratedRoastBody, integrationFixBody, brewBody, pickBody, reviewBody
 import { runDir, saveState, type TaskState } from "../state.ts";
 import { appendEvent } from "../events.ts";
 import { evidenceText, mergeVerdicts, runStage, type Ctx } from "../step.ts";
-import { addWorktree, removeWorktree, anyChanges, commitAll, currentBranch, ensureExcluded, git, headSha, sh, trackedChanges, type Ci } from "../vcs.ts";
+import { addWorktree, removeWorktreeStrict, anyChanges, commitAll, currentBranch, ensureExcluded, git, headSha, sh, trackedChanges, type Ci } from "../vcs.ts";
 import { finish, type Outcome } from "./finish.ts";
 import { asksFrom, gate } from "./gate.ts";
 import { dirname, join, relative } from "node:path";
@@ -131,6 +131,7 @@ const taskContext = (ctx: Ctx, cwd: string): Ctx => {
 
 const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, ts: TaskState): Promise<BuildResult> => {
   const { state, config } = ctx;
+  let needsCleanup = ts.evidence?.startsWith("Worktree setup FAIL") || ts.evidence?.startsWith("Interrupted build") || ts.evidence?.startsWith("Land conflict:");
   for (;;) {
     if (ts.attempts >= config.limits.pickAttempts) {
       const last = ts.evidence?.slice(0, 600) ?? "no evidence recorded";
@@ -142,7 +143,15 @@ const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, t
     ts.attempts += 1;
     saveState(state);
 
+    // A failed setup tree cannot be reused, even when its removal also failed.
+    if (needsCleanup) {
+      needsCleanup = !(await cleanupTask(ctx, id));
+      saveState(state);
+      if (needsCleanup) continue;
+    }
     const branch = `brewery/${state.slug}/${id}`;
+    ts.worktree = cwd;
+    ts.branch = branch;
     const taskCtx = taskContext(ctx, cwd);
     if (!existsSync(cwd)) {
       await addWorktree(state.repo, cwd, branch, await headSha(state.repo));
@@ -155,8 +164,7 @@ const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, t
         if (setup.code === 0) continue;
         ts.evidence = `Worktree setup FAIL: ${command} (exit ${setup.code})\n${setup.out}\n${setup.err}`;
         ctx.log(`  ${ts.evidence}`);
-        await removeWorktree(state.repo, cwd);
-        await git(state.repo, "branch", "-D", branch);
+        needsCleanup = !(await cleanupTask(ctx, id));
         saveState(state);
         setupFailed = true;
         break;
@@ -298,16 +306,23 @@ const submit = async (ctx: Ctx, ci: Ci): Promise<StepOutcome> => {
   return "waiting";
 };
 
-const cleanupTask = async (ctx: Ctx, id: string): Promise<void> => {
+const cleanupTask = async (ctx: Ctx, id: string, strict = false): Promise<boolean> => {
   const ts = ctx.state.tasks[id];
   const cwd = ts.worktree ?? join(runDir(ctx.state.repo, ctx.state.slug), "worktrees", id);
   const branch = ts.branch ?? `brewery/${ctx.state.slug}/${id}`;
-  if (existsSync(cwd)) await removeWorktree(ctx.state.repo, cwd);
-  if ((await sh(ctx.state.repo, ["git", "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0) {
-    await git(ctx.state.repo, "branch", "-D", branch);
+  try {
+    if (existsSync(cwd)) await removeWorktreeStrict(ctx.state.repo, cwd);
+    if ((await sh(ctx.state.repo, ["git", "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0) {
+      await git(ctx.state.repo, "branch", "-D", branch);
+    }
+    ts.worktree = undefined;
+    ts.branch = undefined;
+    return true;
+  } catch (error) {
+    if (strict) throw error;
+    ctx.log(`  cleanup failed for ${id} (${cwd}): ${error instanceof Error ? error.message : String(error)}`);
+    return false;
   }
-  ts.worktree = undefined;
-  ts.branch = undefined;
 };
 
 const buildReadyTasks = async (ctx: Ctx): Promise<StepOutcome> => {
@@ -325,7 +340,7 @@ const buildReadyTasks = async (ctx: Ctx): Promise<StepOutcome> => {
       ts.status = "todo";
       ts.commit = undefined;
       ts.evidence = "Interrupted build; rebuild from the feature branch head.";
-    } else if (ts.status !== "todo") await cleanupTask(ctx, task.id);
+    } else if (ts.status !== "todo") await cleanupTask(ctx, task.id, ts.status === "passed");
   }
   saveState(state);
   type Completion = { id: string; result?: BuildResult; error?: unknown };
@@ -374,7 +389,7 @@ const buildReadyTasks = async (ctx: Ctx): Promise<StepOutcome> => {
     try {
       const task = tasks.find((t) => t.id === completed.id)!;
       const passed = await land(ctx, task.id, task.title, ts);
-      await cleanupTask(ctx, task.id);
+      await cleanupTask(ctx, task.id, passed);
       if (!passed) {
         ts.status = "todo";
         ts.commit = undefined;
