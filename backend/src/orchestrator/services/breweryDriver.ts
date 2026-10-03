@@ -1,6 +1,7 @@
 import {spawn} from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {logger} from "@terreno/api";
 import {loadAppConfig} from "../../models/appConfig";
 import {Feature} from "../../models/feature";
 import type {BreweryState, FeatureDocument} from "../../types/models/featureTypes";
@@ -329,7 +330,13 @@ export class BreweryDriver {
       const checked = async (argv: string[], message: string): Promise<string> => {
         failure = message;
         const result = await exec(argv, {timeoutMs: config.zerg.upTimeoutMs});
-        if (result.code !== 0) throw new StartupError(message);
+        if (result.code !== 0) {
+          // The channel gets only `message`; the operator log carries the cause.
+          logger.warn(
+            `Brewery startup step failed for feature ${feature._id}: ${message} (exit ${result.code}): ${result.stderr.trim().slice(-500)}`
+          );
+          throw new StartupError(message);
+        }
         return result.stdout;
       };
       if (config.zerg.enabled) {
