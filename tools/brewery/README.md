@@ -9,7 +9,7 @@ brewery distill "<request>"      claude writes the IP ─┐
                                   cut: claude + codex attack it (clean worktree, only your words)
                                   claude fixes the findings (≤2 rounds)
                                   → sign-off message, ntfy ping, exit 3
-brewery answer <slug> "ok, 2b"   apply the reply → Status: approved
+brewery answer <slug> "ok, 2b"   apply the reply → validate/repair task graph → Status: approved or ask again
 brewery barrel <slug>            ready tasks (up to parallelTasks), each: create worktree → setup → codex picks → commit → claude roasts
                                     (FAIL → pick again with evidence, amend the worktree commit)
                                     PASS → cherry-pick onto feature branch → tick checkbox and amend → remove worktree
@@ -122,6 +122,7 @@ them fails the step. Other stages use the first available agent. An unavailable 
 | Roast judges a fixed tree | brewery commits after Pick, before Roast. Retries amend the task's commit. |
 | No self-approval | brewery owns the IP's `Status:` line and resets one an agent approved. Only `brewery answer` approves. |
 | Valid task graph before sign-off | Distill rejects drafts with unknown dependencies, self-dependencies, or cycles. Cut/fix rechecks the graph after every edit and passes remaining problems as blocking decomposition findings, even when Cut found nothing. An invalid graph after `limits.cutRounds` throws before sign-off. |
+| Valid task graph before approval | Answer validates the edited IP regardless of the agent's `structural` flag. Invalid graphs go through cut/fix as blocking decomposition findings. Unrepaired problems return to sign-off, with the problems listed; only a valid graph can be approved. |
 | Progress can't be faked | brewery checks each task box only after a Roast PASS and cherry-pick onto the feature branch. |
 | Bounded loops | Pick attempts per task, cut and review rounds, finish pushes and hours, and a "same failure twice" stop. |
 | No tokens while waiting | brewery runs `gh pr checks --watch` itself and starts a Taste agent only on a red snapshot. |
@@ -141,6 +142,14 @@ reply right there instead. Reply from anywhere with `brewery answer <slug> "<rep
 
 `brewery status` lists runs and what is waiting on you. Each step's prompt, log, and result
 are in `.terreno/brewery/<slug>/steps/`.
+
+An approval reply runs at most one cut/fix round when the edit is structural or its
+task graph is invalid. If repair leaves the IP unusable, the run stays at sign-off
+and lists the remaining problems before the other questions. Reply again with repair
+guidance, for example `brewery answer my-feature "no: T1 must depend on none"`.
+Rejected plans and replies without approval use `limits.cutRounds` when repair is
+needed. Processing keeps the saved sign-off until approval or a replacement sign-off
+is persisted, so an interrupted step or cut error can be retried with `brewery answer`.
 
 If a process stops during a step, run `brewery resume <slug> --go`. Brewery reads the
 saved phase: it reruns distill with the saved request and notes, continues approved,

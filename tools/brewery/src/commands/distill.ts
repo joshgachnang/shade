@@ -11,6 +11,13 @@ import { runCut } from "./cut.ts";
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
+export class UnusableIpError extends Error {
+  constructor(readonly problem: string, readonly asks: Ask[], maxRounds: number) {
+    super(`brewery: distill IP remains unusable after ${maxRounds} cut rounds: ${problem}`);
+    this.name = "UnusableIpError";
+  }
+}
+
 export const defaultIpPath = (repo: string, slug: string): string => join(repo, "docs", "plans", `${today()}-${slug}.md`);
 
 const ipProblems = (path: string): string | null => {
@@ -65,7 +72,7 @@ export const cutAndFix = async (ctx: Ctx, asks: Ask[], maxRounds: number): Promi
   }
   saveState(ctx.state);
   const problem = ipProblems(ctx.state.ip);
-  if (problem) throw new Error(`brewery: distill IP remains unusable after ${maxRounds} cut rounds: ${problem}`);
+  if (problem) throw new UnusableIpError(problem, current, maxRounds);
   return current;
 };
 

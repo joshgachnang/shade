@@ -71,6 +71,13 @@ tree" rule.
 | T4 | Return an invalid task graph to distill as a blocking finding | T1 | `commands/distill.ts` | flow test |
 | T5 | Run ready tasks in parallel up to the configured limit | T1, T3 | `barrel.ts`, `state.ts`, `cli.ts` | flow tests |
 | T6 | Roast the integrated branch after a parallel build | T5 | `barrel.ts`, `prompts.ts` | flow test |
+| T7 | Never approve an IP with a broken task graph, and never strand sign-off | none | `commands/answer.ts`, `commands/distill.ts` | flow tests |
+| T8 | Keep worktree cleanup from masking or causing failures | none | `vcs.ts`, `commands/cut.ts`, `barrel.ts` | flow tests |
+| T9 | Give each task worktree a stable snapshot of the approved IP | none | `barrel.ts` | flow test |
+| T10 | Reject duplicate task IDs before any task starts | none | `ip.ts` | unit and flow tests |
+
+T7–T10 fix the four should-fix findings from the first branch review on PR #104 (steps
+`013-review-claude` R1–R2 and `014-review-codex` R1–R2).
 
 The plan follows its own rule: T1, T2 and T3 run in parallel, then T4 and T5, then T6. That is three
 rounds instead of six.
@@ -232,6 +239,66 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
       review;
     - a `--parallel 1` run records no `integrate` step.
 
+- [x] **T7** — Never approve an IP with a broken task graph, and never strand sign-off
+  - Depends on: none
+  - Files: `tools/brewery/src/commands/answer.ts`, `tools/brewery/src/commands/distill.ts`,
+    `tools/brewery/test/flow.test.ts`
+  - Today the approve path in `answer` re-checks the graph only when the apply-reply step reports
+    `structural: true`. A non-structural reply edit that breaks a `Depends on:` line is approved,
+    and barrel then throws "invalid task graph". When `structural` is true and the graph stays
+    invalid, `cutAndFix` throws after `state.waiting` was cleared and saved, so the run sits in
+    `signoff` with nothing waiting and `brewery answer` fails with "not waiting on an answer".
+  - Before `approve(state)`, check `taskGraphProblems` on the IP whatever `structural` says. If the
+    graph is invalid, do not approve: run cut/fix with the problems as blocking findings, and if
+    they remain, send the IP for sign-off again listing them.
+  - No path through `answer` may leave a `signoff` run with `state.waiting` unset unless it was
+    approved.
+  - Acceptance:
+    - a flow test where a non-structural "ok" reply leaves a cycle: the run is not approved and is
+      waiting on sign-off again with the cycle named;
+    - a flow test where the structural fix leaves the graph invalid: `brewery answer` still works
+      afterwards (the run is waiting, not stranded).
+
+- [ ] **T8** — Keep worktree cleanup from masking or causing failures
+  - Depends on: none
+  - Files: `tools/brewery/src/vcs.ts`, `tools/brewery/src/commands/cut.ts`,
+    `tools/brewery/src/commands/barrel.ts`, `tools/brewery/test/flow.test.ts`
+  - `removeWorktree` now throws through `git` where master used the tolerant `sh`. `runCut` calls it
+    in a `finally`, so a failed cleanup replaces the real cut error or crashes a successful cut.
+    buildTask's setup-failure path and `cleanupTask` crash the whole run on a cleanup hiccup.
+  - Restore tolerant removal for the cut and failure paths: log a cleanup failure and keep the
+    original outcome. Keep a strict variant only where the land path needs it.
+  - Acceptance:
+    - a flow test where cut's worktree removal fails: a cut error still surfaces as that error, and
+      a successful cut still returns its findings;
+    - a flow test where task cleanup fails after a setup failure: the run records the setup
+      evidence instead of crashing.
+
+- [ ] **T9** — Give each task worktree a stable snapshot of the approved IP
+  - Depends on: none
+  - Files: `tools/brewery/src/commands/barrel.ts`, `tools/brewery/test/flow.test.ts`
+  - buildTask awaits `addWorktree` and only then copies `readIp(state.ip)`. A sibling landing in
+    that window restores the tracked IP to HEAD or unlinks an untracked IP before cherry-picking,
+    so a slower task can fail with ENOENT or hand Pick and Roast outdated criteria.
+  - Snapshot the approved IP text while it is stable, before the asynchronous worktree startup,
+    and write that snapshot into the task tree.
+  - Acceptance: a deterministic flow test where worktree startup finishes while another task is
+    landing, covering both a tracked IP with approval edits and an untracked IP; the task tree
+    gets the approved text and the run does not fail.
+
+- [ ] **T10** — Reject duplicate task IDs before any task starts
+  - Depends on: none
+  - Files: `tools/brewery/src/ip.ts`, `tools/brewery/test/unit.test.ts`,
+    `tools/brewery/test/flow.test.ts`
+  - `taskGraphProblems` builds a `Map` from task ids without checking for duplicates. Two `T1`
+    rows that both say `Depends on: none` produce no problems and two ready rows, and barrel
+    launches both into the same TaskState, branch and worktree, overwriting the `running` entry.
+  - `taskGraphProblems` names each duplicate id, for example `Duplicate task id: T1`, so distill
+    returns it as a blocking finding and barrel refuses to start.
+  - Acceptance:
+    - a unit test for the duplicate-id problem;
+    - a flow test proving an IP with a duplicate id is rejected before any task starts.
+
 ## Assumptions
 
 - The integrated roast's fan-out routing uses `stages.roast`, so no new `Stage` is needed. The
@@ -264,8 +331,10 @@ Settled by the sign-off reply "ok" on 2026-10-02, which accepts every recommenda
 | Q4 | Run a combined roast after a parallel build? | Yes, only when tasks overlapped (recommendation accepted) | T6 |
 | Q5 | Set up each worktree with `bun bootstrap` in shade? | Yes, through `.brewery.json` `worktreeSetup` (recommendation accepted) | T3 |
 | Q6 | What does a task with no `Depends on:` line mean? | The previous task (recommendation accepted) | T1 |
+| Q7 | IP-019: T1–T6 shipped in PR #104. T7–T10 were added to fix the four should-fix review findings (answer.ts sign-off graph check, tolerant worktree cleanup, stable IP snapshot per task, duplicate task ids). Approve? | Approve (reply "approve", 2026-10-03) | T7–T10 cleared for barrel; no task changes |
 
 ## Sign-off
 
-Status: approved 2026-10-02
+Status: approved 2026-10-03
+T1–T6 approved 2026-10-02 and shipped in PR #104. T7–T10 added 2026-10-03 and need sign-off.
 Cut: 0 rounds (written by hand in a zerg session, not by `brewery distill`; run `brewery cut` on it before approving if you want the attack)

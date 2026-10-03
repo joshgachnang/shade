@@ -123,6 +123,104 @@ test("resume recovers a killed roast and rejects concurrent run commands", async
 describe("distill → sign-off → answer", () => {
   const cycleIp = IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T2");
 
+  test.each([
+    ["cycle", cycleIp, "Dependency cycle: T1 → T2 → T1"],
+    ["unknown dependency", IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T99"), "T1 depends on unknown task T99"],
+    ["self dependency", IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T1"), "T1 depends on itself"],
+  ])("non-structural approval with an unrepaired %s returns to sign-off with the problem", async (_kind, text, problem) => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill step 12", write: { "docs/plans/g.md": text }, result: { status: "PASS", action: "applied", structural: false } },
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+      { match: "distill step 10", result: { status: "PASS", action: "claimed fixed", structural: false } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "signoff" }), config);
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ctx.state.ip, IP("draft"));
+    await sendForSignoff(ctx, []);
+
+    expect(await answer(ctx, "ok")).toBe("waiting");
+    const saved = loadState("g", repo);
+    expect(saved.phase).toBe("signoff");
+    expect(saved.waiting?.kind).toBe("signoff");
+    expect(saved.waiting?.message).toContain(problem);
+    expect(readStatus(readIp(saved.ip))).toStartWith("awaiting sign-off");
+    const [fix] = stepPrompts(repo, "g", /distill-alpha/).filter((p) => p.includes("## Step: distill step 10"));
+    expect(fix).toContain(problem);
+    expect(fix).toContain('"severity": "blocking"');
+    expect(fix).toContain('"axis": "decomposition"');
+  });
+
+  test("a structural reply with an unrepaired cycle remains answerable through the CLI", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill step 12", times: 1, write: { "docs/plans/g.md": cycleIp }, result: { status: "PASS", action: "applied", structural: true } },
+      { match: "distill step 12", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "repaired", structural: false } },
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+      { match: "distill step 10", result: { status: "PASS", action: "claimed fixed", structural: true, ask: Array.from({ length: 5 }, (_, i) => ({ q: `Choice ${i + 1}?`, rec: "Keep", opts: ["Keep", "Change"] })) } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "signoff" }), config);
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ctx.state.ip, IP("draft"));
+    await sendForSignoff(ctx, []);
+    const cli = join(import.meta.dir, "../src/cli.ts");
+    const first = Bun.spawnSync(["bun", cli, "answer", "g", "ok", "--repo", repo, "--no-wait"], { cwd: repo, env: process.env });
+    expect(first.exitCode).toBe(3);
+    const saved = loadState("g", repo);
+    expect(saved.phase).toBe("signoff");
+    expect(saved.waiting?.kind).toBe("signoff");
+    expect(saved.waiting?.message).toContain("Dependency cycle: T1 → T2 → T1");
+    expect(saved.waiting?.asks).toHaveLength(6);
+    expect(readStatus(readIp(saved.ip))).toStartWith("awaiting sign-off");
+
+    const second = Bun.spawnSync(["bun", cli, "answer", "g", "ok", "--repo", repo, "--no-wait"], { cwd: repo, env: process.env });
+    expect(second.exitCode).toBe(0);
+    const approved = loadState("g", repo);
+    expect(approved.phase).toBe("approved");
+    expect(approved.waiting).toBeUndefined();
+    expect(approved.answers.map((a) => a.a)).toEqual(["ok", "ok"]);
+    expect(readStatus(readIp(approved.ip))).toStartWith("approved");
+  });
+
+  test.each(["ok", "no: revise the dependencies", "1b please"])("an invalid graph repaired during cut/fix handles reply %s", async (reply) => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill step 12", write: { "docs/plans/g.md": cycleIp }, result: { status: "PASS", action: "applied", structural: false } },
+      { match: "cut (attack the IP)", result: { status: "PASS", action: "cut", findings: [] } },
+      { match: "distill step 10", write: { "docs/plans/g.md": IP("draft") }, result: { status: "PASS", action: "repaired", structural: false } },
+    ]);
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "signoff" }), config);
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ctx.state.ip, IP("draft"));
+    await sendForSignoff(ctx, []);
+
+    const approving = reply === "ok";
+    expect(await answer(ctx, reply)).toBe(approving ? "approved" : "waiting");
+    const saved = loadState("g", repo);
+    expect(saved.phase).toBe(approving ? "approved" : "signoff");
+    expect(saved.waiting?.kind).toBe(approving ? undefined : "signoff");
+    expect(readStatus(readIp(saved.ip))).toStartWith(approving ? "approved" : "awaiting sign-off");
+  });
+
+  test.each(["ok", "no: revise the dependencies", "1b please"])("a cut failure while processing %s preserves durable sign-off", async (reply) => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, [
+      { match: "distill step 12", result: { status: "PASS", action: "applied", structural: true } },
+    ]);
+    config.stages.cut = [];
+    const ctx = quietCtx(newState({ slug: "g", repo, ip: join(repo, "docs/plans/g.md"), base: "master", phase: "signoff" }), config);
+    mkdirSync(join(repo, "docs/plans"), { recursive: true });
+    writeFileSync(ctx.state.ip, IP("draft"));
+    await sendForSignoff(ctx, []);
+    const waiting = ctx.state.waiting;
+
+    await expect(answer(ctx, reply)).rejects.toThrow("no available agent for cut");
+    const saved = loadState("g", repo);
+    expect(saved.phase).toBe("signoff");
+    expect(saved.waiting).toEqual(waiting);
+    expect(readStatus(readIp(saved.ip))).toStartWith("awaiting sign-off");
+  });
+
   test("rejects a cyclic draft and reaches sign-off only after a usable draft is written", async () => {
     const repo = tempRepo();
     const { config } = fakeSetup(repo, [
