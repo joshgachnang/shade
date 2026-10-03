@@ -56,7 +56,11 @@ single run with `--agents pick=claude,roast=claude+codex`.
 
 Each ready task builds in `.terreno/brewery/<slug>/worktrees/<id>` on local branch
 `brewery/<slug>/<id>`, starting from the feature branch's current head. Pick and Roast
-read the IP and repository skills in that worktree. Step logs and run state remain in
+read the IP and repository skills in that worktree. Before each task's asynchronous
+startup, brewery captures the approved IP text with the current completion marks and
+writes that snapshot into its new task tree, including rebuilds. This preserves
+approval edits for tracked and untracked IPs while
+sibling tasks land. Step logs and run state remain in
 the main tree. After Roast passes, brewery cherry-picks the task commit, checks its IP
 box inside that landed commit, records the landed SHA, and removes the worktree and
 local branch. Retries after Roast failures amend the same worktree commit. Gated tasks

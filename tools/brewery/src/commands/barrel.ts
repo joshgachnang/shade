@@ -129,7 +129,7 @@ const taskContext = (ctx: Ctx, cwd: string): Ctx => {
   };
 };
 
-const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, ts: TaskState): Promise<BuildResult> => {
+const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, ts: TaskState, approvedIp: string): Promise<BuildResult> => {
   const { state, config } = ctx;
   let needsCleanup = ts.evidence?.startsWith("Worktree setup FAIL") || ts.evidence?.startsWith("Interrupted build") || ts.evidence?.startsWith("Land conflict:");
   for (;;) {
@@ -157,7 +157,7 @@ const buildTask = async (ctx: Ctx, cwd: string, id: string, taskTitle: string, t
       await addWorktree(state.repo, cwd, branch, await headSha(state.repo));
       // The current approved IP can have tracked edits or still be untracked.
       mkdirSync(dirname(taskCtx.state.ip), { recursive: true });
-      writeIp(taskCtx.state.ip, readIp(state.ip));
+      writeIp(taskCtx.state.ip, approvedIp);
       let setupFailed = false;
       for (const command of config.worktreeSetup) {
         const setup = await sh(cwd, ["bash", "-lc", command]);
@@ -359,7 +359,10 @@ const buildReadyTasks = async (ctx: Ctx): Promise<StepOutcome> => {
         if (running.size) state.parallelRan = true;
         saveState(state);
         ctx.log(`■ ${task.id} — ${task.title}`);
-        running.set(task.id, buildTask(ctx, ts.worktree, task.id, task.title, ts).then(
+        // Capture before asynchronous startup: a sibling landing can temporarily
+        // restore or remove the main IP. Include marks from tasks already landed.
+        const approvedIp = readIp(state.ip);
+        running.set(task.id, buildTask(ctx, ts.worktree, task.id, task.title, ts, approvedIp).then(
           (result) => {
             if (result.gate && !firstGate) firstGate = { id: task.id, gate: result.gate };
             return { id: task.id, result };

@@ -957,6 +957,71 @@ describe("barrel", () => {
     }
   });
 
+  for (const tracked of [true, false]) {
+    test(`keeps the approved IP snapshot when ${tracked ? "tracked approval edits are restored" : "an untracked IP is removed"} during sibling landing`, async () => {
+      const { repo, ctx } = setupApproved([
+        { match: "pick T1", write: { "greeting.txt": "hello\n" }, result: { status: "PASS", action: "built" } },
+        { match: "pick T2", write: { "farewell.txt": "bye\n" }, result: { status: "PASS", action: "built" } },
+        { match: "roast", result: { status: "PASS", action: "proven" } },
+        { match: "review", result: { status: "PASS", action: "reviewed" } },
+        { match: "brew", result: { status: "PASS", action: "opened", pr: 7 } },
+      ]);
+      const approved = IP("approved 2026-09-27")
+        .replace("A text file.", "A text file with an approved specification.")
+        .replace("- [ ] **T2** — Add farewell file", "- [ ] **T2** — Add farewell file\n  - Depends on: none");
+      if (tracked) {
+        writeFileSync(ctx.state.ip, IP("draft"));
+        run(repo, "git", "add", "docs/plans/greet.md");
+        run(repo, "git", "commit", "-m", "Draft plan");
+      }
+      writeFileSync(ctx.state.ip, approved);
+      ctx.config.limits.parallelTasks = 2;
+      const tree = join(runDir(repo, "greet"), "worktrees", "T2");
+      const landing = join(runDir(repo, "greet"), "landing-started");
+      const copied = join(runDir(repo, "greet"), "snapshot-copied");
+      const spawn = Bun.spawn;
+      const snapshots: string[] = [];
+      let transientIp: string | undefined;
+      let overlap = false;
+      // Delay real OS commands at a rendezvous, keeping Git and agents real.
+      // Positional arguments avoid interpolating paths or commands into shell code.
+      const waitForSignal = 'for ((i=0; i<500; i++)); do if test -f "$1"; then shift; exec "$@"; fi; sleep 0.01; done; exit 70';
+      const spy = spyOn(Bun, "spawn").mockImplementation(((argv: string[], options: { cwd?: string }) => {
+        if (options.cwd === repo && argv[0] === "git" && argv[1] === "worktree" && argv[2] === "add" && argv.includes(tree)) {
+          return spawn(["bash", "-c", waitForSignal, "wait-for-landing", landing, ...argv], options as Parameters<typeof spawn>[1]);
+        }
+        if (options.cwd === repo && argv[0] === "git" && argv[1] === "cherry-pick" && !argv[2].startsWith("--") && !existsSync(landing)) {
+          writeFileSync(landing, "started");
+          return spawn(["bash", "-c", waitForSignal, "wait-for-snapshot", copied, ...argv], options as Parameters<typeof spawn>[1]);
+        }
+        if (options.cwd === tree && argv[0] === "bun") {
+          snapshots.push(readIp(join(tree, "docs/plans/greet.md")));
+          if (!existsSync(copied)) {
+            overlap = true;
+            transientIp = existsSync(ctx.state.ip) ? readIp(ctx.state.ip) : undefined;
+            writeFileSync(copied, "copied");
+          }
+        }
+        return spawn(argv, options as Parameters<typeof spawn>[1]);
+      }) as typeof Bun.spawn);
+      try {
+        expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
+        expect(overlap).toBe(true);
+        if (tracked) expect(transientIp).toBe(IP("draft"));
+        else expect(transientIp).toBeUndefined();
+        // Both Pick and Roast must receive the exact approved text.
+        expect(snapshots).toEqual([approved, approved]);
+        expect(ctx.state.tasks.T1.status).toBe("passed");
+        expect(ctx.state.tasks.T2.status).toBe("passed");
+        expect(parseTasks(readIp(ctx.state.ip)).map((task) => task.done)).toEqual([true, true]);
+        expect(readIp(ctx.state.ip)).toContain("approved specification");
+        expect(run(repo, "git", "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  }
+
   test("uses tracked approval edits in the worktree and lands them with the task", async () => {
     const { repo, ctx } = setupApproved([
       { match: "pick T1", write: { "greeting.txt": "hello\n" }, result: { status: "PASS", action: "built" } },

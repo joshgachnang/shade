@@ -274,7 +274,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
     - a flow test where task cleanup fails after a setup failure: the run records the setup
       evidence instead of crashing.
 
-- [ ] **T9** — Give each task worktree a stable snapshot of the approved IP
+- [x] **T9** — Give each task worktree a stable snapshot of the approved IP
   - Depends on: none
   - Files: `tools/brewery/src/commands/barrel.ts`, `tools/brewery/test/flow.test.ts`
   - buildTask awaits `addWorktree` and only then copies `readIp(state.ip)`. A sibling landing in
