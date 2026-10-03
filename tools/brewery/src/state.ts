@@ -5,10 +5,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Ask, Finding, Status } from "./agents.ts";
 
-export type Phase = "distill" | "signoff" | "approved" | "build" | "review" | "brew" | "finish" | "done";
+export type Phase = "distill" | "signoff" | "approved" | "build" | "integrate" | "review" | "brew" | "finish" | "done";
 
 export interface TaskState {
-  status: "todo" | "passed" | "skipped";
+  status: "todo" | "running" | "passed" | "skipped";
+  worktree?: string;
+  branch?: string;
   attempts: number;
   commit?: string;
   evidence?: string;
@@ -48,6 +50,9 @@ export interface RunState {
   notes?: string[];
   cutRounds: number;
   reviewRounds: number;
+  parallelRan?: boolean;
+  integrationRounds?: number;
+  landing?: { task: string; head: string; ip: string; index?: { mode: string; sha: string; path: string } };
   reviewPending?: boolean;
   reviewFindings?: Finding[];
   finish?: { startedAt: string; pushes: number; reactions: number; stuck: number; lastKey?: string };

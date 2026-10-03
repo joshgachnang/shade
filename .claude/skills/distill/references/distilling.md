@@ -92,8 +92,8 @@ One line on the rejected alternative when a reviewer would ask.>
 
 ## The plan
 
-| # | Task | Lands in | Proves it |
-| --- | --- | --- | --- |
+| # | Task | Depends on | Lands in | Proves it |
+| --- | --- | --- | --- | --- |
 
 Tracer: <seam the first task cuts through>
 Out of scope: <tags; see Expansions>
@@ -101,13 +101,42 @@ Open risks: <none, or one line each>
 ```
 
 The detailed task list, Assumptions, and the bottom sections follow. Write each task as one
-line in exactly this format, with its details in an indented block or the lines below it.
+line in exactly this format, with its details in an indented block.
 `brewery` parses these lines to track and commit each task, and uses the title as the
-commit subject:
+commit subject. In that block, `Depends on:` declares task dependencies, with or without
+a bullet, case-insensitively. Separate task IDs with commas and/or `and`; use `none`
+for an independent task. The block ends at the next task, heading, or unindented prose.
+A missing dependency line means the previous task in IP order; the first task defaults
+to no dependencies. Graph validation reports unknown IDs, self-dependencies, and cycle
+paths. A not-done task is ready when all its dependencies have landed on the feature
+branch; checking a dependency's box alone does not count as landing:
 
 ```markdown
 - [ ] **T1** — Add the cursor field to the reports API
+  - Depends on: none
+  - Files: reports API
+- [ ] **T2** — Use the cursor in the reports client
+  - Depends on: T1
+  - Files: reports client
 ```
+
+## Splitting for a parallel build
+
+Put the tracer first: the smallest end-to-end behaviour that proves the main seam.
+Then split the remaining work into small, composable tasks. Each task is one
+independently testable behaviour that can be roasted on its own; split any task that
+needs more than one roast-able behaviour.
+
+Every task carries `Depends on:` (`none` or task IDs) and `Files:` (the files or seams
+it touches). Declare the real prerequisites, rather than depending on the previous
+task by habit. Two tasks that share a file depend on each other, so their writes are
+ordered. Prefer wide over deep: fan out independent tasks and keep dependency chains
+short. Use a join task only when a behaviour requires the branches to be complete.
+
+For example, after a tracer adds a reports API, a reports client and an export utility
+can both depend on the tracer if they write different files. If both write the same
+client file, order them with a dependency. Cut attacks false independence, tasks that
+contain multiple behaviours, and chains that could fan out.
 
 ## Anti-patterns
 

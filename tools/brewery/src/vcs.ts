@@ -60,12 +60,23 @@ export const commitAll = async (cwd: string, message: string, amend: boolean): P
   return headSha(cwd);
 };
 
-export const addWorktree = async (cwd: string, dir: string): Promise<void> => {
-  await git(cwd, "worktree", "add", "--detach", dir, "HEAD");
+export const addWorktree = async (cwd: string, dir: string, branch?: string, head = "HEAD"): Promise<void> => {
+  await git(cwd, "worktree", "add", ...(branch ? ["-b", branch] : ["--detach"]), dir, head);
 };
 
-export const removeWorktree = async (cwd: string, dir: string): Promise<void> => {
-  await sh(cwd, ["git", "worktree", "remove", "--force", dir]);
+export const removeWorktreeStrict = async (cwd: string, dir: string): Promise<void> => {
+  await git(cwd, "worktree", "remove", "--force", dir);
+};
+
+// Cleanup on failure paths must never replace the caller's original outcome.
+export const removeWorktree = async (cwd: string, dir: string, log: (line: string) => void = console.warn): Promise<boolean> => {
+  try {
+    await removeWorktreeStrict(cwd, dir);
+    return true;
+  } catch (error) {
+    log(`  cleanup failed for ${dir}: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
 };
 
 export interface Check {

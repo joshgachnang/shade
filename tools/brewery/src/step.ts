@@ -61,7 +61,7 @@ export const runStage = async (ctx: Ctx, stage: Stage, body: string, opts: Stage
       name: label,
       profile: config.agents[agent],
       cwd: opts.cwd ?? state.repo,
-      prompt: `${header(ctx, resultFile)}\n\n${body}`,
+      prompt: `${header(opts.cwd ? { ...ctx, state: { ...state, repo: opts.cwd } } : ctx, resultFile)}\n\n${body}`,
       promptFile: `${base}.prompt.md`,
       resultFile,
       logFile: `${base}.log`,

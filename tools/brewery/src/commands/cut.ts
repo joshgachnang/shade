@@ -31,7 +31,7 @@ export const runCut = async (ctx: Ctx): Promise<Finding[]> => {
     ctx.log(`  cut: ${findings.length} findings (${blocking} blocking) from ${results.map((r) => r.agent).join(", ")}`);
     return findings;
   } finally {
-    await removeWorktree(state.repo, tree);
+    await removeWorktree(state.repo, tree, ctx.log);
   }
 };
 

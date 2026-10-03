@@ -8,6 +8,15 @@ import type { PrSnapshot } from "./vcs.ts";
 
 const skill = (ctx: Ctx, path: string): string => join(ctx.config.skillsDir, path);
 
+const taskSplitting = `Task splitting rules:
+- Put the tracer first.
+- Each task is one independently testable behaviour that can be roasted on its own.
+- Every task carries an indented Depends on: line (Depends on: none or Depends on: T1, T3)
+  and Files: listing the files or seams it touches.
+- Two tasks that share a file depend on each other; order their writes with a dependency.
+- Prefer wide over deep: fan out independent tasks and keep dependency chains short.
+- Split any task that needs more than one roast-able behaviour.`;
+
 export const header = (ctx: Ctx, resultFile: string): string => {
   refreshNotes(ctx.state);
   const answers = ctx.state.answers.length
@@ -57,6 +66,8 @@ Read and follow ${skill(ctx, "distill/SKILL.md")} steps 1–9, with these overri
 - In \`ask\`, put the sign-off questions: fundamental first, then the open questions whose
   answers would change the most. At most 5. Status PASS when the IP is written.
 
+${taskSplitting}
+
 The request, verbatim:
 
 <request>
@@ -70,6 +81,8 @@ The IP is ${ctx.state.ip}. A fresh attacker that saw only the human's words prod
 findings. For each one, edit the IP, move it to Open questions or Expansions, or rebut it in
 one line with evidence. Every blocking finding must be handled. Record the tally in the
 Sign-off section's \`Cut:\` line. Leave the \`Status:\` line alone. Keep the task line format.
+
+${taskSplitting}
 
 Result keys: \`structural\` (true when a blocking finding changed tasks, the tracer, or the
 data model), \`tally\` ({edited, moved, rebutted}), and \`ask\` (the refreshed sign-off
@@ -108,6 +121,9 @@ Read ${skill(ctx, "cut/SKILL.md")} and act as the attacker it describes. You are
 checkout. You have only what the human said and the plan at ${ipRel}. You may read the files
 the IP cites to check its claims about the code. Do not look for planning notes.
 
+Attack axis 7. Decomposition: two tasks that write the same file with no dependency between them;
+a task that is really two independently roast-able behaviours; a chain that could be a fan-out.
+
 Result: status PASS, and \`findings\`: at most 12, most severe first, each
 {"id": "C1", "severity": "blocking" | "should-fix" | "nit", "axis": "", "where": "",
 "attack": "", "evidence": "", "fix": ""}. A finding without evidence is dropped. An empty
@@ -141,6 +157,29 @@ running things. Do not fix implementation code. Do not commit.
 
 Status PASS only when every criterion has passing evidence. FAIL with one \`fail\` entry per
 disproved criterion (need, want, got, reproducible ev).`;
+
+export const integratedRoastBody = (ctx: Ctx): string => `## Step: roast INTEGRATE (integrated branch)
+
+Independently prove every task's acceptance criteria on the combined tree against the
+IP at ${ctx.state.ip}. Run the repo's full test command, including cross-task behavior.
+All tasks have landed on this feature branch. Judge the combined HEAD, not just the
+last task commit. Use ${skill(ctx, "barrel/stages/roast.md")} for verification method.
+Do not fix code or commit. Do only this integrated roast, then exit.
+Status PASS only with passing evidence for every criterion; otherwise FAIL with
+one fail entry per disproved criterion (need, want, got, reproducible ev).`;
+
+export const integrationFixBody = (ctx: Ctx, evidence: string): string => `## Step: pick INTEGRATE (fix integration of parallel tasks)
+
+Read ${skill(ctx, "barrel/stages/pick.md")} for method (specify, failing test, fix, clean up).
+Fix the combined-tree failures against the IP at ${ctx.state.ip} in the main tree.
+Do not commit, push, edit task checkboxes, run Roast, or continue to another stage.
+Status PASS when the integration failures are fixed and your own checks are green.
+Use the evidence below to form a focused hypothesis and add a regression test.
+
+Evidence:
+\`\`\`json
+${evidence}
+\`\`\``;
 
 export const reviewBody = (ctx: Ctx, base: string): string => `## Step: branch review
 

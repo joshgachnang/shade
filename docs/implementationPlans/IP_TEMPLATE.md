@@ -45,6 +45,8 @@ Explicitly out of scope.
 
 *Structured task breakdown. Each task should be independently implementable and testable.*
 
+brewery reads each task's `Depends on:` line to determine which tasks are ready to build.
+
 ### Phase 1: [Phase Name]
 
 - [ ] **Task 1.1**: [Short title]
