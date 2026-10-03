@@ -150,6 +150,43 @@ test("brewery preflight failure remains visible with no agent fallback or reques
   expect(await Message.countDocuments({groupId: group._id})).toBe(0);
 });
 
+test("retrying a feature whose brewery never started reuses its group on the new channel", async () => {
+  const f = await fixture();
+  const failingExec: ExecFn = async (argv, opts) =>
+    argv.includes("agents") ? {code: 127, stdout: "", stderr: ""} : f.exec(argv, opts);
+  await expect(
+    createFeatureHandler(f.transport, {exec: failingExec, loadConfig: async () => f.config})(f.data)
+  ).rejects.toThrow("preflight");
+  const retried = {
+    ...f.transport,
+    createFeatureChannel: async (...args: string[]) => {
+      f.invitations.push(args);
+      return {slackChannelId: "retried-channel"};
+    },
+  };
+  await createFeatureHandler(retried, {exec: f.exec, loadConfig: async () => f.config})(f.data);
+  const groups = await Group.find({folder: `features/${f.data.name}`});
+  expect(groups).toHaveLength(1);
+  expect(groups[0]!.externalId).toBe("retried-channel");
+  expect(f.registered.at(-1)?.externalId).toBe("retried-channel");
+  const features = await Feature.find({groupId: groups[0]!._id});
+  expect(features).toHaveLength(1);
+  expect(features[0]!.status).toBe("in_progress");
+  expect(features[0]!.errorMessage).toBeUndefined();
+  expect(features[0]!.brewery?.phase).toBe("distill");
+});
+
+test("a feature name whose brewery run already started is refused before Slack is touched", async () => {
+  const f = await fixture();
+  await createFeatureHandler(f.transport, {exec: f.exec, loadConfig: async () => f.config})(f.data);
+  f.invitations.length = 0;
+  await expect(
+    createFeatureHandler(f.transport, {exec: f.exec, loadConfig: async () => f.config})(f.data)
+  ).rejects.toThrow("already exists");
+  expect(f.invitations).toEqual([]);
+  expect(await Group.countDocuments({folder: `features/${f.data.name}`})).toBe(1);
+});
+
 test("missing source and failed Slack creation do not start a run or register a group", async () => {
   const f = await fixture();
   const handler = createFeatureHandler(f.transport, {
