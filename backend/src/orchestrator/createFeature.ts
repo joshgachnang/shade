@@ -17,6 +17,19 @@ export const createFeatureHandler =
       throw new Error(`Source group ${data.groupId} not found`);
     }
 
+    // A start that failed before brewery launched leaves its group and feature behind;
+    // a retry reuses them. Anything further along is a live feature, not a retry.
+    const folder = `features/${data.name}`;
+    const existingGroup = await Group.findOne({folder});
+    const existingFeature = existingGroup
+      ? await Feature.findOne({groupId: existingGroup._id})
+      : null;
+    if (existingGroup && (existingFeature?.status !== "error" || existingFeature.brewery)) {
+      throw new Error(
+        `#${data.name} already exists with a feature in progress. Continue it in that channel or choose another name`
+      );
+    }
+
     const {slackChannelId} = await channelManager.createFeatureChannel(
       sourceGroup.channelId.toString(),
       data.name,
@@ -24,24 +37,31 @@ export const createFeatureHandler =
     );
     // Persist the driver before registering the channel: even startup errors must
     // never expose a new feature channel to an agent runner.
-    const group = await Group.create({
+    const groupFields = {
       name: data.name,
-      folder: `features/${data.name}`,
+      folder,
       channelId: sourceGroup.channelId,
       externalId: slackChannelId,
       trigger: "@Shade",
       requiresTrigger: false,
       isMain: false,
       modelConfig: sourceGroup.modelConfig,
-      featureDriver: "brewery",
-      featurePhase: "implementing",
-    });
-    const feature = await Feature.create({
+      featureDriver: "brewery" as const,
+      featurePhase: "implementing" as const,
+    };
+    const group = existingGroup
+      ? await existingGroup.set(groupFields).save()
+      : await Group.create(groupFields);
+    const featureFields = {
       name: data.name,
       description: data.description ?? data.request?.slice(0, 500),
       groupId: group._id,
-      status: "in_progress",
-    });
+      status: "in_progress" as const,
+      errorMessage: undefined,
+    };
+    const feature = existingFeature
+      ? await existingFeature.set(featureFields).save()
+      : await Feature.create(featureFields);
     channelManager.registerGroup(group);
 
     // The driver owns workspace preparation, request persistence, and actionable

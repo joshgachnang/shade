@@ -476,15 +476,48 @@ export class SlackChannelConnector extends BaseChannelConnector {
       throw new Error("Slack channel not connected");
     }
     const config = this.channelDoc.config as {botToken?: string};
-    const result = await this.app.client.conversations.create({
-      token: config.botToken,
-      name,
-      is_private: false,
-    });
-    if (!result.channel?.id) {
-      throw new Error("Failed to create Slack channel — no channel ID returned");
+    try {
+      const result = await this.app.client.conversations.create({
+        token: config.botToken,
+        name,
+        is_private: false,
+      });
+      if (!result.channel?.id) {
+        throw new Error("Failed to create Slack channel — no channel ID returned");
+      }
+      return {id: result.channel.id};
+    } catch (err) {
+      // A retried feature finds the channel its failed attempt already made.
+      if ((err as {data?: {error?: string}}).data?.error !== "name_taken") {
+        throw err;
+      }
+      const existingId = await this.findOpenChannelId(name);
+      if (!existingId) {
+        throw err;
+      }
+      logger.info(`Slack channel #${name} already exists; reusing ${existingId}`);
+      return {id: existingId};
     }
-    return {id: result.channel.id};
+  }
+
+  private async findOpenChannelId(name: string): Promise<string | undefined> {
+    const config = this.channelDoc.config as {botToken?: string};
+    let cursor: string | undefined;
+    do {
+      const page = await this.app!.client.conversations.list({
+        token: config.botToken,
+        types: "public_channel",
+        exclude_archived: true,
+        limit: 1000,
+        cursor,
+      });
+      const match = page.channels?.find((channel) => channel.name === name);
+      if (match?.id) {
+        return match.id;
+      }
+      cursor = page.response_metadata?.next_cursor || undefined;
+    } while (cursor);
+    return undefined;
   }
 
   async inviteToChannel(channelId: string, userId: string): Promise<void> {
@@ -492,11 +525,18 @@ export class SlackChannelConnector extends BaseChannelConnector {
       throw new Error("Slack channel not connected");
     }
     const config = this.channelDoc.config as {botToken?: string};
-    await this.app.client.conversations.invite({
-      token: config.botToken,
-      channel: channelId,
-      users: userId,
-    });
+    try {
+      await this.app.client.conversations.invite({
+        token: config.botToken,
+        channel: channelId,
+        users: userId,
+      });
+    } catch (err) {
+      if ((err as {data?: {error?: string}}).data?.error === "already_in_channel") {
+        return;
+      }
+      throw err;
+    }
   }
 
   async archiveChannel(channelId: string): Promise<void> {
