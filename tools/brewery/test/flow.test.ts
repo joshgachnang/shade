@@ -7,7 +7,8 @@ import { barrel } from "../src/commands/barrel.ts";
 import { cutAndFix, distill, sendForSignoff, writeDraft } from "../src/commands/distill.ts";
 import { finish } from "../src/commands/finish.ts";
 import { readIp, readStatus, parseTasks } from "../src/ip.ts";
-import { newState, readContext, runDir, saveState } from "../src/state.ts";
+import { runStage } from "../src/step.ts";
+import { loadState, newState, readContext, runDir, saveState } from "../src/state.ts";
 import type { PrSnapshot } from "../src/vcs.ts";
 import { fakeCi, fakeSetup, IP, quietCtx, run, tempRepo } from "./helpers.ts";
 
@@ -15,6 +16,10 @@ setDefaultTimeout(30_000);
 
 const green = (sha: string): PrSnapshot => ({ sha, mergeable: "MERGEABLE", mergeState: "CLEAN", checks: [{ name: "test", bucket: "pass" }] });
 const red = (sha: string): PrSnapshot => ({ sha, mergeable: "MERGEABLE", mergeState: "UNSTABLE", checks: [{ name: "test", bucket: "fail" }] });
+const pending = (sha: string): PrSnapshot => ({ sha, mergeable: "MERGEABLE", mergeState: "BLOCKED", checks: [{ name: "test", bucket: "pending" }] });
+
+const events = (repo: string, slug: string): Record<string, unknown>[] =>
+  readFileSync(join(runDir(repo, slug), "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
 
 const stepPrompts = (repo: string, slug: string, pattern: RegExp): string[] => {
   const dir = join(runDir(repo, slug), "steps");
@@ -23,6 +28,97 @@ const stepPrompts = (repo: string, slug: string, pattern: RegExp): string[] => {
     .sort()
     .map((f) => readFileSync(join(dir, f), "utf8"));
 };
+
+test("brewery note records verbatim mid-run text for later steps without changing phase", async () => {
+  const repo = tempRepo();
+  const { config } = fakeSetup(repo, [{ match: "check notes", result: { status: "PASS", action: "read" } }]);
+  const state = newState({ slug: "greet", repo, ip: "", base: "master", phase: "build" });
+  saveState(state);
+  const note = "  Keep the existing title.\nUse the short label.  ";
+  const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "note", "greet", note, "--repo", repo], { cwd: repo, env: process.env });
+  expect(command.exitCode).toBe(0);
+  const saved = JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8"));
+  expect(saved.notes).toEqual([note]);
+  expect(saved.phase).toBe("build");
+  expect(readContext(state)).toContain(note);
+  expect(events(repo, "greet").at(-1)).toMatchObject({ kind: "note", text: note });
+
+  const ctx = quietCtx(saved, config);
+  await runStage(ctx, "pick", "check notes", { task: "T3" });
+  expect(stepPrompts(repo, "greet", /pick-T3/)[0]).toContain(note);
+  expect(stepPrompts(repo, "greet", /pick-T3/)[0]).toContain("the human added, mid-run");
+
+  // An already-running process may still hold the state from before the note.
+  state.seq = ctx.state.seq;
+  saveState(state);
+  expect(loadState("greet", repo).notes).toEqual([note]);
+  const staleCtx = quietCtx(state, config);
+  await runStage(staleCtx, "pick", "check notes", { task: "T4" });
+  expect(stepPrompts(repo, "greet", /pick-T4/)[0]).toContain(note);
+});
+
+test("brewery note rejects missing and blank text without changing the run", () => {
+  const repo = tempRepo();
+  fakeSetup(repo, []);
+  const state = newState({ slug: "greet", repo, ip: "", base: "master", phase: "build" });
+  saveState(state);
+  for (const args of [["note", "greet"], ["note", "greet", "  "]]) {
+    const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), ...args, "--repo", repo], { cwd: repo, env: process.env });
+    expect(command.exitCode).toBe(1);
+  }
+  expect(readContext(state)).toBe("");
+  expect(JSON.parse(readFileSync(join(runDir(repo, "greet"), "state.json"), "utf8")).notes).toEqual([]);
+});
+
+test("brewery note preserves simultaneous notes and text starting with dashes", async () => {
+  const repo = tempRepo();
+  fakeSetup(repo, []);
+  const state = newState({ slug: "greet", repo, ip: "", base: "master", phase: "build" });
+  saveState(state);
+  const notes = ["-- keep the title", "Use the shorter label"];
+  const commands = notes.map((note) => Bun.spawn(["bun", join(import.meta.dir, "../src/cli.ts"), "note", "greet", note, "--repo", repo], { cwd: repo, env: process.env }));
+  expect(await Promise.all(commands.map((command) => command.exited))).toEqual([0, 0]);
+  expect(loadState("greet", repo).notes?.sort()).toEqual([...notes].sort());
+  for (const note of notes) expect(readContext(state)).toContain(note);
+});
+
+test("resume recovers a killed roast and rejects concurrent run commands", async () => {
+  const repo = tempRepo();
+  mkdirSync(join(repo, "docs/plans"), { recursive: true });
+  const ip = join(repo, "docs/plans/greet.md");
+  writeFileSync(ip, IP("approved 2026-09-28"));
+  fakeSetup(repo, [
+    { match: "pick T1", write: { "greeting.txt": "hello\n" }, result: { status: "PASS", action: "built" } },
+    { match: "roast T1", times: 1, sleepMs: 30000, result: { status: "PASS", action: "proven" } },
+    { match: "roast T1", result: { status: "PASS", action: "proven" } },
+    { match: "pick T2", result: { status: "BLOCKED", action: "needs decision", ask: [{ q: "Proceed?", rec: "retry", opts: ["retry", "stop"] }] } },
+  ]);
+  const state = newState({ slug: "greet", repo, ip, base: "master", phase: "approved" });
+  saveState(state);
+  const cli = join(import.meta.dir, "../src/cli.ts");
+  const first = Bun.spawn(["bun", cli, "barrel", "greet", "--repo", repo, "--no-wait"], { cwd: repo, env: process.env, stdout: "pipe", stderr: "pipe" });
+  const pidFile = join(runDir(repo, "greet"), "run.pid");
+  try {
+    for (let i = 0; i < 200 && (!existsSync(join(runDir(repo, "greet"), "events.jsonl")) || !events(repo, "greet").some((e) => e.kind === "step.start" && e.stage === "roast")); i++) await Bun.sleep(25);
+    expect(existsSync(pidFile)).toBe(true);
+    expect(Number(readFileSync(pidFile, "utf8"))).toBe(first.pid);
+    const second = Bun.spawnSync(["bun", cli, "resume", "greet", "--repo", repo, "--go", "--no-wait"], { cwd: repo, env: process.env });
+    expect(second.exitCode).toBe(1);
+    expect(second.stderr.toString()).toContain("already running");
+    first.kill("SIGKILL");
+    await first.exited;
+    const resumed = Bun.spawnSync(["bun", cli, "resume", "greet", "--repo", repo, "--go", "--no-wait"], { cwd: repo, env: process.env });
+    expect(resumed.exitCode).toBe(3);
+    expect(loadState("greet", repo).waiting?.kind).toBe("gate");
+    expect(loadState("greet", repo).tasks.T1.status).toBe("passed");
+    expect(events(repo, "greet").filter((e) => e.kind === "step.start" && e.stage === "roast")).toHaveLength(2);
+    const starts = events(repo, "greet").filter((e) => e.kind === "step.start");
+    expect(new Set(starts.map((e) => e.seq)).size).toBe(starts.length);
+    expect(existsSync(pidFile)).toBe(false);
+  } finally {
+    first.kill("SIGKILL");
+  }
+});
 
 describe("distill → sign-off → answer", () => {
   const cycleIp = IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T2");
@@ -145,6 +241,18 @@ describe("distill → sign-off → answer", () => {
     expect(state.waiting?.kind).toBe("signoff");
     expect(readStatus(readIp(state.ip))).toStartWith("awaiting sign-off");
     expect(state.waiting?.message).toContain("1. Plain text or markdown? a) Plain text (recommended) b) Markdown");
+    const beforeAnswer = events(repo, "greet");
+    expect(beforeAnswer.filter((event) => event.kind === "step.start")).toHaveLength(4);
+    expect(beforeAnswer.filter((event) => event.kind === "step.end")).toHaveLength(4);
+    for (const start of beforeAnswer.filter((event) => event.kind === "step.start")) {
+      const end = beforeAnswer.find((event) => event.kind === "step.end" && event.seq === start.seq);
+      expect(end).toBeDefined();
+      expect(beforeAnswer.indexOf(start)).toBeLessThan(beforeAnswer.indexOf(end as Record<string, unknown>));
+    }
+    expect(beforeAnswer[0]).toMatchObject({ kind: "step.start", seq: 1, stage: "distill", agent: "alpha" });
+    expect(beforeAnswer[1]).toMatchObject({ kind: "step.end", seq: 1, status: "PASS", action: "sign off" });
+    expect(beforeAnswer.at(-1)).toMatchObject({ kind: "waiting", waitingKind: "signoff", ip: state.ip, message: state.waiting?.message });
+    expect(beforeAnswer.every((event) => typeof event.t === "string" && !Number.isNaN(Date.parse(String(event.t))))).toBe(true);
 
     const calls = readFileSync(`${planPath}.calls.log`, "utf8").trim().split("\n").map((l) => l.split("\t"));
     const cutCalls = calls.filter((c) => c[1].startsWith("cut"));
@@ -159,6 +267,7 @@ describe("distill → sign-off → answer", () => {
     expect(outcome).toBe("approved");
     expect(readStatus(readIp(state.ip))).toStartWith("approved");
     expect(state.waiting).toBeUndefined();
+    expect(events(repo, "greet").slice(-4).map((event) => event.kind)).toEqual(["resumed", "note", "step.start", "step.end"]);
     const context = readContext(state);
     expect(context).toContain("Add a greeting file.");
     expect(context).toContain("ok, 1b");
@@ -575,6 +684,11 @@ describe("barrel", () => {
     expect(parseTasks(readIp(ctx.state.ip)).every((t) => t.done)).toBe(true);
     expect(ctx.state.phase).toBe("done");
     expect(ctx.state.pr).toBe(7);
+    const stream = events(repo, "greet");
+    expect(stream.filter((event) => event.kind === "step.start" && event.task === "T1").map((event) => event.stage)).toEqual(["pick", "roast", "pick", "roast"]);
+    expect(stream.filter((event) => event.kind === "pr")).toEqual([expect.objectContaining({ kind: "pr", number: 7, url: "https://example.test/pr/7" })]);
+    expect(stream.filter((event) => event.kind === "ci").map((event) => event.state)).toEqual(["pass"]);
+    expect(stream.at(-1)).toMatchObject({ kind: "done" });
 
     const pickT1 = stepPrompts(repo, "greet", /-pick-T1-/);
     expect(pickT1).toHaveLength(2);
@@ -683,9 +797,13 @@ describe("barrel", () => {
   });
 
   test("refuses an IP that is not approved", async () => {
-    const { ctx } = setupApproved([]);
+    const { repo, ctx } = setupApproved([]);
     writeFileSync(ctx.state.ip, IP("awaiting sign-off"));
     await expect(barrel(ctx, fakeCi([green("a")]))).rejects.toThrow("not approved");
+    saveState(ctx.state);
+    const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "barrel", "greet", "--repo", repo], { cwd: repo, env: process.env });
+    expect(command.exitCode).toBe(1);
+    expect(events(repo, "greet").at(-1)).toMatchObject({ kind: "error", message: expect.stringContaining("not approved") });
   });
 
   test("gates a task after the attempt limit, and 'skip' moves past it", async () => {
@@ -699,6 +817,7 @@ describe("barrel", () => {
     ctx.config.limits.pickAttempts = 2;
     expect(await barrel(ctx, fakeCi([green("a")]))).toBe("waiting");
     expect(ctx.state.waiting?.task).toBe("T1");
+    expect(events(ctx.state.repo, "greet").at(-1)).toMatchObject({ kind: "waiting", waitingKind: "gate" });
     expect(await answer(ctx, "skip")).toBe("continue");
     expect(await barrel(ctx, fakeCi([green("a")]))).toBe("done");
     expect(ctx.state.tasks.T1.status).toBe("skipped");
@@ -706,6 +825,15 @@ describe("barrel", () => {
 });
 
 describe("finish", () => {
+  test("records a pending CI snapshot before the green result", async () => {
+    const repo = tempRepo();
+    const { config } = fakeSetup(repo, []);
+    const ctx = quietCtx(newState({ slug: "pr-7", repo, ip: "", base: "master", phase: "finish" }), config);
+    expect(await finish(ctx, fakeCi([pending("a"), green("a")]), 7)).toBe("done");
+    expect(events(repo, "pr-7").map((event) => event.kind)).toEqual(["pr", "ci", "ci", "done"]);
+    expect(events(repo, "pr-7").filter((event) => event.kind === "ci").map((event) => event.state)).toEqual(["pending", "pass"]);
+  });
+
   test("reacts to a red head, counts the push, and stops when green", async () => {
     const repo = tempRepo();
     const { config } = fakeSetup(repo, [{ match: "taste", result: { status: "PASS", action: "fixed and pushed", sha: "b" } }]);
@@ -722,6 +850,21 @@ describe("finish", () => {
     const ctx = quietCtx(newState({ slug: "pr-7", repo, ip: "", base: "master", phase: "finish" }), config);
     expect(await finish(ctx, fakeCi([red("a")]), 7)).toBe("waiting");
     expect(ctx.state.waiting?.kind).toBe("gate");
+    expect(events(repo, "pr-7").filter((event) => event.kind === "ci").map((event) => event.state)).toEqual(["fail", "fail", "fail"]);
     expect(ctx.state.history.filter((h) => h.stage === "taste")).toHaveLength(2);
   });
+});
+
+test("CLI answer preserves a quoted reply beginning with flags", () => {
+  const repo = tempRepo();
+  fakeSetup(repo, [{ match: "", result: { status: "PASS", action: "Applied", ask: [] } }]);
+  const ip = join(repo, "plan.md");
+  writeFileSync(ip, IP("awaiting sign-off"));
+  const state = newState({slug: "reply", repo, ip, base: "master", phase: "signoff"});
+  state.waiting = {kind: "signoff", asks: [], message: "Approve?", since: new Date().toISOString()};
+  saveState(state);
+  const reply = "--go\nKeep 'quoted' text verbatim";
+  const command = Bun.spawnSync(["bun", join(import.meta.dir, "../src/cli.ts"), "answer", "reply", reply, "--repo", repo, "--no-wait"], {cwd: repo, env: process.env});
+  expect(command.exitCode).toBe(3);
+  expect(loadState("reply", repo).answers[0]?.a).toBe(reply);
 });

@@ -159,6 +159,17 @@ export class MockAgentRunner implements AgentRunner {
             data: args,
           });
           break;
+        case "create_feature":
+          await writeIpcFile(paths.ipc, {
+            type: "create_feature",
+            groupId: config.groupId,
+            channelId,
+            name: String(args.name ?? ""),
+            request: String(args.request ?? ""),
+            repo: String(args.repo ?? ""),
+            senderExternalId: String(args.senderExternalId ?? "harness-user"),
+          });
+          break;
         case "create_task":
           await AgentTask.create({
             groupId: config.groupId,

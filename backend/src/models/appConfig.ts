@@ -178,6 +178,18 @@ const appConfigSchema = new mongoose.Schema<AppConfigDocument, AppConfigModel>(
       completionPollMs: {type: Number, default: 5 * 60 * 1000},
     },
 
+    // Brewery-driven feature-channel runs. These fields are exposed by the
+    // schema-driven App Config form in the admin UI.
+    brewery: {
+      command: {type: String, default: "brewery"},
+      pollIntervalMs: {type: Number, default: 5000},
+      narrationFlushMs: {type: Number, default: 4000},
+      maxNarrationLines: {type: Number, default: 8},
+      // Empty means brewery chooses agents from its own config.
+      agents: {type: String, default: ""},
+      stepSilenceAlertMin: {type: Number, default: 30},
+    },
+
     scheduler: {
       // When true, due ScheduledTasks are dispatched as AgentTask board work
       // (run by workers, results delivered via deliverResult) instead of a

@@ -149,7 +149,12 @@ export interface Feature {
   name: string;
   description?: string;
   groupId?: string;
-  status: "planned" | "in_progress" | "paused" | "complete" | "error";
+  status: "planned" | "in_progress" | "awaiting_approval" | "paused" | "complete" | "error";
+  brewery?: {
+    phase?: string;
+    pr?: number;
+    prUrl?: string;
+  };
   steps: FeatureStep[];
   currentStepIndex: number;
   startedAt?: string;
@@ -167,6 +172,14 @@ export interface FeatureProgress {
   currentStepIndex: number;
   currentStepName: string | null;
   currentStepStatus: string | null;
+}
+
+// GET /features uses the Terreno model-router pagination envelope.
+export interface FeatureListResponse {
+  data: Feature[];
+  limit: number;
+  more: boolean;
+  total: number;
 }
 
 interface ListResponse<T> {
@@ -413,7 +426,7 @@ export const terrenoApi = openapi
         query: ({movieId}) => ({url: `/characters?movieId=${movieId}`}),
       }),
       // Feature endpoints
-      listFeatures: builder.query<ListResponse<Feature>, {status?: string} | undefined>({
+      listFeatures: builder.query<FeatureListResponse, {status?: string} | undefined>({
         providesTags: ["Features" as any],
         query: (args) => {
           const params = new URLSearchParams();

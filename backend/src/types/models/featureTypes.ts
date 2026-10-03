@@ -12,11 +12,45 @@ export interface FeatureStep {
   errorMessage?: string;
 }
 
+export type BreweryWorkspace = {kind: "zerg"; session: string} | {kind: "local"; repoPath: string};
+
+export interface BreweryState {
+  slug: string;
+  repo: string;
+  workspace: BreweryWorkspace;
+  phase?: string;
+  waiting?: {kind: "signoff" | "gate"; since: Date};
+  /** Number of bytes already consumed from events.jsonl. */
+  eventsOffset: number;
+  stepMessages: {
+    seq: number;
+    ts: string;
+    label?: string;
+    lines?: string[];
+    dirty?: boolean;
+    flushedAt?: Date;
+    final?: string;
+  }[];
+  pollLeaseUntil?: Date;
+  pr?: number;
+  prUrl?: string;
+  lastEventAt?: Date;
+}
+
+export type FeatureStatus =
+  | "planned"
+  | "in_progress"
+  | "awaiting_approval"
+  | "paused"
+  | "complete"
+  | "error";
+
 export interface FeatureFields {
   name: string;
   description?: string;
   groupId?: mongoose.Types.ObjectId;
-  status: "planned" | "in_progress" | "paused" | "complete" | "error";
+  status: FeatureStatus;
+  brewery?: BreweryState;
   steps: FeatureStep[];
   currentStepIndex: number;
   startedAt?: Date;

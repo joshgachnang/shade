@@ -16,6 +16,7 @@ interface Entry {
   signal?: string;
   waitFor?: string[];
   waitForTask?: { id: string; status: string };
+  sleepAfterResultMs?: number;
 }
 
 const prompt = await new Response(Bun.stdin.stream()).text();
@@ -77,3 +78,4 @@ if (!entry.noResult) {
 }
 
 appendFileSync(`${planPath}.timings.log`, `${step}\tend\t${Date.now()}\n`);
+if (entry.sleepAfterResultMs) await Bun.sleep(entry.sleepAfterResultMs);

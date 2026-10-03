@@ -1,86 +1,31 @@
 import {logger} from "@terreno/api";
 import type express from "express";
 import {loadAppConfig} from "../models/appConfig";
-import {Feature} from "../models/feature";
 import {Group} from "../models/group";
 import {isTestMode} from "../testMode/flag";
 import {shouldRunTaskWorkerInGateway} from "../workerRuntime";
 import {ensureBuiltinScheduledTasks, seedBuiltinSkills} from "./builtinSkills";
 import {ChannelManager} from "./channels/manager";
+import {createFeatureHandler} from "./createFeature";
 import {logError, reportError} from "./errors";
 import {completeFeature, FeatureCompletionWatcher} from "./featureCompletion";
-import {planFeatureWorkspace, workspaceInstructions} from "./featureWorkspace";
 import {GroupQueue} from "./groupQueue";
-import type {IpcCreateFeature, IpcRadioStream, IpcTriviaToggle} from "./ipc";
+import type {IpcRadioStream, IpcTriviaToggle} from "./ipc";
 import {IpcWatcher} from "./ipc";
-import {ensureGroupDirectory, getGroupMemoryPath, initGlobalMemory, writeMemory} from "./memory";
+import {initGlobalMemory} from "./memory";
 import {MessageLoop} from "./messageLoop";
 import {DirectAgentRunner} from "./runners/direct";
 import {MockAgentRunner} from "./runners/mock";
 import {OpenAIAgentRunner} from "./runners/openai";
 import type {AgentRunner} from "./runners/types";
 import {ZergAgentRunner} from "./runners/zerg";
+import {BreweryPoller} from "./services/breweryPoller";
 import {InfraWatcher} from "./services/infraWatcher";
 import {PrWatcher} from "./services/prWatcher";
 import {RadioTranscriber} from "./services/radioTranscriber";
 import {registerSchedulerForWake, SchedulerService} from "./services/scheduler";
 import {TaskWorkerService} from "./services/taskWorker";
 import {TriviaMonitor} from "./services/triviaMonitor";
-
-const FEATURE_CHANNEL_MEMORY = (
-  featureName: string,
-  description: string | undefined,
-  workspaceStep: string
-): string => {
-  return `# Feature Channel: ${featureName}
-
-You are driving feature development inside a dedicated Slack channel. Every
-message in this channel is routed to you automatically — the user does
-**not** need to \`@Shade\`-mention you to trigger a reply, so don't tell
-them they have to.
-${description ? `\n**Initial description:** ${description}\n` : ""}
-## Workflow (roast)
-
-The user's original feature request is seeded as the first message in this
-channel. Take it — plus anything else they add here — and implement it:
-
-1. ${workspaceStep}
-2. **Sketch a short plan first.** Write it to
-   \`docs/implementationPlans/${featureName}.md\` on your feature branch
-   and post a summary to the channel. Then get to work — don't wait for
-   approval unless the request is ambiguous or has unmade product
-   decisions; ask blocking questions in the channel when it does.
-3. **Implement via TDD** in small, behavior-scoped commits. Mark plan tasks
-   complete in the plan document as you go.
-4. **Post progress updates** to the channel at meaningful checkpoints.
-5. **Open a PR** from your feature branch when done, then post a summary of what
-   shipped with links to the plan and the PR.
-6. **Wrap up.** When the PR merges, Shade marks this feature complete and
-   archives the channel automatically. If the user says the feature is done
-   or abandoned without a merge, call \`complete_feature\`.
-
-## Hard rules
-
-- All service credentials and config live in \`AppConfig\` (loaded via
-  \`loadAppConfig()\`). Do not read API keys or endpoints from ad-hoc env
-  vars — go through AppConfig.
-- If the user changes scope mid-flight, update the plan document before
-  patching code.
-- Prefer small, verifiable commits.
-`;
-};
-
-const FEATURE_CHANNEL_GREETING = (featureName: string, hasRequest: boolean): string => {
-  const kickoff = hasRequest
-    ? `I've already picked up your original request — implementation is kicking off now. Add constraints or corrections here anytime and I'll fold them in.`
-    : `To kick things off: what are you trying to build, and why? A few sentences is enough — I'll take it from there.`;
-  return (
-    `Feature channel ready for *${featureName}*! :sparkles:\n\n` +
-    `*You don't need to \`@Shade\` me in this channel* — every message you send here goes straight to me.\n\n` +
-    `I'll sketch a quick plan, implement it in a dedicated worktree (TDD, small commits), and post progress here until there's a PR.\n\n` +
-    kickoff
-  );
-};
 
 export interface OrchestratorState {
   runner: AgentRunner;
@@ -95,6 +40,7 @@ export interface OrchestratorState {
   triviaMonitor: TriviaMonitor;
   scheduler: SchedulerService;
   taskWorker: TaskWorkerService;
+  breweryPoller: BreweryPoller;
   isRunning: boolean;
 }
 
@@ -210,126 +156,7 @@ export const startOrchestrator = async (
       );
     }
   });
-  ipcWatcher.setCreateFeature(async (data: IpcCreateFeature) => {
-    // Find the source group to get the channelId (MongoDB ObjectId)
-    const sourceGroup = await Group.findById(data.groupId);
-    if (!sourceGroup) {
-      throw new Error(`Source group ${data.groupId} not found`);
-    }
-
-    // Decide where the feature runs before creating anything, so a failed
-    // clone surfaces as a failed create_feature instead of a dead channel.
-    const appConfig = await loadAppConfig();
-    const localReposDir = appConfig.featureChannels?.localReposDir || "~/src";
-    const {executionConfig, workspace} = await planFeatureWorkspace({
-      channelName: data.name,
-      repo: data.repo,
-      baseExecutionConfig: {
-        mode: sourceGroup.executionConfig?.mode,
-        timeout: sourceGroup.executionConfig?.timeout,
-        idleTimeout: sourceGroup.executionConfig?.idleTimeout,
-        maxConcurrent: sourceGroup.executionConfig?.maxConcurrent,
-      },
-      isZergEnabled: appConfig.zerg.enabled,
-      localReposDir,
-    });
-    logger.info(`Feature ${data.name} workspace: ${JSON.stringify(workspace)}`);
-
-    // Create the Slack channel and invite the user
-    const {slackChannelId} = await channelManager.createFeatureChannel(
-      sourceGroup.channelId.toString(),
-      data.name,
-      data.senderExternalId
-    );
-
-    // Create a Group record so the orchestrator listens to this channel.
-    // `featurePhase: "implementing"` routes messages straight to the Claude
-    // Agent SDK runner, which takes the seeded request into the roast
-    // workflow immediately — no separate planner phase or `/implement` step.
-    const folder = `features/${data.name}`;
-    const group = await Group.create({
-      name: data.name,
-      folder,
-      channelId: sourceGroup.channelId,
-      externalId: slackChannelId,
-      trigger: "@Shade",
-      // Feature channels are always "addressed" implicitly — every message in
-      // the dedicated channel is meant for Shade, so don't require a mention.
-      requiresTrigger: false,
-      isMain: false,
-      modelConfig: sourceGroup.modelConfig,
-      executionConfig,
-      featurePhase: "implementing",
-    });
-
-    // Register in the live cache so messages flow immediately
-    channelManager.registerGroup(group);
-    await ensureGroupDirectory(folder);
-
-    // Create the Feature record so the frontend Features screen tracks this
-    // feature — the Slack flow previously created only the channel + group,
-    // leaving UI-created and Slack-created features inconsistent.
-    try {
-      await Feature.create({
-        name: data.name,
-        description: data.description ?? data.request?.slice(0, 500),
-        groupId: group._id,
-        // Implementation starts immediately from the seeded request, so the
-        // feature is in progress from the moment the channel exists.
-        status: "in_progress",
-        startedAt: new Date(),
-      });
-    } catch (err) {
-      logError(`Failed to create Feature record for ${data.name}`, err);
-    }
-
-    // Pin the roast workflow into the feature channel's group memory so
-    // every agent turn in this channel is anchored to the flow.
-    try {
-      await writeMemory(
-        getGroupMemoryPath(folder),
-        FEATURE_CHANNEL_MEMORY(
-          data.name,
-          data.description,
-          workspaceInstructions({workspace, localReposDir})
-        )
-      );
-    } catch (err) {
-      logError(`Failed to write feature channel memory for ${data.name}`, err);
-    }
-
-    await channelManager.sendMessage(
-      sourceGroup.channelId.toString(),
-      slackChannelId,
-      FEATURE_CHANNEL_GREETING(data.name, Boolean(data.request))
-    );
-
-    // Seed the channel with the user's original request so implementation
-    // starts immediately — the message loop picks this up like any inbound
-    // message and hands it to the Claude runner. Without it the user would
-    // have to repeat themselves in the new channel.
-    if (data.request) {
-      try {
-        const {Message} = await import("../models/message");
-        await Message.create({
-          groupId: group._id,
-          channelId: sourceGroup.channelId,
-          sender: `<@${data.senderExternalId}>`,
-          senderExternalId: data.senderExternalId,
-          content: data.request,
-          isFromBot: false,
-          metadata: {source: "create_feature_seed"},
-        });
-        logger.info(
-          `Seeded #${data.name} with the original feature request — implementation starts now`
-        );
-      } catch (err) {
-        logError(`Failed to seed feature request message for ${data.name}`, err);
-      }
-    }
-
-    logger.info(`Feature channel created: #${data.name} (${slackChannelId}), group ${group._id}`);
-  });
+  ipcWatcher.setCreateFeature(createFeatureHandler(channelManager));
 
   // Radio transcriber, PR watcher, and trivia monitor talk to external
   // services (radio streams/Deepgram, GitHub/Anthropic, Anthropic/webhooks) —
@@ -407,11 +234,13 @@ export const startOrchestrator = async (
   // With taskWorker.runInGateway=false (IP-010), board work is left to
   // dedicated worker processes (`bun run worker`); the service is still
   // constructed so OrchestratorState/stopOrchestrator stay uniform.
+  const breweryPoller = new BreweryPoller();
   const taskWorker = new TaskWorkerService({runner, channelManager, containerRunner});
   const appConfig = await loadAppConfig();
   if (shouldRunTaskWorkerInGateway(appConfig)) {
     try {
       await taskWorker.start();
+      await breweryPoller.start();
     } catch (err) {
       logError("Task worker start error (non-fatal)", err);
     }
@@ -466,6 +295,7 @@ export const startOrchestrator = async (
     triviaMonitor,
     scheduler,
     taskWorker,
+    breweryPoller,
     isRunning: true,
   };
 
@@ -492,6 +322,7 @@ export const stopOrchestrator = async (): Promise<void> => {
   registerSchedulerForWake(null);
   state.scheduler.stop();
   state.taskWorker.stop();
+  await state.breweryPoller.stop();
 
   try {
     await state.radioTranscriber.stop();

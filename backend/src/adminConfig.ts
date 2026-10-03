@@ -45,6 +45,7 @@ export const adminModelConfigs: AdminModelConfig[] = [
     routePath: "/app-configs",
     displayName: "App Config",
     listFields: ["assistantName", "triggerPattern", "updated"],
+    fieldsets: [{title: "Brewery", fields: ["brewery"]}],
   },
   {
     model: User,

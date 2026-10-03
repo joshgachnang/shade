@@ -4,6 +4,7 @@ import {AIRequest} from "../models/aiRequest";
 import {loadAppConfig} from "../models/appConfig";
 import {Feature} from "../models/feature";
 import {DEFAULT_AGENT_TIMEOUT_MS, Group, LEGACY_AGENT_TIMEOUT_MS} from "../models/group";
+import {Message} from "../models/message";
 import {TaskRunLog} from "../models/taskRunLog";
 import type {AgentSessionDocument, GroupDocument, MessageDocument} from "../types";
 import type {ChannelManager} from "./channels/manager";
@@ -14,6 +15,7 @@ import {buildPromptForGroup, formatOutboundMessage} from "./router";
 import {resolveModel} from "./runners/direct";
 import type {AgentRunner, AgentRunResult} from "./runners/types";
 import {formatAttachNotice, resolveContainerTarget} from "./runners/zerg";
+import {BreweryDriver} from "./services/breweryDriver";
 
 /** Regex matching `/roast` or `/implement` (or `!`-prefixed) as a standalone command. */
 const IMPLEMENT_COMMAND = /(^|\s)[/!](implement|roast)\b/i;
@@ -54,6 +56,7 @@ export class GroupQueue {
   private plannerRunner: AgentRunner | null;
   private containerRunner: AgentRunner | null;
   private channelManager: ChannelManager;
+  private breweryDriver: BreweryDriver;
   private reportError: ReportErrorFn = reportError;
   private globalActiveCount = 0;
   /** Shade session ids whose channel has already been told how to attach. */
@@ -69,6 +72,9 @@ export class GroupQueue {
     this.plannerRunner = plannerRunner;
     this.containerRunner = containerRunner;
     this.channelManager = channelManager;
+    this.breweryDriver = new BreweryDriver({
+      sendMessage: (channel, target, text) => channelManager.sendMessage(channel, target, text),
+    });
   }
 
   setReportError(fn: ReportErrorFn): void {
@@ -83,6 +89,9 @@ export class GroupQueue {
    * Agent SDK runner on the host.
    */
   selectRunner(group: GroupDocument): AgentRunner {
+    if (group.featureDriver === "brewery") {
+      throw new Error("brewery feature channels cannot use an agent runner");
+    }
     if (group.featurePhase === "planning" && this.plannerRunner) {
       return this.plannerRunner;
     }
@@ -138,6 +147,29 @@ export class GroupQueue {
     // Check per-group concurrency
     if (this.activeRuns.get(groupId)) {
       logger.debug(`Group ${groupId} already has an active run, skipping`);
+      return;
+    }
+
+    const pending = this.queues.get(groupId);
+    if (pending?.[0]?.group.featureDriver === "brewery") {
+      const item = pending.shift()!;
+      // Reserve synchronously so rapid replies stay ordered, independently of agent capacity.
+      this.activeRuns.set(groupId, true);
+      try {
+        const result = await this.breweryDriver.handleMessage(item.group, item.message);
+        // MessageLoop will pick up lease contention on a later poll.
+        if (result !== "deferred") {
+          await Message.updateOne({_id: item.message._id}, {$set: {processedAt: new Date()}});
+        }
+      } catch (err) {
+        this.reportError("Brewery message handling failed", err, {groupId});
+      } finally {
+        this.activeRuns.set(groupId, false);
+        this.safeProcessNext(groupId);
+      }
+      return;
+    }
+    if (!pending?.length) {
       return;
     }
 

@@ -1,6 +1,6 @@
 // git and GitHub. CI is an interface so the finish loop can be tested without GitHub.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface ShResult {
   code: number;
@@ -44,10 +44,14 @@ export const ensureExcluded = async (cwd: string): Promise<void> => {
   const probe = await sh(cwd, ["git", "check-ignore", "-q", ".terreno/brewery/x"]);
   if (probe.code === 0) return;
   const gitDir = await git(cwd, "rev-parse", "--git-common-dir");
-  const exclude = join(cwd, gitDir, "info", "exclude");
-  mkdirSync(join(cwd, gitDir, "info"), { recursive: true });
+  const info = resolve(cwd, gitDir, "info");
+  const exclude = join(info, "exclude");
+  mkdirSync(info, { recursive: true });
   const current = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
   appendFileSync(exclude, `${current.endsWith("\n") || !current ? "" : "\n"}.terreno/\n`);
+  if ((await sh(cwd, ["git", "check-ignore", "-q", ".terreno/brewery/x"])).code !== 0) {
+    throw new Error("brewery: cannot exclude private run artifacts from Git");
+  }
 };
 
 export const commitAll = async (cwd: string, message: string, amend: boolean): Promise<string> => {
@@ -79,6 +83,7 @@ export interface PrSnapshot {
 
 export interface Ci {
   prForBranch: (cwd: string) => Promise<number | null>;
+  prUrl: (cwd: string, pr: number) => Promise<string>;
   snapshot: (cwd: string, pr: number) => Promise<PrSnapshot>;
   waitForChecks: (cwd: string, pr: number, timeoutMin: number) => Promise<void>;
 }
@@ -89,6 +94,11 @@ export const githubCi: Ci = {
   prForBranch: async (cwd) => {
     const res = await sh(cwd, ["gh", "pr", "view", "--json", "number", "-q", ".number"]);
     return res.code === 0 && res.out ? Number(res.out) : null;
+  },
+  prUrl: async (cwd, pr) => {
+    const res = await sh(cwd, ["gh", "pr", "view", String(pr), "--json", "url", "-q", ".url"]);
+    if (res.code !== 0 || !res.out) throw new Error(`gh pr view ${pr}: ${res.err || "missing URL"}`);
+    return res.out;
   },
   snapshot: async (cwd, pr) => {
     let view: { headRefOid: string; mergeable: PrSnapshot["mergeable"]; mergeStateStatus: string } | null = null;

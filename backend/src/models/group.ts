@@ -48,6 +48,7 @@ const groupSchema = new mongoose.Schema<GroupDocument, GroupModel>(
       enum: ["planning", "implementing", "complete"],
       required: false,
     },
+    featureDriver: {type: String, enum: ["brewery"], required: false},
   },
   {strict: "throw", toJSON: {virtuals: true}, toObject: {virtuals: true}}
 );
