@@ -34,10 +34,12 @@ The `SHADE_SERVICE` env var selects what a process runs: `backend` (default),
   dev only
 - **Ports**: backend 4020, worker health 4021
 - **Public API URL**: `https://shade-api.nang.io` → Cloudflare Tunnel
-  `shade-mini` running on this Mac as launchd agent `com.cloudflare.cloudflared`
-  (config in `~/.cloudflared/config.yml`, ingress → `http://localhost:4020`).
-  The plist's ProgramArguments must include `tunnel run` — a bare `cloudflared`
-  invocation exits immediately.
+  `shade-mini` (`c6e10e44-…`) running on this Mac as launchd agent
+  `com.cloudflare.shade-mini` (config in `~/.cloudflared/shade-mini/config.yml`,
+  ingress → `http://localhost:4020`, logs `~/Library/Logs/cloudflared-shade-mini.*.log`).
+  The plist's ProgramArguments must include `tunnel --config … run` — a bare
+  `cloudflared` invocation exits immediately. Older tunnels `shade-api` (still
+  has Linux connectors) and `shade-studio` no longer carry the DNS route.
 - **Code signing**: `shade build`/`update`/`install` sign the binary with the
   self-signed "Shade Code Signing" identity (login keychain, identifier
   `io.nang.shade`) when present. This keeps TCC grants valid across deploys —
