@@ -208,6 +208,20 @@ describe("config and agents", () => {
     expect(loadConfig(repo).limits.pickAttempts).toBe(3);
   });
 
+  test("BREWERY_SKILLS_DIR replaces the home default but not a repo's vendored skills", () => {
+    process.env.BREWERY_CONFIG = join(tmpdir(), "brewery-no-such-config.json");
+    process.env.BREWERY_SKILLS_DIR = "/opt/brewery/skills";
+    try {
+      const repo = mkdtempSync(join(tmpdir(), "brewery-skills-"));
+      expect(loadConfig(repo).skillsDir).toBe("/opt/brewery/skills");
+      mkdirSync(join(repo, ".claude", "skills", "distill"), { recursive: true });
+      writeFileSync(join(repo, ".claude", "skills", "distill", "SKILL.md"), "---\nname: distill\n---\n");
+      expect(loadConfig(repo).skillsDir).toBe(join(repo, ".claude", "skills"));
+    } finally {
+      delete process.env.BREWERY_SKILLS_DIR;
+    }
+  });
+
   test("slugify keeps the first six words", () => {
     expect(slugify("Add a CSV export to the admin reports page, please")).toBe("add-a-csv-export-to-the");
   });

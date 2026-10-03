@@ -1,7 +1,8 @@
-import {afterEach, expect, test} from "bun:test";
+import {afterEach, expect, spyOn, test} from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {logger} from "@terreno/api";
 import {AppConfig} from "../../models/appConfig";
 import {Feature} from "../../models/feature";
 import {Group} from "../../models/group";
@@ -314,6 +315,26 @@ test.each([
           ? 4
           : 2
   );
+});
+
+test("a failed preflight logs the command's stderr for the operator but keeps it out of the channel", async () => {
+  const f = await fixture();
+  const warn = spyOn(logger, "warn").mockImplementation(() => logger);
+  const exec: ExecFn = async (argv) =>
+    argv.includes("agents")
+      ? {code: 127, stdout: "", stderr: 'error finding executable "brewery" in PATH'}
+      : {code: 0, stdout: "started example", stderr: ""};
+  try {
+    await expect(
+      new BreweryDriver({...f.options, exec}).start({...f, repo: "shade", request: "Build example"})
+    ).rejects.toThrow("preflight");
+    const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(logged).toContain("exit 127");
+    expect(logged).toContain('error finding executable "brewery" in PATH');
+    expect(f.messages[0]).not.toContain("error finding executable");
+  } finally {
+    warn.mockRestore();
+  }
 });
 
 test.each([
