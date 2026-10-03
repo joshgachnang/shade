@@ -80,8 +80,10 @@ strict, so a failure stops the run with the landed commit recorded.
 ## Parallel builds
 
 Declare `Depends on: none` or `Depends on: T1, T3` in each task's details. A missing
-line depends on the previous task, so older IPs retain their sequential order. Tasks
-become ready only when all dependencies have landed; an explicitly skipped dependency
+line depends on the previous task, so older IPs retain their sequential order. Task IDs
+must be unique across all rows, including completed tasks. Duplicate IDs produce
+`Duplicate task id: T1` findings; barrel rejects the graph before starting any task.
+Tasks become ready only when all dependencies have landed; an explicitly skipped dependency
 also releases its dependants. Ready tasks start in IP order up to `limits.parallelTasks`.
 Each runs Pick and Roast in its own worktree, and a single serial queue lands passed
 task commits on the feature branch. Dependencies therefore start with their parents'
@@ -131,7 +133,7 @@ them fails the step. Other stages use the first available agent. An unavailable 
 | Cut sees only the human's words | Its prompt holds only `.terreno/brewery/<slug>/context.md` (your request and replies, verbatim), and it runs in a `git worktree` of HEAD where `.terreno/` does not exist. |
 | Roast judges a fixed tree | brewery commits after Pick, before Roast. Retries amend the task's commit. |
 | No self-approval | brewery owns the IP's `Status:` line and resets one an agent approved. Only `brewery answer` approves. |
-| Valid task graph before sign-off | Distill rejects drafts with unknown dependencies, self-dependencies, or cycles. Cut/fix rechecks the graph after every edit and passes remaining problems as blocking decomposition findings, even when Cut found nothing. An invalid graph after `limits.cutRounds` throws before sign-off. |
+| Valid task graph before sign-off | Distill rejects drafts with duplicate task IDs, unknown dependencies, self-dependencies, or cycles. Cut/fix rechecks the graph after every edit and passes remaining problems as blocking decomposition findings, even when Cut found nothing. An invalid graph after `limits.cutRounds` throws before sign-off. |
 | Valid task graph before approval | Answer validates the edited IP regardless of the agent's `structural` flag. Invalid graphs go through cut/fix as blocking decomposition findings. Unrepaired problems return to sign-off, with the problems listed; only a valid graph can be approved. |
 | Progress can't be faked | brewery checks each task box only after a Roast PASS and cherry-pick onto the feature branch. |
 | Bounded loops | Pick attempts per task, cut and review rounds, finish pushes and hours, and a "same failure twice" stop. |

@@ -36,6 +36,13 @@ export const parseTasks = (text: string): IpTask[] => {
 export const taskGraphProblems = (tasks: IpTask[]): string[] => {
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const problems: string[] = [];
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const task of tasks) {
+    if (seen.has(task.id)) duplicates.add(task.id);
+    seen.add(task.id);
+  }
+  for (const id of duplicates) problems.push(`Duplicate task id: ${id}`);
   for (const task of tasks) {
     for (const dep of task.deps) {
       if (!byId.has(dep)) problems.push(`${task.id} depends on unknown task ${dep}`);

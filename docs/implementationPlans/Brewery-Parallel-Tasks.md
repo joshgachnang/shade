@@ -286,7 +286,7 @@ Open risks: disk and memory per worktree in a zerg container (Q1, Q5).
     landing, covering both a tracked IP with approval edits and an untracked IP; the task tree
     gets the approved text and the run does not fail.
 
-- [ ] **T10** — Reject duplicate task IDs before any task starts
+- [x] **T10** — Reject duplicate task IDs before any task starts
   - Depends on: none
   - Files: `tools/brewery/src/ip.ts`, `tools/brewery/test/unit.test.ts`,
     `tools/brewery/test/flow.test.ts`

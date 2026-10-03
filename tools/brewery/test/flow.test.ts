@@ -128,6 +128,7 @@ describe("distill → sign-off → answer", () => {
     ["cycle", cycleIp, "Dependency cycle: T1 → T2 → T1"],
     ["unknown dependency", IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T99"), "T1 depends on unknown task T99"],
     ["self dependency", IP("draft").replace("- [ ] **T1** — Add greeting file", "- [ ] **T1** — Add greeting file\n  - Depends on: T1"), "T1 depends on itself"],
+    ["duplicate task id", IP("draft").replace("- [ ] **T1** — Add greeting file\n- [ ] **T2** — Add farewell file", "- [ ] **T1** — Add greeting file\n  Depends on: none\n- [ ] **T1** — Add farewell file\n  Depends on: none"), "Duplicate task id: T1"],
   ])("non-structural approval with an unrepaired %s returns to sign-off with the problem", async (_kind, text, problem) => {
     const repo = tempRepo();
     const { config } = fakeSetup(repo, [
@@ -452,6 +453,27 @@ describe("barrel", () => {
       const [step, event, at] = line.split("\t");
       return { step, event, at: Number(at) };
     });
+
+  test("duplicate task ids are rejected before any task starts", async () => {
+    const { repo, ctx } = setupApproved([]);
+    const text = IP("approved 2026-09-27").replace(
+      "- [ ] **T1** — Add greeting file\n- [ ] **T2** — Add farewell file",
+      "- [ ] **T1** — Add greeting file\n  Depends on: none\n- [ ] **T1** — Add farewell file\n  Depends on: none",
+    );
+    writeFileSync(ctx.state.ip, text);
+    const head = run(repo, "git", "rev-parse", "HEAD");
+
+    await expect(barrel(ctx, fakeCi([green("a")]))).rejects.toThrow("brewery: invalid task graph: Duplicate task id: T1");
+
+    expect(ctx.state.tasks).toEqual({});
+    expect(ctx.state.history).toEqual([]);
+    expect(existsSync(`${ctx.config.agents.alpha.env?.FAKE_PLAN}.timings.log`)).toBe(false);
+    expect(existsSync(join(runDir(repo, "greet"), "worktrees"))).toBe(false);
+    expect(run(repo, "git", "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1);
+    expect(run(repo, "git", "branch", "--list", "brewery/greet/*")).toBe("");
+    expect(run(repo, "git", "rev-parse", "HEAD")).toBe(head);
+    expect(readIp(ctx.state.ip)).toBe(text);
+  });
 
   test("integrated roast repairs a combined-tree failure before branch review", async () => {
     const failure = { need: "combined greeting", want: "compatible tasks", got: "incompatible", ev: "bun test: combined greeting failed" };

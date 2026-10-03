@@ -113,6 +113,11 @@ describe("ip", () => {
     expect(taskGraphProblems(parseTasks("- [ ] **T1** — Root\n- [ ] **T2** — Left\n- [ ] **T3** — Right\n  Depends on: T1\n- [ ] **T4** — Join\n  Depends on: T2 and T3\n"))).toEqual([]);
   });
 
+  test("graph validation names each duplicate task id once, including completed rows", () => {
+    const tasks = parseTasks("- [ ] **T1** — First\n  Depends on: none\n- [ ] **T1** — Second\n  Depends on: none\n- [x] **T1** — Third\n  Depends on: none\n- [ ] **T2** — Fourth\n  Depends on: none\n- [x] **T2** — Fifth\n  Depends on: none\n");
+    expect(taskGraphProblems(tasks)).toEqual(["Duplicate task id: T1", "Duplicate task id: T2"]);
+  });
+
   test("graph validation names every unknown and self dependency", () => {
     const tasks = parseTasks("- [ ] **T1** — First\n  Depends on: T99, T1\n- [x] **T2** — Second\n  Depends on: T98, T2\n");
     expect(taskGraphProblems(tasks)).toEqual([
